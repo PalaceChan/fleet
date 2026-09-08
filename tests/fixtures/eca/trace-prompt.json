@@ -1,0 +1,475 @@
+{
+ "eca_version": "eca 0.158.1",
+ "mode": "prompt",
+ "root": "/tmp/fleet-probe-ws-a4hd4uv8",
+ "cache": "/tmp/fleet-probe-cache-rhwi35qs",
+ "exit": 0,
+ "log": [
+  {
+   "t": 0.0003,
+   "dir": "->",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+     "processId": 49960,
+     "clientInfo": {
+      "name": "fleet-probe",
+      "version": "0"
+     },
+     "capabilities": {
+      "codeAssistant": {
+       "chat": true,
+       "chatCapabilities": {
+        "askQuestion": true
+       },
+       "editor": {
+        "diagnostics": true
+       }
+      }
+     },
+     "initializationOptions": {},
+     "workspaceFolders": [
+      {
+       "uri": "file:///tmp/fleet-probe-ws-a4hd4uv8",
+       "name": "fleet-probe-ws-a4hd4uv8"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "t": 0.0232,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+     "chatWelcomeMessage": "<redacted>"
+    }
+   }
+  },
+  {
+   "t": 0.0505,
+   "dir": "->",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "initialized"
+   }
+  },
+  {
+   "t": 0.0591,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "start",
+     "taskId": "models",
+     "title": "Syncing models"
+    }
+   }
+  },
+  {
+   "t": 0.0592,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "start",
+     "taskId": "cleanup",
+     "title": "Cleaning up"
+    }
+   }
+  },
+  {
+   "t": 0.0593,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "start",
+     "taskId": "plugins",
+     "title": "Resolving plugins"
+    }
+   }
+  },
+  {
+   "t": 0.0595,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "finish",
+     "taskId": "cleanup",
+     "title": "Cleaning up"
+    }
+   }
+  },
+  {
+   "t": 0.0596,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "finish",
+     "taskId": "plugins",
+     "title": "Resolving plugins"
+    }
+   }
+  },
+  {
+   "t": 0.0698,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "config/updated",
+    "params": {
+     "<redacted>": "keys=agents,behaviors,defaultAgent,defaultBehavior,defaultModel,models,selectAgent,selectBehavior,selectModel,selectVariant,variants,welcomeMessage"
+    }
+   }
+  },
+  {
+   "t": 0.0699,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "start",
+     "taskId": "mcp-servers",
+     "title": "Initializing MCP servers"
+    }
+   }
+  },
+  {
+   "t": 0.127,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "tool/serverUpdated",
+    "params": {
+     "<redacted>": "keys=name,status,tools,type"
+    }
+   }
+  },
+  {
+   "t": 0.127,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "finish",
+     "taskId": "mcp-servers",
+     "title": "Initializing MCP servers"
+    }
+   }
+  },
+  {
+   "t": 6.217,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "config/updated",
+    "params": {
+     "<redacted>": "keys=defaultModel,models,selectModel,variants"
+    }
+   }
+  },
+  {
+   "t": 6.217,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "finish",
+     "taskId": "models",
+     "title": "Syncing models"
+    }
+   }
+  },
+  {
+   "t": 6.3577,
+   "dir": "->",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "chat/prompt",
+    "params": {
+     "chatId": "6a254840-3820-4a85-8c67-006e4bffa5c9",
+     "contexts": [],
+     "model": "openai/gpt-5.6-sol",
+     "agent": "agent",
+     "message": "Reply with exactly the single word OK and nothing else.",
+     "request-id": 1
+    }
+   }
+  },
+  {
+   "t": 6.3592,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/opened",
+    "params": {
+     "chatId": "6a254840-3820-4a85-8c67-006e4bffa5c9"
+    }
+   }
+  },
+  {
+   "t": 6.3595,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "6a254840-3820-4a85-8c67-006e4bffa5c9",
+     "role": "user",
+     "content": {
+      "type": "text",
+      "contentId": "1dc76ca5-eef5-4864-9e66-5643afdf1408",
+      "text": "Reply with exactly the single word OK and nothing else.\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 6.3598,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "6a254840-3820-4a85-8c67-006e4bffa5c9",
+     "role": "system",
+     "content": {
+      "type": "progress",
+      "state": "running",
+      "text": "Loading config"
+     }
+    }
+   }
+  },
+  {
+   "t": 6.4075,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/statusChanged",
+    "params": {
+     "chatId": "6a254840-3820-4a85-8c67-006e4bffa5c9",
+     "status": "running"
+    }
+   }
+  },
+  {
+   "t": 6.4353,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "6a254840-3820-4a85-8c67-006e4bffa5c9",
+     "role": "system",
+     "content": {
+      "type": "progress",
+      "state": "running",
+      "text": "Waiting model"
+     }
+    }
+   }
+  },
+  {
+   "t": 6.4354,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+     "chatId": "6a254840-3820-4a85-8c67-006e4bffa5c9",
+     "model": "openai/gpt-5.6-sol",
+     "status": "prompting"
+    }
+   }
+  },
+  {
+   "t": 7.8751,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "6a254840-3820-4a85-8c67-006e4bffa5c9",
+     "role": "system",
+     "content": {
+      "type": "progress",
+      "state": "running",
+      "text": "Generating"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.8754,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "6a254840-3820-4a85-8c67-006e4bffa5c9",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "OK"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.9803,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "6a254840-3820-4a85-8c67-006e4bffa5c9",
+     "role": "system",
+     "content": {
+      "type": "usage",
+      "sessionTokens": 10285,
+      "limit": {
+       "context": 1050000,
+       "output": 128000
+      },
+      "lastMessageCost": "0.04",
+      "sessionCost": "0.04",
+      "contextBreakdown": {
+       "categories": [
+        {
+         "name": "System prompt",
+         "tokens": 1050,
+         "color": "#61afef",
+         "emoji": "\ud83d\udfe6"
+        },
+        {
+         "name": "Rules",
+         "tokens": 521,
+         "color": "#c678dd",
+         "emoji": "\ud83d\udfea"
+        },
+        {
+         "name": "Skills",
+         "tokens": 684,
+         "color": "#e5c07b",
+         "emoji": "\ud83d\udfe8"
+        },
+        {
+         "name": "Tool definitions",
+         "tokens": 7998,
+         "color": "#e8924a",
+         "emoji": "\ud83d\udfe7"
+        },
+        {
+         "name": "Conversation",
+         "tokens": 31,
+         "color": "#98c379",
+         "emoji": "\ud83d\udfe9"
+        }
+       ],
+       "usedTokens": 10285,
+       "freeColor": "#5c6370",
+       "freeEmoji": "\u2b1c",
+       "freeTokens": 1039715,
+       "contextLimit": 1050000
+      },
+      "autoCompactPercentage": 75
+     }
+    }
+   }
+  },
+  {
+   "t": 7.9809,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/statusChanged",
+    "params": {
+     "chatId": "6a254840-3820-4a85-8c67-006e4bffa5c9",
+     "status": "idle"
+    }
+   }
+  },
+  {
+   "t": 7.9809,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "6a254840-3820-4a85-8c67-006e4bffa5c9",
+     "role": "system",
+     "content": {
+      "type": "progress",
+      "state": "finished"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.622,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "6a254840-3820-4a85-8c67-006e4bffa5c9",
+     "role": "system",
+     "content": {
+      "type": "metadata",
+      "title": "Requesting exact OK reply"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.0639,
+   "dir": "->",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "method": "shutdown",
+    "params": null
+   }
+  },
+  {
+   "t": 10.0676,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "result": null
+   }
+  },
+  {
+   "t": 10.5642,
+   "dir": "->",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "exit"
+   }
+  }
+ ],
+ "provenance": {
+  "eca_server": "eca 0.158.1",
+  "eca_emacs_package": "20260529.1500 (rev f700be30f1e5)",
+  "recorded": "2026-09-08",
+  "tool": "tests/fixtures/eca/probe.py"
+ }
+}

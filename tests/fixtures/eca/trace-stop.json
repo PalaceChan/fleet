@@ -1,0 +1,4425 @@
+{
+ "eca_version": "eca 0.158.1",
+ "mode": "stop",
+ "root": "/tmp/fleet-probe-ws-mr56ke3n",
+ "cache": "/tmp/fleet-probe-cache-u397nktu",
+ "exit": 0,
+ "log": [
+  {
+   "t": 0.0002,
+   "dir": "->",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+     "processId": 50224,
+     "clientInfo": {
+      "name": "fleet-probe",
+      "version": "0"
+     },
+     "capabilities": {
+      "codeAssistant": {
+       "chat": true,
+       "chatCapabilities": {
+        "askQuestion": true
+       },
+       "editor": {
+        "diagnostics": true
+       }
+      }
+     },
+     "initializationOptions": {},
+     "workspaceFolders": [
+      {
+       "uri": "file:///tmp/fleet-probe-ws-mr56ke3n",
+       "name": "fleet-probe-ws-mr56ke3n"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "t": 0.0225,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+     "chatWelcomeMessage": "<redacted>"
+    }
+   }
+  },
+  {
+   "t": 0.0504,
+   "dir": "->",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "initialized"
+   }
+  },
+  {
+   "t": 0.0585,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "start",
+     "taskId": "models",
+     "title": "Syncing models"
+    }
+   }
+  },
+  {
+   "t": 0.0585,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "start",
+     "taskId": "plugins",
+     "title": "Resolving plugins"
+    }
+   }
+  },
+  {
+   "t": 0.0586,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "start",
+     "taskId": "cleanup",
+     "title": "Cleaning up"
+    }
+   }
+  },
+  {
+   "t": 0.0586,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "finish",
+     "taskId": "plugins",
+     "title": "Resolving plugins"
+    }
+   }
+  },
+  {
+   "t": 0.0587,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "finish",
+     "taskId": "cleanup",
+     "title": "Cleaning up"
+    }
+   }
+  },
+  {
+   "t": 0.0646,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "config/updated",
+    "params": {
+     "<redacted>": "keys=agents,behaviors,defaultAgent,defaultBehavior,defaultModel,models,selectAgent,selectBehavior,selectModel,selectVariant,variants,welcomeMessage"
+    }
+   }
+  },
+  {
+   "t": 0.0646,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "start",
+     "taskId": "mcp-servers",
+     "title": "Initializing MCP servers"
+    }
+   }
+  },
+  {
+   "t": 0.0995,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "tool/serverUpdated",
+    "params": {
+     "<redacted>": "keys=name,status,tools,type"
+    }
+   }
+  },
+  {
+   "t": 0.0995,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "finish",
+     "taskId": "mcp-servers",
+     "title": "Initializing MCP servers"
+    }
+   }
+  },
+  {
+   "t": 5.8028,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "config/updated",
+    "params": {
+     "<redacted>": "keys=defaultModel,models,selectModel,variants"
+    }
+   }
+  },
+  {
+   "t": 5.8028,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "finish",
+     "taskId": "models",
+     "title": "Syncing models"
+    }
+   }
+  },
+  {
+   "t": 5.9573,
+   "dir": "->",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "chat/prompt",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "contexts": [],
+     "model": "openai/gpt-5.6-sol",
+     "agent": "agent",
+     "message": "Count slowly from 1 to 300, one number per line, no other text.",
+     "request-id": 1
+    }
+   }
+  },
+  {
+   "t": 5.9578,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/opened",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95"
+    }
+   }
+  },
+  {
+   "t": 5.9579,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "user",
+     "content": {
+      "type": "text",
+      "contentId": "fa5930d7-43e7-44d7-ba06-a2dd259cea53",
+      "text": "Count slowly from 1 to 300, one number per line, no other text.\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 5.9579,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "system",
+     "content": {
+      "type": "progress",
+      "state": "running",
+      "text": "Loading config"
+     }
+    }
+   }
+  },
+  {
+   "t": 6.022,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/statusChanged",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "status": "running"
+    }
+   }
+  },
+  {
+   "t": 6.051,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "system",
+     "content": {
+      "type": "progress",
+      "state": "running",
+      "text": "Waiting model"
+     }
+    }
+   }
+  },
+  {
+   "t": 6.0512,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "model": "openai/gpt-5.6-sol",
+     "status": "prompting"
+    }
+   }
+  },
+  {
+   "t": 7.6206,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "system",
+     "content": {
+      "type": "progress",
+      "state": "running",
+      "text": "Generating"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.6206,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "reasonStarted",
+      "id": "rs_0dd727f8fde78cf2016aa08500408887d29fc325ef6c42df58"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.7167,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "system",
+     "content": {
+      "type": "metadata",
+      "title": "Counting slowly from 1 to 300"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1158,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "reasonFinished",
+      "totalTimeMs": 493,
+      "id": "rs_0dd727f8fde78cf2016aa08500408887d29fc325ef6c42df58"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1166,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "1"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1169,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1172,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "2"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1174,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1174,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "3"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1175,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1215,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "4"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1301,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1303,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "5"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1308,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1311,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "6"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1314,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1318,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "7"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1324,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1332,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "8"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1356,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1359,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "9"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1392,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1395,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "10"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1399,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1402,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "11"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1404,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1409,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "12"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1465,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1468,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "13"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1472,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1475,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "14"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1479,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1483,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "15"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1599,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1728,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "16"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1925,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1926,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "17"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.1979,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.2034,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "18"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.2037,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.2042,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "19"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.2376,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.2562,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "20"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.2628,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.2807,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "21"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.2813,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.2827,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "22"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.283,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.285,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "23"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.3042,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.3211,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "24"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.3267,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.339,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "25"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.357,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.3571,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "26"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.3577,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.3578,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "27"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.3665,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.397,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "28"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.4109,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.4186,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "29"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.4189,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.4194,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "30"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.4196,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.4199,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "31"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.4332,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.455,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "32"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.4632,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.4715,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "33"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.4784,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.4785,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "34"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.4792,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.4797,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "35"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.4961,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.5131,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "36"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.5189,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.5285,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "37"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.5375,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.5377,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "38"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.5381,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.5384,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "39"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.5634,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.5961,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "40"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.6027,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.6164,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "41"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.6173,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.6176,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "42"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.6182,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.619,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "43"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.6393,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.6521,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "44"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.6676,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.679,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "45"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.6796,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.6803,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "46"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.6806,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.6815,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "47"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.6969,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.7145,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "48"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.722,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.7312,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "49"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.7956,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.7957,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "50"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.7962,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.7963,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "51"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.7964,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.7968,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "52"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.8068,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.807,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "53"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.8107,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.8115,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "54"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.8121,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.8139,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "55"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.8381,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.8581,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "56"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.8774,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.8817,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "57"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.882,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.883,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "58"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.885,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.8854,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "59"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.894,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.9114,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "60"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.9219,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.9367,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "61"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.9413,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.942,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "62"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.9425,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.9428,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "63"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.9593,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.9809,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "64"
+     }
+    }
+   }
+  },
+  {
+   "t": 8.9884,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.0015,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "65"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.0026,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.0034,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "66"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.0039,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.0041,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "67"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.0261,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.0487,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "68"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.0561,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.0649,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "69"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.0726,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.0729,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "70"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.0734,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.0737,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "71"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.0907,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.1034,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "72"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.1177,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.1301,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "73"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.1351,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.1356,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "74"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.1358,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.1363,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "75"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.1576,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.1673,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "76"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.1805,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.1855,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "77"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.1938,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.1998,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "78"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.2007,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.201,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "79"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.224,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.2586,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "80"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.2694,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.2697,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "81"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.2722,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.2725,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "82"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.273,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.2732,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "83"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.2872,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.3033,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "84"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.3088,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.3179,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "85"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.3343,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.3352,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "86"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.3355,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.3359,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "87"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.3575,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.3765,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "88"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.3836,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.3919,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "89"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.4402,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.5353,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "90"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.5577,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.8531,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "91"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.9233,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.9906,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "92"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.0214,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.0298,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "93"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.0434,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.0686,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "94"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.0687,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.0777,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "95"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.1042,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.1239,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "96"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.1242,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.1394,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "97"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.1552,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.1644,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "98"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.1694,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.177,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "99"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.1871,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.2039,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "100"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.2182,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.2432,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "101"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.2534,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.2702,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "102"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.2802,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.2964,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "103"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.3191,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.3599,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "104"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.3885,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.4034,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "105"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.4132,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.4246,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "106"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.4349,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.4423,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "107"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.4933,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.4934,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "108"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.5115,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.5285,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "109"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.5352,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.5464,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "110"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.5629,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.5895,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "111"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.6,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.6093,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "112"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.6296,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.6425,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "113"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.6527,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.6631,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "114"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.6708,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.6862,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "115"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.6969,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.7165,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "116"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.7268,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.7333,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "117"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.7423,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.7553,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "118"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.7714,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.7937,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "119"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.8034,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.8129,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "120"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.8268,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.8572,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "121"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.8575,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.8628,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "122"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.8739,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.8893,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "123"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.9052,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.9356,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "124"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.9402,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "assistant",
+     "content": {
+      "type": "text",
+      "text": "\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.9575,
+   "dir": "->",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/promptStop",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95"
+    }
+   }
+  },
+  {
+   "t": 10.9647,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "system",
+     "content": {
+      "type": "text",
+      "text": "\nPrompt stopped\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 10.9647,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/statusChanged",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "status": "stopping"
+    }
+   }
+  },
+  {
+   "t": 10.9648,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "2f7f6db3-c6c6-4cf6-9876-fb0d0c362c95",
+     "role": "system",
+     "content": {
+      "type": "progress",
+      "state": "finished"
+     }
+    }
+   }
+  },
+  {
+   "t": 18.9578,
+   "dir": "->",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "method": "shutdown",
+    "params": null
+   }
+  },
+  {
+   "t": 18.9614,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "result": null
+   }
+  },
+  {
+   "t": 19.458,
+   "dir": "->",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "exit"
+   }
+  }
+ ],
+ "provenance": {
+  "eca_server": "eca 0.158.1",
+  "eca_emacs_package": "20260529.1500 (rev f700be30f1e5)",
+  "recorded": "2026-09-08",
+  "tool": "tests/fixtures/eca/probe.py"
+ }
+}

@@ -1,0 +1,1286 @@
+{
+ "eca_version": "eca 0.158.1",
+ "mode": "question",
+ "root": "/tmp/fleet-probe-ws-2kjpl1di",
+ "cache": "/tmp/fleet-probe-cache-6cnspupc",
+ "exit": 0,
+ "log": [
+  {
+   "t": 0.0002,
+   "dir": "->",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+     "processId": 50265,
+     "clientInfo": {
+      "name": "fleet-probe",
+      "version": "0"
+     },
+     "capabilities": {
+      "codeAssistant": {
+       "chat": true,
+       "chatCapabilities": {
+        "askQuestion": true
+       },
+       "editor": {
+        "diagnostics": true
+       }
+      }
+     },
+     "initializationOptions": {},
+     "workspaceFolders": [
+      {
+       "uri": "file:///tmp/fleet-probe-ws-2kjpl1di",
+       "name": "fleet-probe-ws-2kjpl1di"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "t": 0.0235,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+     "chatWelcomeMessage": "<redacted>"
+    }
+   }
+  },
+  {
+   "t": 0.0503,
+   "dir": "->",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "initialized"
+   }
+  },
+  {
+   "t": 0.0589,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "start",
+     "taskId": "models",
+     "title": "Syncing models"
+    }
+   }
+  },
+  {
+   "t": 0.0589,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "start",
+     "taskId": "plugins",
+     "title": "Resolving plugins"
+    }
+   }
+  },
+  {
+   "t": 0.059,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "start",
+     "taskId": "cleanup",
+     "title": "Cleaning up"
+    }
+   }
+  },
+  {
+   "t": 0.059,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "finish",
+     "taskId": "plugins",
+     "title": "Resolving plugins"
+    }
+   }
+  },
+  {
+   "t": 0.0591,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "finish",
+     "taskId": "cleanup",
+     "title": "Cleaning up"
+    }
+   }
+  },
+  {
+   "t": 0.0661,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "config/updated",
+    "params": {
+     "<redacted>": "keys=agents,behaviors,defaultAgent,defaultBehavior,defaultModel,models,selectAgent,selectBehavior,selectModel,selectVariant,variants,welcomeMessage"
+    }
+   }
+  },
+  {
+   "t": 0.0661,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "start",
+     "taskId": "mcp-servers",
+     "title": "Initializing MCP servers"
+    }
+   }
+  },
+  {
+   "t": 0.1001,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "tool/serverUpdated",
+    "params": {
+     "<redacted>": "keys=name,status,tools,type"
+    }
+   }
+  },
+  {
+   "t": 0.1002,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "finish",
+     "taskId": "mcp-servers",
+     "title": "Initializing MCP servers"
+    }
+   }
+  },
+  {
+   "t": 5.8497,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "config/updated",
+    "params": {
+     "<redacted>": "keys=defaultModel,models,selectModel,variants"
+    }
+   }
+  },
+  {
+   "t": 5.8497,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "finish",
+     "taskId": "models",
+     "title": "Syncing models"
+    }
+   }
+  },
+  {
+   "t": 5.9569,
+   "dir": "->",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "chat/prompt",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "contexts": [],
+     "model": "openai/gpt-5.6-sol",
+     "agent": "agent",
+     "message": "Use your ask-user question tool to ask me 'red or blue?' with options red and blue. Do nothing else.",
+     "request-id": 1
+    }
+   }
+  },
+  {
+   "t": 5.9577,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/opened",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec"
+    }
+   }
+  },
+  {
+   "t": 5.9578,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "user",
+     "content": {
+      "type": "text",
+      "contentId": "620bb3b5-e971-46ee-84b0-5cac0ca798ee",
+      "text": "Use your ask-user question tool to ask me 'red or blue?' with options red and blue. Do nothing else.\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 5.958,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "system",
+     "content": {
+      "type": "progress",
+      "state": "running",
+      "text": "Loading config"
+     }
+    }
+   }
+  },
+  {
+   "t": 6.0047,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/statusChanged",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "status": "running"
+    }
+   }
+  },
+  {
+   "t": 6.0339,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "system",
+     "content": {
+      "type": "progress",
+      "state": "running",
+      "text": "Waiting model"
+     }
+    }
+   }
+  },
+  {
+   "t": 6.0341,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "model": "openai/gpt-5.6-sol",
+     "status": "prompting"
+    }
+   }
+  },
+  {
+   "t": 7.0028,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "system",
+     "content": {
+      "type": "progress",
+      "state": "running",
+      "text": "Generating"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.0032,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallPrepare",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "argumentsText": "",
+      "summary": "Preparing question"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.0037,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallPrepare",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "argumentsText": "{\"",
+      "summary": "Preparing question"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.0309,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallPrepare",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "argumentsText": "question",
+      "summary": "Preparing question"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.0878,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallPrepare",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "argumentsText": "\":\"",
+      "summary": "Preparing question"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.0958,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallPrepare",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "argumentsText": "Red",
+      "summary": "Preparing question"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.108,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallPrepare",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "argumentsText": " or",
+      "summary": "Preparing question"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.1172,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallPrepare",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "argumentsText": " blue",
+      "summary": "Preparing question"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.118,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallPrepare",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "argumentsText": "?",
+      "summary": "Preparing question"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.1228,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallPrepare",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "argumentsText": "\",\"",
+      "summary": "Preparing question"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.1263,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallPrepare",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "argumentsText": "options",
+      "summary": "Preparing question"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.1269,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallPrepare",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "argumentsText": "\":[",
+      "summary": "Preparing question"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.1484,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallPrepare",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "argumentsText": "{\"",
+      "summary": "Preparing question"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.1488,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallPrepare",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "argumentsText": "label",
+      "summary": "Preparing question"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.1613,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallPrepare",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "argumentsText": "\":\"",
+      "summary": "Preparing question"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.1945,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "system",
+     "content": {
+      "type": "metadata",
+      "title": "Choosing red or blue"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.1991,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallPrepare",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "argumentsText": "Red",
+      "summary": "Preparing question"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.2072,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallPrepare",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "argumentsText": "\"},{\"",
+      "summary": "Preparing question"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.2131,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallPrepare",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "argumentsText": "label",
+      "summary": "Preparing question"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.2308,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallPrepare",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "argumentsText": "\":\"",
+      "summary": "Preparing question"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.236,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallPrepare",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "argumentsText": "Blue",
+      "summary": "Preparing question"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.2386,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallPrepare",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "argumentsText": "\"}",
+      "summary": "Preparing question"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.2429,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallPrepare",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "argumentsText": "],\"",
+      "summary": "Preparing question"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.2728,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallPrepare",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "argumentsText": "allow",
+      "summary": "Preparing question"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.273,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallPrepare",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "argumentsText": "Free",
+      "summary": "Preparing question"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.2937,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallPrepare",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "argumentsText": "form",
+      "summary": "Preparing question"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.3327,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallPrepare",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "argumentsText": "\":",
+      "summary": "Preparing question"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.3452,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallPrepare",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "argumentsText": "false",
+      "summary": "Preparing question"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.3628,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallPrepare",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "argumentsText": "}",
+      "summary": "Preparing question"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.4645,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "system",
+     "content": {
+      "type": "usage",
+      "sessionTokens": 10335,
+      "limit": {
+       "context": 1050000,
+       "output": 128000
+      },
+      "lastMessageCost": "0.04",
+      "sessionCost": "0.04",
+      "contextBreakdown": {
+       "categories": [
+        {
+         "name": "System prompt",
+         "tokens": 1054,
+         "color": "#61afef",
+         "emoji": "\ud83d\udfe6"
+        },
+        {
+         "name": "Rules",
+         "tokens": 523,
+         "color": "#c678dd",
+         "emoji": "\ud83d\udfea"
+        },
+        {
+         "name": "Skills",
+         "tokens": 687,
+         "color": "#e5c07b",
+         "emoji": "\ud83d\udfe8"
+        },
+        {
+         "name": "Tool definitions",
+         "tokens": 8024,
+         "color": "#e8924a",
+         "emoji": "\ud83d\udfe7"
+        },
+        {
+         "name": "Conversation",
+         "tokens": 48,
+         "color": "#98c379",
+         "emoji": "\ud83d\udfe9"
+        }
+       ],
+       "usedTokens": 10335,
+       "freeColor": "#5c6370",
+       "freeEmoji": "\u2b1c",
+       "freeTokens": 1039665,
+       "contextLimit": 1050000
+      },
+      "autoCompactPercentage": 75
+     }
+    }
+   }
+  },
+  {
+   "t": 7.515,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallRun",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "arguments": {
+       "question": "Red or blue?",
+       "options": [
+        {
+         "label": "Red"
+        },
+        {
+         "label": "Blue"
+        }
+       ],
+       "allowFreeform": false
+      },
+      "manualApproval": false,
+      "summary": "Q: Red or blue?"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.515,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "type": "toolCallRunning",
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "name": "ask_user",
+      "server": "eca",
+      "origin": "native",
+      "arguments": {
+       "question": "Red or blue?",
+       "options": [
+        {
+         "label": "Red"
+        },
+        {
+         "label": "Blue"
+        }
+       ],
+       "allowFreeform": false
+      },
+      "summary": "Q: Red or blue?"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.5151,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "system",
+     "content": {
+      "type": "progress",
+      "state": "running",
+      "text": "Calling tool"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.569,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "system",
+     "content": {
+      "type": "progress",
+      "state": "running",
+      "text": "Waiting answer"
+     }
+    }
+   }
+  },
+  {
+   "t": 7.569,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/askQuestion",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "question": "Red or blue?",
+     "allowFreeform": false,
+     "requestId": "e3ebdf07-6644-40d1-b21e-f217f995f27b",
+     "options": [
+      {
+       "label": "Red"
+      },
+      {
+       "label": "Blue"
+      }
+     ],
+     "toolCallId": "call_vAMpHiRqGJeOMrBaGTN3laQa"
+    },
+    "id": 1
+   }
+  },
+  {
+   "t": 7.5691,
+   "dir": "->",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+     "answer": null,
+     "cancelled": true
+    }
+   }
+  },
+  {
+   "t": 7.5702,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "assistant",
+     "content": {
+      "totalTimeMs": 55,
+      "origin": "native",
+      "server": "eca",
+      "error": true,
+      "id": "call_vAMpHiRqGJeOMrBaGTN3laQa",
+      "summary": "Q: Red or blue?",
+      "name": "ask_user",
+      "outputs": [
+       {
+        "type": "text",
+        "text": "User cancelled the question."
+       }
+      ],
+      "type": "toolCalled",
+      "arguments": {
+       "question": "Red or blue?",
+       "options": [
+        {
+         "label": "Red"
+        },
+        {
+         "label": "Blue"
+        }
+       ],
+       "allowFreeform": false
+      }
+     }
+    }
+   }
+  },
+  {
+   "t": 7.571,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "system",
+     "content": {
+      "type": "progress",
+      "state": "running",
+      "text": "Generating"
+     }
+    }
+   }
+  },
+  {
+   "t": 9.1807,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "system",
+     "content": {
+      "type": "usage",
+      "sessionTokens": 10358,
+      "limit": {
+       "context": 1050000,
+       "output": 128000
+      },
+      "lastMessageCost": "0.00",
+      "sessionCost": "0.05",
+      "contextBreakdown": {
+       "categories": [
+        {
+         "name": "System prompt",
+         "tokens": 1024,
+         "color": "#61afef",
+         "emoji": "\ud83d\udfe6"
+        },
+        {
+         "name": "Rules",
+         "tokens": 508,
+         "color": "#c678dd",
+         "emoji": "\ud83d\udfea"
+        },
+        {
+         "name": "Skills",
+         "tokens": 667,
+         "color": "#e5c07b",
+         "emoji": "\ud83d\udfe8"
+        },
+        {
+         "name": "Tool definitions",
+         "tokens": 7800,
+         "color": "#e8924a",
+         "emoji": "\ud83d\udfe7"
+        },
+        {
+         "name": "Tool calls",
+         "tokens": 312,
+         "color": "#e06c75",
+         "emoji": "\ud83d\udfe5"
+        },
+        {
+         "name": "Conversation",
+         "tokens": 46,
+         "color": "#98c379",
+         "emoji": "\ud83d\udfe9"
+        }
+       ],
+       "usedTokens": 10358,
+       "freeColor": "#5c6370",
+       "freeEmoji": "\u2b1c",
+       "freeTokens": 1039642,
+       "contextLimit": 1050000
+      },
+      "autoCompactPercentage": 75
+     }
+    }
+   }
+  },
+  {
+   "t": 9.1807,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/statusChanged",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "status": "idle"
+    }
+   }
+  },
+  {
+   "t": 9.1807,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "7a86e0fd-fdde-4dda-a68d-a3cfae9bd1ec",
+     "role": "system",
+     "content": {
+      "type": "progress",
+      "state": "finished"
+     }
+    }
+   }
+  },
+  {
+   "t": 50.9571,
+   "dir": "->",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "method": "shutdown",
+    "params": null
+   }
+  },
+  {
+   "t": 50.9588,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "result": null
+   }
+  },
+  {
+   "t": 51.4573,
+   "dir": "->",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "exit"
+   }
+  }
+ ],
+ "provenance": {
+  "eca_server": "eca 0.158.1",
+  "eca_emacs_package": "20260529.1500 (rev f700be30f1e5)",
+  "recorded": "2026-09-08",
+  "tool": "tests/fixtures/eca/probe.py"
+ }
+}

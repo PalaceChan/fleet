@@ -1,0 +1,380 @@
+{
+ "eca_version": "eca 0.158.1",
+ "mode": "badmodel",
+ "root": "/tmp/fleet-probe-ws-ucyfunwo",
+ "cache": "/tmp/fleet-probe-cache-zdvl1cqe",
+ "exit": 0,
+ "log": [
+  {
+   "t": 0.0002,
+   "dir": "->",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+     "processId": 50174,
+     "clientInfo": {
+      "name": "fleet-probe",
+      "version": "0"
+     },
+     "capabilities": {
+      "codeAssistant": {
+       "chat": true,
+       "chatCapabilities": {
+        "askQuestion": true
+       },
+       "editor": {
+        "diagnostics": true
+       }
+      }
+     },
+     "initializationOptions": {},
+     "workspaceFolders": [
+      {
+       "uri": "file:///tmp/fleet-probe-ws-ucyfunwo",
+       "name": "fleet-probe-ws-ucyfunwo"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "t": 0.0224,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+     "chatWelcomeMessage": "<redacted>"
+    }
+   }
+  },
+  {
+   "t": 0.0504,
+   "dir": "->",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "initialized"
+   }
+  },
+  {
+   "t": 0.0592,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "start",
+     "taskId": "models",
+     "title": "Syncing models"
+    }
+   }
+  },
+  {
+   "t": 0.0592,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "start",
+     "taskId": "plugins",
+     "title": "Resolving plugins"
+    }
+   }
+  },
+  {
+   "t": 0.0593,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "start",
+     "taskId": "cleanup",
+     "title": "Cleaning up"
+    }
+   }
+  },
+  {
+   "t": 0.0594,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "finish",
+     "taskId": "plugins",
+     "title": "Resolving plugins"
+    }
+   }
+  },
+  {
+   "t": 0.0594,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "finish",
+     "taskId": "cleanup",
+     "title": "Cleaning up"
+    }
+   }
+  },
+  {
+   "t": 0.0669,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "config/updated",
+    "params": {
+     "<redacted>": "keys=agents,behaviors,defaultAgent,defaultBehavior,defaultModel,models,selectAgent,selectBehavior,selectModel,selectVariant,variants,welcomeMessage"
+    }
+   }
+  },
+  {
+   "t": 0.0669,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "start",
+     "taskId": "mcp-servers",
+     "title": "Initializing MCP servers"
+    }
+   }
+  },
+  {
+   "t": 0.1016,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "tool/serverUpdated",
+    "params": {
+     "<redacted>": "keys=name,status,tools,type"
+    }
+   }
+  },
+  {
+   "t": 0.1016,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "finish",
+     "taskId": "mcp-servers",
+     "title": "Initializing MCP servers"
+    }
+   }
+  },
+  {
+   "t": 5.8451,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "config/updated",
+    "params": {
+     "<redacted>": "keys=defaultModel,models,selectModel,variants"
+    }
+   }
+  },
+  {
+   "t": 5.8452,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "$/progress",
+    "params": {
+     "type": "finish",
+     "taskId": "models",
+     "title": "Syncing models"
+    }
+   }
+  },
+  {
+   "t": 5.957,
+   "dir": "->",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "chat/prompt",
+    "params": {
+     "chatId": "598d3d51-5293-47dd-af4b-7751b58a31f9",
+     "contexts": [],
+     "model": "nonexistent/does-not-exist",
+     "agent": "agent",
+     "message": "hi",
+     "request-id": 1
+    }
+   }
+  },
+  {
+   "t": 5.9574,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/opened",
+    "params": {
+     "chatId": "598d3d51-5293-47dd-af4b-7751b58a31f9"
+    }
+   }
+  },
+  {
+   "t": 5.9575,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "598d3d51-5293-47dd-af4b-7751b58a31f9",
+     "role": "user",
+     "content": {
+      "type": "text",
+      "contentId": "193c454f-5b68-438e-880c-a2257bc9a0a6",
+      "text": "hi\n"
+     }
+    }
+   }
+  },
+  {
+   "t": 5.9576,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "598d3d51-5293-47dd-af4b-7751b58a31f9",
+     "role": "system",
+     "content": {
+      "type": "progress",
+      "state": "running",
+      "text": "Loading config"
+     }
+    }
+   }
+  },
+  {
+   "t": 6.0005,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/statusChanged",
+    "params": {
+     "chatId": "598d3d51-5293-47dd-af4b-7751b58a31f9",
+     "status": "running"
+    }
+   }
+  },
+  {
+   "t": 6.0293,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "598d3d51-5293-47dd-af4b-7751b58a31f9",
+     "role": "system",
+     "content": {
+      "type": "progress",
+      "state": "running",
+      "text": "Waiting model"
+     }
+    }
+   }
+  },
+  {
+   "t": 6.0295,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+     "chatId": "598d3d51-5293-47dd-af4b-7751b58a31f9",
+     "model": "nonexistent/does-not-exist",
+     "status": "prompting"
+    }
+   }
+  },
+  {
+   "t": 6.0305,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "598d3d51-5293-47dd-af4b-7751b58a31f9",
+     "role": "system",
+     "content": {
+      "type": "text",
+      "text": "\n\nError: API url not found.\nMake sure you have provider 'nonexistent' configured properly."
+     }
+    }
+   }
+  },
+  {
+   "t": 6.031,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/statusChanged",
+    "params": {
+     "chatId": "598d3d51-5293-47dd-af4b-7751b58a31f9",
+     "status": "idle"
+    }
+   }
+  },
+  {
+   "t": 6.0311,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "chat/contentReceived",
+    "params": {
+     "chatId": "598d3d51-5293-47dd-af4b-7751b58a31f9",
+     "role": "system",
+     "content": {
+      "type": "progress",
+      "state": "finished"
+     }
+    }
+   }
+  },
+  {
+   "t": 11.9572,
+   "dir": "->",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "method": "shutdown",
+    "params": null
+   }
+  },
+  {
+   "t": 11.9669,
+   "dir": "<-",
+   "msg": {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "result": null
+   }
+  },
+  {
+   "t": 12.4575,
+   "dir": "->",
+   "msg": {
+    "jsonrpc": "2.0",
+    "method": "exit"
+   }
+  }
+ ],
+ "provenance": {
+  "eca_server": "eca 0.158.1",
+  "eca_emacs_package": "20260529.1500 (rev f700be30f1e5)",
+  "recorded": "2026-09-08",
+  "tool": "tests/fixtures/eca/probe.py"
+ }
+}

@@ -1,0 +1,23 @@
+# Byte-compiled Emacs Lisp
+*.elc
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+# Local scratch and test roots (tests create temp roots elsewhere; belt and braces)
+/.test-root/
+/.worktrees/
+# Never commit runtime state, credentials, transcripts, or databases
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+transcript.jsonl
+stderr.log
+launch.json
+credentials/
+owner.lock
+owner.json
+# Editor droppings
+*~
+\#*\#
+.\#*
