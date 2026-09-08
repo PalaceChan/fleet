@@ -275,9 +275,12 @@ Reseeds from system entropy so consecutive ids never repeat."
                       (fleet-paths-short-id task-id))))
     (fleet-paths-join-managed (fleet-paths-worktree-root) stem)))
 
+(defconst fleet-paths--source-file (or load-file-name buffer-file-name)
+  "This file's location, captured while fleet-paths itself loads.")
+
 (defun fleet-paths-source-root ()
   "Fleet's own repository root (parent of lisp/)."
-  (let ((here (or load-file-name (locate-library "fleet-paths") buffer-file-name)))
+  (let ((here (or fleet-paths--source-file (locate-library "fleet-paths"))))
     (fleet-paths-canonical (expand-file-name ".." (file-name-directory here)))))
 
 (defun fleet-paths-bridge-executable ()
