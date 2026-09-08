@@ -252,6 +252,7 @@ Fleet owns neither directory nor branch.  Refuses the primary checkout."
 BRANCH is the recorded task branch; REMOTE/TARGET describe the delivery target
 \(TARGET is a ref such as \"main\"); BASE-OID the recorded base; TASK-ID names
 the retention ref.  The result contains raw facts plus derived verdicts."
+  (ignore repo) ; the workspace itself answers every question; REPO is accepted for call symmetry
   (fleet-git-repo-identity
    workspace
    (lambda (id)
@@ -283,7 +284,9 @@ the retention ref.  The result contains raw facts plus derived verdicts."
                workspace a id tip target-oid remote target base-oid retention ls callback)))))))))
 
 (defun fleet-git--evidence-stage2 (workspace a id tip target-oid remote target base-oid retention ls callback)
-  "Second evidence stage needing TARGET-OID: ancestry, merge-base, patch ids."
+  "Second evidence stage needing TARGET-OID: ancestry, merge-base, patch ids.
+WORKSPACE, A (stage-1 facts), ID, TIP, REMOTE, TARGET, BASE-OID, RETENTION
+and LS are threaded through to the final judgement handed to CALLBACK."
   (fleet-git-batch
    workspace
    (append

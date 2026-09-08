@@ -13,7 +13,7 @@ ROOT       := $(CURDIR)
 # The installed ECA package (and its dependencies) are activated through
 # package.el so exactly the user's current versions are used.
 LOADPATH   := -L $(ROOT)/lisp -L $(ROOT)/tests \
-  --eval '(progn (require (quote package)) (package-initialize))'
+  --eval '(progn (require (quote package)) (package-initialize) (package-activate (quote eca)))'
 
 .PHONY: help compile clean test test-el test-py test-native server-start server-stop lint
 
