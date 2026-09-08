@@ -24,7 +24,8 @@
 ;;;; Runner
 
 (defun fleet-git-run (dir args callback)
-  "Run git ARGS in DIR asynchronously; CALLBACK gets (:exit N :stdout S :stderr S :args ARGS)."
+  "Run git ARGS in DIR asynchronously.
+CALLBACK gets (:exit N :stdout S :stderr S :args ARGS)."
   (let* ((out (generate-new-buffer " *fleet-git-out*" t))
          (err (generate-new-buffer " *fleet-git-err*" t))
          (default-directory (file-name-as-directory (or dir default-directory))))
@@ -49,7 +50,8 @@
 (defun fleet-git-out (r) "Trimmed stdout of R." (string-trim (or (plist-get r :stdout) "")))
 
 (defun fleet-git-batch (dir specs callback)
-  "Run SPECS ((KEY . ARGS)...) sequentially in DIR; CALLBACK gets alist (KEY . RESULT).
+  "Run SPECS ((KEY . ARGS)...) sequentially in DIR.
+CALLBACK gets alist (KEY . RESULT).
 Never stops early: every fact is collected for a single evidence pass."
   (let ((results nil))
     (cl-labels ((next (rest)
@@ -95,7 +97,8 @@ Keys: :common-dir :toplevel :git-dir :head :branch (nil when detached)
                         :worktrees wts)))))))
 
 (defun fleet-git-parse-worktree-list (text)
-  "Parse `git worktree list --porcelain' TEXT into plists (:path :head :branch :bare :detached :locked)."
+  "Parse `git worktree list --porcelain' TEXT into plists.
+Each plist has keys (:path :head :branch :bare :detached :locked)."
   (let (entries current)
     (dolist (line (split-string (or text "") "\n"))
       (cond
@@ -176,7 +179,8 @@ Refuses if BRANCH already exists or PATH exists.  CALLBACK gets a plist with
                                           (fleet-git-repo-identity path (lambda (id) (funcall callback (list :ok t :identity id)))))))))))))
 
 (cl-defun fleet-git-adopt-branch (&key repo path branch callback)
-  "Check out existing BRANCH (local or remote-tracking) into a new Fleet-owned worktree at PATH.
+  "Check out existing BRANCH into a new Fleet-owned worktree at PATH.
+BRANCH may be local or remote-tracking.
 The branch remains adopted (never deleted).  Refuses when Git says the branch
 is already checked out elsewhere."
   (fleet-git-repo-identity
@@ -230,7 +234,8 @@ Fleet owns neither directory nor branch.  Refuses the primary checkout."
 ;;;; Status
 
 (defun fleet-git-parse-status-z (text)
-  "Parse `status --porcelain=v1 -z' TEXT into (:tracked N :untracked N :ignored N :entries LIST)."
+  "Parse `status --porcelain=v1 -z' TEXT into a plist.
+The result has the form (:tracked N :untracked N :ignored N :entries LIST)."
   (let ((fields (split-string (or text "") "\0" t)) entries tracked untracked ignored)
     (while fields
       (let* ((f (pop fields)) (code (substring f 0 (min 2 (length f)))) (path (and (> (length f) 3) (substring f 3))))
@@ -248,7 +253,8 @@ Fleet owns neither directory nor branch.  Refuses the primary checkout."
 ;;;; Evidence collection (design §11.2)
 
 (cl-defun fleet-git-collect-evidence (&key workspace repo branch remote target base-oid task-id callback)
-  "Collect a single evidence pass for WORKSPACE of REPO and hand a plist to CALLBACK.
+  "Collect a single evidence pass for WORKSPACE of REPO.
+The resulting plist is handed to CALLBACK.
 BRANCH is the recorded task branch; REMOTE/TARGET describe the delivery target
 \(TARGET is a ref such as \"main\"); BASE-OID the recorded base; TASK-ID names
 the retention ref.  The result contains raw facts plus derived verdicts."
@@ -336,7 +342,8 @@ and LS are threaded through to the final judgement handed to CALLBACK."
                         :collected-at (fleet-paths-now)))))))))
 
 (defun fleet-git--patch-ids (workspace target-commits cumulative-diff callback)
-  "Compute stable patch ids for TARGET-COMMITS and CUMULATIVE-DIFF text; CALLBACK gets (IDS . CUMULATIVE-ID)."
+  "Compute stable patch ids for TARGET-COMMITS and CUMULATIVE-DIFF text.
+CALLBACK gets (IDS . CUMULATIVE-ID)."
   (let ((ids nil))
     (cl-labels
         ((finish ()
@@ -424,7 +431,8 @@ and LS are threaded through to the final judgement handed to CALLBACK."
 
 (cl-defun fleet-git-removal-decision (&key ev workspace-ownership branch-ownership delivery-mode verified)
   "Decide cleanup from judged evidence EV and task facts (design §11.3 table).
-Returns (:remove-worktree BOOL :delete-branch BOOL :retain-required BOOL :refusals LIST :reasons LIST)."
+Returns (:remove-worktree BOOL :delete-branch BOOL :retain-required BOOL
+:refusals LIST :reasons LIST)."
   (let* ((refusals nil) (reasons nil)
          (owned-wt (equal workspace-ownership "fleet"))
          (owned-branch (equal branch-ownership "fleet"))
@@ -468,7 +476,8 @@ Returns (:remove-worktree BOOL :delete-branch BOOL :retain-required BOOL :refusa
 ;;;; Retention and removal
 
 (defun fleet-git-retain (repo task-id oid callback)
-  "Create/verify refs/fleet/retained/TASK-ID at OID with CAS semantics; CALLBACK gets (:ok :ref :oid) or error."
+  "Create/verify refs/fleet/retained/TASK-ID at OID with CAS semantics.
+CALLBACK gets (:ok :ref :oid) or error."
   (let ((ref (format "refs/fleet/retained/%s" task-id)))
     (fleet-git-run repo (list "rev-parse" "--verify" "-q" ref)
                    (lambda (r)

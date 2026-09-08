@@ -260,7 +260,8 @@ Nested use joins the outer transaction.  Any error rolls back everything."
   (fleet-store-scalar store (format "SELECT entity_revision FROM %s WHERE id = ?" table) id))
 
 (defun fleet-store-check-revision (store table id expected)
-  "Signal `revision-mismatch' unless TABLE row ID has entity_revision EXPECTED (when non-nil)."
+  "Signal `revision-mismatch' unless TABLE row ID has entity_revision EXPECTED.
+The check is skipped when EXPECTED is nil."
   (when expected
     (let ((actual (fleet-store-scalar store (format "SELECT entity_revision FROM %s WHERE id = ?" table) id)))
       (unless (eql actual expected)
@@ -286,7 +287,8 @@ Returns the event id.  Must run inside a transaction with the fact update."
     id))
 
 (defun fleet-store-pending-receipts (store fleet-id &optional states limit)
-  "Receipts for FLEET-ID in STATES (default pending) joined with their events, oldest first."
+  "Receipts for FLEET-ID in STATES (default pending) joined with their events.
+Oldest first."
   (let ((states (or states '("pending"))))
     (apply #'fleet-store-query store
            (format "SELECT r.id AS receipt_id, r.state, r.batch_id, r.runtime_id AS receipt_runtime_id, r.outcome,

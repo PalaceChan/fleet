@@ -41,8 +41,14 @@
                 (should (equal (plist-get rt :lifecycle) "ready"))
                 ;; the boot turn runs to completion on the real model
                 (should (fleet-test-wait-for (lambda () (equal (plist-get (fleet-store-get store "runtimes" (plist-get rt :id)) :turn-state) "idle")) 240))
-                ;; the commander reached Fleet through the MCP bridge with its scoped credential
-                (should (cl-some (lambda (e) (equal (cdr e) "commander")) fleet-rpc-request-log))
+                ;; The bridge authenticated with the commander credential and fetched the
+                ;; commander's tool list over the socket (deterministic).  Whether the model
+                ;; then chose to call a tool during its boot turn is its decision, so it is
+                ;; only reported.
+                (should (member (cons "tools_list" "commander") fleet-rpc-request-log))
+                (let ((conn (fleet-eca-conn (plist-get rt :id))))
+                  (should (member "fleet_events_pending"
+                                  (plist-get (cdr (assoc "fleet" (fleet-eca-conn-tool-servers conn))) :tools))))
                 (message "native smoke: rpc requests %S" (mapcar #'car fleet-rpc-request-log))
                 ;; the unit exists and is accounted for
                 (let (insp)

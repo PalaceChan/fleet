@@ -24,7 +24,9 @@
 
 (defvar fleet-rpc--server nil "Listening process, or nil.")
 (defvar fleet-rpc--tools nil "Parsed schema/tools-v1.json.")
-(defvar fleet-rpc-request-log nil "Recent (OPERATION . ACTOR-ROLE) requests, newest first, bounded; diagnostics only.")
+(defvar fleet-rpc-request-log nil
+  "Recent (OPERATION . ACTOR-ROLE) requests, newest first, bounded.
+Diagnostics only.")
 
 ;;;; Tool schema
 
@@ -122,12 +124,14 @@
 ;;;; Dispatch
 
 (defun fleet-rpc-dispatch (operation credential idempotency-key params)
-  "Run OPERATION for CREDENTIAL with IDEMPOTENCY-KEY and PARAMS; return a result plist."
+  "Run OPERATION for CREDENTIAL with IDEMPOTENCY-KEY and PARAMS.
+Return a result plist."
   (let ((store (fleet-supervisor-store)))
     (pcase operation
       ("ping" (list :ok t :owner (and (fleet-supervisor-owner-p) t)))
       ("tools_list"
        (let ((actor (fleet-rpc-authenticate store credential)))
+         (push (cons "tools_list" (plist-get actor :role)) fleet-rpc-request-log)
          (list :tools (vconcat (mapcar (lambda (tool) (list :name (plist-get tool :name) :description (plist-get tool :description) :inputSchema (plist-get tool :inputSchema)))
                                        (fleet-rpc-tools-for-role (plist-get actor :role)))))))
       (_
@@ -151,7 +155,8 @@
              (fleet-rpc--run store actor operation key params))))))))
 
 (defun fleet-rpc--validate (params tool)
-  "Minimal structural validation of PARAMS against TOOL's inputSchema (required keys, types, enums)."
+  "Minimal structural validation of PARAMS against TOOL's inputSchema.
+Checks required keys, types and enums."
   (let* ((schema (plist-get tool :inputSchema))
          (props (plist-get schema :properties)))
     (dolist (req (append (plist-get schema :required) nil))

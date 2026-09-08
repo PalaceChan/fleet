@@ -72,7 +72,8 @@
               (equal (fleet-supervisor--proc-start-ticks pid) (plist-get desc :emacsStartTicks))))))
 
 (defun fleet-supervisor-acquire (callback)
-  "Try to acquire ownership of the data root; CALLBACK gets (:owner t) or (:owner nil :reason ...).
+  "Try to acquire ownership of the data root.
+CALLBACK gets (:owner t) or (:owner nil :reason ...).
 Runs the lease helper; never unlinks or renames the lock file."
   (let* ((lock (fleet-paths-owner-lock))
          (desc-file (fleet-paths-owner-descriptor))
@@ -128,7 +129,8 @@ Runs the lease helper; never unlinks or renames the lock file."
   (fleet-supervisor--changed))
 
 (defun fleet-supervisor-release ()
-  "Normal release: refuse while owned runtimes live; otherwise mark released and drop the lease."
+  "Normal release: refuse while owned runtimes live.
+Otherwise mark released and drop the lease."
   (when (fleet-supervisor-owner-p)
     (let ((live (fleet-store-scalar (fleet-supervisor-store) "SELECT COUNT(*) FROM runtimes WHERE lifecycle NOT IN ('stopped','never-launched')")))
       (when (> live 0)
@@ -144,7 +146,8 @@ Runs the lease helper; never unlinks or renames the lock file."
 ;;;; Start / stop
 
 (defun fleet-supervisor-start (callback)
-  "Open the store as owner (or read-only), install sinks, reconcile; CALLBACK gets a mode plist."
+  "Open the store as owner (or read-only), install sinks, reconcile.
+CALLBACK gets a mode plist."
   (if fleet-supervisor--store
       (funcall callback (list :mode (if fleet-supervisor--read-only 'read-only 'owner)))
     (fleet-supervisor-acquire
@@ -193,7 +196,8 @@ Runs the lease helper; never unlinks or renames the lock file."
 ;;;; Runtime observations from adapter events
 
 (defun fleet-supervisor-handle-event (ev)
-  "Sink for normalized adapter events EV: record observations, route lane and wakes."
+  "Sink for normalized adapter events EV.
+Records observations, routes lane and wakes."
   (let* ((store fleet-supervisor--store)
          (rid (plist-get ev :runtime-id))
          (rt (and store rid (fleet-store-get store "runtimes" rid))))
@@ -282,7 +286,8 @@ Runs the lease helper; never unlinks or renames the lock file."
       (fleet-store-update store "messages" mid (fleet-store-touch (list :state state :evidence (and evidence (fleet-store-json evidence))))))))
 
 (cl-defun fleet-supervisor-enqueue (store &key fleet-id task-id target-runtime-id origin text sender idempotency-key brief-revision)
-  "Durably queue TEXT for TARGET-RUNTIME-ID; return (:message-id ID :state STATE :replayed BOOL)."
+  "Durably queue TEXT for TARGET-RUNTIME-ID.
+Return (:message-id ID :state STATE :replayed BOOL)."
   (when (and idempotency-key (fleet-store-query1 store "SELECT id, state FROM messages WHERE sender = ? AND idempotency_key = ?" sender idempotency-key))
     (let ((m (fleet-store-query1 store "SELECT id, state FROM messages WHERE sender = ? AND idempotency_key = ?" sender idempotency-key)))
       (cl-return-from fleet-supervisor-enqueue (list :message-id (plist-get m :id) :state (plist-get m :state) :replayed t))))
@@ -311,7 +316,8 @@ Runs the lease helper; never unlinks or renames the lock file."
                              ORDER BY CASE origin WHEN 'human' THEN 0 WHEN 'boot' THEN 1 WHEN 'commander' THEN 2 ELSE 3 END, created_at ASC LIMIT 1" rid))
 
 (defun fleet-supervisor--dispatch-lane (store rid)
-  "Dispatch the next queued message for runtime RID if the lane is free and admission holds."
+  "Dispatch the next queued message for runtime RID.
+Only when the lane is free and admission holds."
   (when (fleet-supervisor-owner-p)
     (let* ((rt (fleet-store-get store "runtimes" rid))
            (conn (fleet-eca-conn rid)))
@@ -374,7 +380,8 @@ Runs the lease helper; never unlinks or renames the lock file."
                               (list :detail (fleet-eca--clip (format "%s · sent since:%s" (or (plist-get task :detail) "") (fleet-eca--clip (or (plist-get m :text) "") 40)) 300))))))))
 
 (defun fleet-supervisor--on-message-finished (store rt mid)
-  "Turn of message MID ended on RT; for wake messages check acknowledgment (one reminder, then hold)."
+  "Turn of message MID ended on RT.
+For wake messages check acknowledgment (one reminder, then hold)."
   (let ((m (fleet-store-get store "messages" mid)))
     (when (and m (member (plist-get m :origin) '("wake" "reminder")))
       (when-let* ((batch (fleet-store-query1 store "SELECT * FROM wake_batches WHERE message_id = ?" mid)))
@@ -430,7 +437,8 @@ Runs the lease helper; never unlinks or renames the lock file."
                fleet-supervisor--kick-timers))))
 
 (defun fleet-supervisor-wake-admission (store fleet-id)
-  "Return nil when a wake may be dispatched for FLEET-ID, else a symbol naming the blocker."
+  "Return nil when a wake may be dispatched for FLEET-ID.
+Otherwise return a symbol naming the blocker."
   (let* ((fleet (fleet-store-get store "fleets" fleet-id))
          (rid (plist-get fleet :commander-runtime-id))
          (rt (and rid (fleet-store-get store "runtimes" rid)))
@@ -451,7 +459,8 @@ Runs the lease helper; never unlinks or renames the lock file."
      (t nil))))
 
 (defun fleet-supervisor-admit-wake (store fleet-id)
-  "Claim pending receipts of FLEET-ID into one batch and queue a single wake message, if admitted.
+  "Claim pending receipts of FLEET-ID into one batch and queue a single wake.
+The wake message is queued only if admitted.
 Returns the message id or the blocker symbol."
   (let ((blocker (fleet-supervisor-wake-admission store fleet-id)))
     (if blocker
@@ -488,7 +497,8 @@ Returns the message id or the blocker symbol."
                      receipts "\n")))
 
 (cl-defun fleet-supervisor-ack (store &key fleet-id receipt-ids outcome actor)
-  "Acknowledge RECEIPT-IDS (event ids or receipt ids) of FLEET-ID with OUTCOME by ACTOR.  Returns counts."
+  "Acknowledge RECEIPT-IDS of FLEET-ID with OUTCOME by ACTOR.
+RECEIPT-IDS are event ids or receipt ids.  Returns counts."
   (let ((acked 0) (unknown nil) (now (fleet-paths-now)))
     (fleet-store-transaction store
       (dolist (id receipt-ids)
@@ -512,7 +522,8 @@ Returns the message id or the blocker symbol."
                                             (fleet-core-actor-commander fleet-id))))
 
 (defun fleet-supervisor-on-commander-replaced (store fleet-id old-runtime-id)
-  "Claims of OLD-RUNTIME-ID become needs-reconciliation with their evidence retained."
+  "Claims of OLD-RUNTIME-ID become needs-reconciliation.
+Their evidence is retained."
   (fleet-store-transaction store
     (fleet-store-exec store "UPDATE event_receipts SET state = 'needs-reconciliation', updated_at = ? WHERE fleet_id = ? AND runtime_id = ? AND state IN ('claimed','held-unknown')" (fleet-paths-now) fleet-id old-runtime-id)
     (fleet-store-exec store "UPDATE wake_batches SET state = 'needs-reconciliation', updated_at = ? WHERE fleet_id = ? AND runtime_id = ? AND state IN ('queued','delivered','held')" (fleet-paths-now) fleet-id old-runtime-id)
@@ -522,7 +533,8 @@ Returns the message id or the blocker symbol."
 ;;;; Human sends
 
 (defun fleet-supervisor--human-sink (conn envelope)
-  "Admit a human message typed into CONN's chat; return non-nil on durable admission."
+  "Admit a human message typed into CONN's chat.
+Return non-nil on durable admission."
   (let ((store (fleet-supervisor-store)))
     (unless (fleet-supervisor-owner-p) (fleet-fail 'owner-unproven "This Emacs does not own Fleet; message not sent"))
     (let ((r (fleet-supervisor-enqueue store :fleet-id (fleet-eca-conn-fleet-id conn) :task-id (fleet-eca-conn-task-id conn)
@@ -532,7 +544,8 @@ Returns the message id or the blocker symbol."
       (plist-get r :message-id))))
 
 (cl-defun fleet-supervisor-send (store &key fleet-id task-id runtime-id text sender idempotency-key)
-  "Queue TEXT for RUNTIME-ID from SENDER (dashboard `s' and fleet_message_send share this)."
+  "Queue TEXT for RUNTIME-ID from SENDER.
+Dashboard `s' and fleet_message_send share this."
   (let ((rt (or (fleet-store-get store "runtimes" runtime-id) (fleet-fail 'no-such-runtime "Unknown runtime" :runtime-id runtime-id))))
     (unless (equal (plist-get rt :lifecycle) "ready")
       (fleet-fail 'runtime-not-ready "Target runtime is not ready; it will not be restarted implicitly" :lifecycle (plist-get rt :lifecycle)))

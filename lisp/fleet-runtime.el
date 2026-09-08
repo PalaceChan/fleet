@@ -135,7 +135,8 @@ passed through untouched (`--pipe'); `--quiet' keeps systemd chatter off it."
                 (t 'unknown)))))))
 
 (defun fleet-runtime-inspect (unit recorded-cgroup callback)
-  "Query UNIT via systemctl and RECORDED-CGROUP population; CALLBACK gets an inspection plist.
+  "Query UNIT via systemctl and RECORDED-CGROUP population.
+CALLBACK gets an inspection plist.
 Keys: :query-ok :load-state :active-state :sub-state :main-pid :control-group
 :invocation-id :job :result :cgroup-populated :boot-id :raw :error."
   (fleet-runtime--run
@@ -191,7 +192,8 @@ Returns one of `launch-unresolved', `stop-unknown', `previous-boot',
 
 (defun fleet-runtime-stop (unit recorded-cgroup recorded-boot-id callback)
   "Stop UNIT and inspect until a terminal verdict or timeout.
-CALLBACK receives (:verdict SYMBOL :inspection PLIST :stop-exit N :stop-stderr S)."
+CALLBACK receives
+\(:verdict SYMBOL :inspection PLIST :stop-exit N :stop-stderr S)."
   (fleet-runtime--run
    (list fleet-runtime-systemctl "--user" "stop" "--no-block" unit)
    (lambda (stop)
@@ -204,7 +206,8 @@ CALLBACK receives (:verdict SYMBOL :inspection PLIST :stop-exit N :stop-stderr S
                                   :stop-stderr (plist-get stop :stderr)))))))))
 
 (defun fleet-runtime--observe-until-stopped (unit cgroup boot-id deadline callback)
-  "Poll UNIT/CGROUP with backoff until stopped/never-launched/previous-boot or DEADLINE."
+  "Poll UNIT/CGROUP with backoff until a terminal verdict or DEADLINE.
+Terminal verdicts are stopped, never-launched and previous-boot."
   (fleet-runtime-inspect
    unit cgroup
    (lambda (insp)

@@ -34,7 +34,8 @@ Every mutation/launch admission checks it; the supervisor installs it.")
   (plist-get fleet-core-owner :epoch))
 
 (defvar fleet-core-event-sink nil
-  "Function (EVENT) receiving normalized adapter events; installed by the supervisor.")
+  "Function (EVENT) receiving normalized adapter events.
+Installed by the supervisor.")
 
 (defun fleet-core--emit (event)
   "Forward EVENT to `fleet-core-event-sink' when installed."
@@ -224,7 +225,8 @@ then commits revision/hash in one transaction.  Returns the new revision."
       (fleet-core-operation-finish store op :state "done"))))
 
 (defun fleet-core-brief-runnable-p (store task)
-  "Non-nil when TASK's recorded brief revision exists on disk with the recorded hash."
+  "Non-nil when TASK's recorded brief revision exists on disk.
+The file must carry the recorded hash."
   (let* ((fleet (fleet-store-get store "fleets" (plist-get task :fleet-id)))
          (path (and (plist-get task :brief-path) (fleet-core-fleet-file fleet (plist-get task :brief-path)))))
     (and path (> (plist-get task :brief-revision) 0)
@@ -251,7 +253,8 @@ then commits revision/hash in one transaction.  Returns the new revision."
 
 (cl-defun fleet-core-retask (store task-id text &key expected-revision note actor)
   "Give TASK-ID new durable scope TEXT.  Requires no current live runtime.
-A done task requires non-empty TEXT; the result is a ready task at a new revision."
+A done task requires non-empty TEXT; the result is a ready task at a new
+revision."
   (let ((task (fleet-core-task store task-id)))
     (fleet-store-check-revision store "tasks" task-id expected-revision)
     (when-let* ((rt (and (plist-get task :current-runtime-id) (fleet-store-get store "runtimes" (plist-get task :current-runtime-id)))))
@@ -361,7 +364,8 @@ phases cannot revert; done requires registered artifacts.  Returns a plist."
     (list :ok t :task-id tid)))
 
 (cl-defun fleet-core-artifact-verify (store &key artifact-id actor criteria evidence accepted limitations)
-  "Record verification of ARTIFACT-ID by ACTOR (commander/human) bound to the current brief and file hash."
+  "Record verification of ARTIFACT-ID by ACTOR (commander/human).
+The verification is bound to the current brief and file hash."
   (let* ((art (or (fleet-store-get store "artifacts" artifact-id) (fleet-fail 'no-such-artifact "Unknown artifact" :id artifact-id)))
          (task (fleet-store-get store "tasks" (plist-get art :task-id)))
          (file (and (plist-get art :rel-path) (expand-file-name (plist-get art :rel-path) (fleet-core-task-dir store task))))
@@ -379,7 +383,8 @@ phases cannot revert; done requires registered artifacts.  Returns a plist."
     (list :ok t :verified (and accepted t) :hash hash)))
 
 (defun fleet-core-task-verified-p (store task)
-  "Non-nil when TASK is done and every artifact is verified at the current brief revision and hash."
+  "Non-nil when TASK is done and every artifact is verified.
+Verification must be at the current brief revision and hash."
   (and (equal (plist-get task :phase) "done")
        (let ((arts (fleet-store-query store "SELECT * FROM artifacts WHERE task_id = ?" (plist-get task :id))))
          (and arts
@@ -425,7 +430,8 @@ phases cannot revert; done requires registered artifacts.  Returns a plist."
     (list :ok t :job-id id)))
 
 (defun fleet-core-expire-waits (store)
-  "Emit one wait-deadline-expired event per paused task whose deadline passed; return count."
+  "Emit one wait-deadline-expired event per paused task whose deadline passed.
+Return the count of emitted events."
   (let ((now (fleet-paths-now)) (n 0))
     (dolist (task (fleet-store-query store "SELECT * FROM tasks WHERE phase = 'paused' AND wait_deadline IS NOT NULL AND wait_deadline <= ? AND lifecycle = 'active'" now))
       (fleet-store-transaction store
@@ -537,7 +543,8 @@ credential (design §5.3)."
          :disabledTools (vector "eca__spawn_agent"))))
 
 (cl-defun fleet-core-launch-runtime (store rt &key roots cwd callback)
-  "Launch runtime row RT as a systemd user service running native ECA; CALLBACK gets (:ok t :conn) or (:ok nil :error).
+  "Launch runtime row RT as a systemd user service running native ECA.
+CALLBACK gets (:ok t :conn) or (:ok nil :error).
 Records launch.json and the exact unit before calling systemd."
   (let* ((id (plist-get rt :id))
          (unit (plist-get rt :unit))
@@ -587,9 +594,11 @@ Records launch.json and the exact unit before calling systemd."
          (funcall callback r))))))
 
 (cl-defun fleet-core-stop-runtime (store runtime-id &key reason callback)
-  "Stop RUNTIME-ID's service with the full evidence sequence; CALLBACK gets (:verdict SYM :inspection PLIST).
-Persists stop intent, revokes the credential, requests graceful cancel, stops the exact unit,
-inspects until terminal, and commits the verdict.  Never marks stopped without proof."
+  "Stop RUNTIME-ID's service with the full evidence sequence.
+CALLBACK gets (:verdict SYM :inspection PLIST).
+Persists stop intent, revokes the credential, requests graceful cancel,
+stops the exact unit, inspects until terminal, and commits the verdict.
+Never marks stopped without proof."
   (let* ((rt (fleet-store-get store "runtimes" runtime-id))
          (conn (fleet-eca-conn runtime-id))
          (op (fleet-core-operation-begin store "runtime-stop" :fleet-id (plist-get rt :fleet-id) :task-id (plist-get rt :task-id)
@@ -710,7 +719,8 @@ CALLBACK, when given, receives the finished operation row."
         (list :operation-id op :task-id task-id)))))
 
 (defun fleet-core--task-start-workspace (store op task callback)
-  "Step: ensure the workspace exists for TASK (worktree creation/adoption), then launch."
+  "Step: ensure the workspace exists for TASK, then launch.
+The workspace is created or adopted as a worktree."
   (let ((tid (plist-get task :id)))
     (cl-flet* ((fail (code msg &rest ev)
                  (fleet-store-transaction store
@@ -757,7 +767,8 @@ CALLBACK, when given, receives the finished operation row."
            (proceed (fleet-paths-canonical dir))))))))
 
 (defun fleet-core--create-change-workspace (store task rid fail proceed)
-  "Resolve base/remote/branch for TASK against repository identity RID and create/adopt the worktree."
+  "Resolve base/remote/branch for TASK against repository identity RID.
+Then create or adopt the worktree."
   (let* ((tid (plist-get task :id)) (repo (plist-get task :repo-path))
          (fleet (fleet-store-get store "fleets" (plist-get task :fleet-id))))
     (fleet-git-remotes
@@ -797,7 +808,8 @@ CALLBACK, when given, receives the finished operation row."
                                                  :workspace-ownership ws-ownership :branch (or branch (plist-get wid :branch)) :branch-ownership br-ownership)))))
 
 (defun fleet-core--claim-workspace (store task path op)
-  "Take the exclusive canonical workspace claim for TASK at PATH, or signal `resource-claimed'."
+  "Take the exclusive canonical workspace claim for TASK at PATH.
+Signal `resource-claimed' when another task holds it."
   (fleet-store-transaction store
     (let ((existing (fleet-store-query1 store "SELECT * FROM resource_claims WHERE key = ?" path)))
       (cond
@@ -838,7 +850,8 @@ CALLBACK, when given, receives the finished operation row."
       (error (fleet-core--task-start-fail store op tid rt (error-message-string err) callback)))))
 
 (defun fleet-core--boot (store op conn text callback)
-  "Submit boot TEXT on CONN as a durable boot message; CALLBACK gets the outcome symbol."
+  "Submit boot TEXT on CONN as a durable boot message.
+CALLBACK gets the outcome symbol."
   (let ((mid (fleet-paths-uuid)) (now (fleet-paths-now)))
     (fleet-store-transaction store
       (fleet-store-insert store "messages"
@@ -875,7 +888,8 @@ finished operation always means the failure has settled."
 ;;;; Operation: commander start / stop / replace
 
 (cl-defun fleet-core-start-commander (store fleet-id &key recovery-summary callback)
-  "Launch a commander for FLEET-ID (no live predecessor allowed); return the operation id."
+  "Launch a commander for FLEET-ID (no live predecessor allowed).
+Return the operation id."
   (let ((fleet (fleet-core-fleet store fleet-id)))
     (when-let* ((rt (and (plist-get fleet :commander-runtime-id) (fleet-store-get store "runtimes" (plist-get fleet :commander-runtime-id)))))
       (unless (member (plist-get rt :lifecycle) '("stopped" "never-launched"))
@@ -910,7 +924,8 @@ finished operation always means the failure has settled."
       op)))
 
 (cl-defun fleet-core-stop-commander (store fleet-id &key callback)
-  "Stop FLEET-ID's commander with verified service evidence; operators are untouched."
+  "Stop FLEET-ID's commander with verified service evidence.
+Operators are untouched."
   (let* ((fleet (fleet-core-fleet store fleet-id))
          (rt-id (or (plist-get fleet :commander-runtime-id) (fleet-fail 'no-commander "Fleet has no commander runtime"))))
     (fleet-core-stop-runtime store rt-id :reason "commander stop"
@@ -923,7 +938,8 @@ finished operation always means the failure has settled."
 ;;;; Operation: fleet park
 
 (cl-defun fleet-core-park-fleet (store fleet-id &key callback)
-  "Park FLEET-ID: stop operators, retain commander and durable work.  Returns the operation id."
+  "Park FLEET-ID: stop operators, retain commander and durable work.
+Returns the operation id."
   (let ((fleet (fleet-core-fleet store fleet-id)))
     (unless (member (plist-get fleet :lifecycle) '("active" "parking"))
       (fleet-fail 'fleet-not-active "Fleet cannot be parked from this state" :lifecycle (plist-get fleet :lifecycle)))
@@ -937,7 +953,8 @@ finished operation always means the failure has settled."
       op)))
 
 (defun fleet-core--park-continue (store op fleet-id callback)
-  "Advance park OP: stop every live operator runtime, then wait for the launch barrier."
+  "Advance park OP: stop every live operator runtime.
+Then wait for the launch barrier."
   (let ((live (fleet-store-query store "SELECT * FROM runtimes WHERE fleet_id = ? AND role = 'operator' AND lifecycle IN ('launching','starting','ready','stopping','stop-unknown','lost')" fleet-id)))
     (fleet-core-operation-step store op "operators-stopping" (list :remaining (length live)))
     (if (null live)
@@ -983,7 +1000,8 @@ finished operation always means the failure has settled."
   (when callback (funcall callback (fleet-store-get store "operations" op))))
 
 (defun fleet-core-resume-fleet (store fleet-id)
-  "Mark a parked FLEET-ID active again (explicit human resume).  Operators start only on request."
+  "Mark a parked FLEET-ID active again (explicit human resume).
+Operators start only on request."
   (let ((fleet (fleet-core-fleet store fleet-id)))
     (unless (equal (plist-get fleet :lifecycle) "parked")
       (fleet-fail 'fleet-not-parked "Only a parked fleet can be resumed" :lifecycle (plist-get fleet :lifecycle)))
@@ -995,7 +1013,8 @@ finished operation always means the failure has settled."
 ;;;; Operation: task teardown (design §10.5)
 
 (cl-defun fleet-core-teardown-task (store task-id &key expected-revision actor action-id callback)
-  "Admit normal teardown of TASK-ID; returns (:operation-id ...).  No force/discard parameter exists."
+  "Admit normal teardown of TASK-ID; returns (:operation-id ...).
+No force/discard parameter exists."
   (fleet-store-with-action store (or actor fleet-core-actor-human) action-id (list :op "task-teardown" :task-id task-id :expected-revision expected-revision)
     (let* ((task (fleet-core-task store task-id)))
       (fleet-store-check-revision store "tasks" task-id expected-revision)
@@ -1012,7 +1031,8 @@ finished operation always means the failure has settled."
         (list :operation-id op :task-id task-id)))))
 
 (defun fleet-core--teardown-stop (store op task callback)
-  "Teardown step: prove the runtime stopped (waiting for an observed turn end first)."
+  "Teardown step: prove the runtime stopped.
+Waits for an observed turn end first."
   (let* ((rt-id (plist-get task :current-runtime-id))
          (rt (and rt-id (fleet-store-get store "runtimes" rt-id)))
          (conn (and rt-id (fleet-eca-conn rt-id))))
@@ -1039,7 +1059,8 @@ finished operation always means the failure has settled."
   (when callback (funcall callback (fleet-store-get store "operations" op))))
 
 (defun fleet-core--teardown-evidence (store op task callback)
-  "Teardown step: collect Git evidence (change tasks) and decide removals; non-change tasks archive directly."
+  "Teardown step: collect Git evidence (change tasks) and decide removals.
+Non-change tasks archive directly."
   (fleet-core-operation-step store op "runtime-stopped")
   (unless (fleet-core-task-verified-p store task)
     (fleet-core--teardown-refuse store op task "deliverables changed after verification" nil callback)
@@ -1068,7 +1089,8 @@ finished operation always means the failure has settled."
           (t (fleet-core--teardown-remove store op task ev decision callback))))))))
 
 (defun fleet-core--evidence-summary (ev)
-  "Serializable subset of Git evidence EV for the operation journal and refusal output."
+  "Serializable subset of Git evidence EV.
+Used for the operation journal and refusal output."
   (list :tip (plist-get ev :tip) :branch (plist-get ev :branch) :dirty (plist-get ev :dirty-p)
         :status (let ((s (plist-get ev :status))) (and s (list :tracked (plist-get s :tracked) :untracked (plist-get s :untracked) :ignored (plist-get s :ignored))))
         :remote-preserved (plist-get ev :remote-preserved) :target-oid (plist-get ev :target-oid)
@@ -1141,7 +1163,8 @@ finished operation always means the failure has settled."
       op)))
 
 (defun fleet-core--retire-rename (store op fleet-id callback)
-  "Retire step: archive-rename the artifact tree then commit archived in one transaction."
+  "Retire step: archive-rename the artifact tree then commit archived.
+Both happen in one transaction."
   (let* ((intent (fleet-store-unjson (plist-get (fleet-store-get store "operations" op) :intent)))
          (old (plist-get intent :old-root)) (new (plist-get intent :new-root)))
     (fleet-core-operation-step store op "renaming")
@@ -1163,7 +1186,8 @@ finished operation always means the failure has settled."
 ;;;; Recovery after restart (design §6.4)
 
 (defun fleet-core-reconcile-runtimes (store callback)
-  "Reconcile every nonterminal runtime against its exact unit after an Emacs restart.
+  "Reconcile every nonterminal runtime against its exact unit.
+Runs after an Emacs restart.
 Stops surviving services, records evidence, marks affected tasks suspended.
 CALLBACK gets a summary plist when done."
   (let* ((rows (fleet-store-query store "SELECT * FROM runtimes WHERE lifecycle NOT IN ('stopped','never-launched')"))

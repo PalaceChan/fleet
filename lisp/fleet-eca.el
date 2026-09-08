@@ -335,7 +335,8 @@ CALLBACK gets (:ok t :conn CONN) after verified initialization, or
          (when orig (funcall orig p event)))))))
 
 (defun fleet-eca--initialize (conn model agent variant callback)
-  "Send initialize for CONN mirroring the frontend's own request; then register the chat."
+  "Send initialize for CONN mirroring the frontend's own request.
+Then register the chat."
   (let ((session (fleet-eca-conn-session conn)))
     (setf (eca--session-status session) 'starting)
     (eca-api-request-async
@@ -434,8 +435,10 @@ Mirrors the buffer-setup half of `eca-chat-open' without its display half."
 
 (cl-defun fleet-eca-submit (conn &key message-id text contexts callback)
   "Submit TEXT as the single in-flight turn of CONN.
-CALLBACK is invoked once with (:outcome accepted|rejected|delivery-unknown|observed-unacknowledged
-:message-id ID :evidence PLIST).  Terminal turn events reach the sink separately."
+CALLBACK is invoked once with
+\(:outcome accepted|rejected|delivery-unknown|observed-unacknowledged
+:message-id ID :evidence PLIST).  Terminal turn events reach the sink
+separately."
   (cond
    ((not (eq (fleet-eca-conn-state conn) 'ready))
     (funcall callback (list :outcome 'rejected :message-id message-id :code 'connection-not-ready
@@ -545,7 +548,8 @@ CALLBACK is invoked once with (:outcome accepted|rejected|delivery-unknown|obser
 ;;;; Observation of the wire
 
 (defun fleet-eca--observe (conn msg)
-  "Normalize raw JSON-RPC MSG for CONN into Fleet events.  Runs before the UI handler."
+  "Normalize raw JSON-RPC MSG for CONN into Fleet events.
+Runs before the UI handler."
   (let ((method (plist-get msg :method))
         (params (plist-get msg :params)))
     (when method
@@ -820,7 +824,8 @@ Retains the chat buffer under a runtime-suffixed name; never kills processes."
 ;;;; Human-submission ownership (advice on Fleet chats only)
 
 (defun fleet-eca--admit-human (conn prompt)
-  "Route human PROMPT from CONN's chat through Fleet's admission; clear the draft only on success."
+  "Route human PROMPT from CONN's chat through Fleet's admission.
+Clear the draft only on success."
   (let* ((contexts (append eca-chat--context (eca-chat--extract-contexts-from-prompt)))
          (envelope (list :text (eca-chat--normalize-prompt prompt)
                          :contexts (mapcar #'eca-chat--refine-context contexts)

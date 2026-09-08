@@ -1962,3 +1962,25 @@ The finished repository must include:
 
 Record any unresolved compatibility contract as a specific blocker with evidence and the smallest remedy. Do
 not report readiness for unattended use until the native acceptance criteria pass.
+
+---
+
+## Implementation notes (deviations and clarifications recorded during the build)
+
+These are the points where the shipped implementation deliberately differs from, or pins down, the text above.
+Each was driven by evidence from the installed pair (see `docs/eca-compatibility.md`).
+
+1. **MCP entry delivery.** Fleet runtimes receive the `mcpServers.fleet` entry through the per-runtime
+   `ECA_CONFIG` overlay (deep-merged by the server), so ordinary ECA sessions never see the bridge at all.
+   `M-x fleet-install-mcp` still exists and merges the same single entry into the user's global config with a
+   backup and a diff, but it is optional rather than an installation step.
+2. **Readiness waits for models.** The native server answers a prompt sent before its first `config/updated`
+   with models by an error turn (recorded). `fleet-eca-start` therefore reports `connection-ready` only after
+   models are announced (bounded by `fleet-eca-models-timeout-sec`).
+3. **Agent default.** This pair's agents are `code`/`plan`; `fleet-agent` defaults to nil (server default).
+4. **Prompts.** `prompts/ops.md` exists alongside `change.md`/`study.md` so every task kind has a doctrine file.
+5. **Environment propagation.** `ECA_*` variables of the spawning environment are excluded from propagation
+   (Fleet sets `ECA_CONFIG` itself); provider credentials are selected by name pattern, values never logged.
+6. **`fleet-watch-start/stop`** take a fleet name and toggle that fleet's persisted supervision flag.
+7. **Subagent tools.** The overlay sets `disabledTools: ["eca__spawn_agent"]`; whether this pair honors it is
+   not yet verified by a trace and is listed as an open item in the compatibility profile.

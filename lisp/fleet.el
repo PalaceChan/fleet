@@ -29,7 +29,8 @@
 ;;;; Startup
 
 (defun fleet-dashboard-ensure-started (callback)
-  "Start the supervisor (owner or read-only) if needed, then call CALLBACK with the mode plist."
+  "Start the supervisor (owner or read-only) if needed.
+Then call CALLBACK with the mode plist."
   (fleet-supervisor-start
    (lambda (r)
      (when (eq (plist-get r :mode) 'owner)
@@ -204,7 +205,8 @@
 
 ;;;###autoload
 (defun fleet-watch-start (name)
-  "Enable automatic event dispatch for fleet NAME and replay pending events under admission."
+  "Enable automatic event dispatch for fleet NAME.
+Replay pending events under admission."
   (interactive (list (fleet--read-fleet "Enable supervision for: ")))
   (fleet--require-owner)
   (let* ((store (fleet--store)) (fleet (fleet-core-fleet store name)))
@@ -214,7 +216,8 @@
 
 ;;;###autoload
 (defun fleet-watch-stop (name)
-  "Pause automatic model dispatch for fleet NAME.  Runtimes and observation continue."
+  "Pause automatic model dispatch for fleet NAME.
+Runtimes and observation continue."
   (interactive (list (fleet--read-fleet "Pause supervision for: ")))
   (fleet--require-owner)
   (let* ((store (fleet--store)) (fleet (fleet-core-fleet store name)))
@@ -223,7 +226,8 @@
 
 ;;;###autoload
 (defun fleet-commander-stop (name)
-  "Stop fleet NAME's commander with verified service evidence; operators are untouched."
+  "Stop fleet NAME's commander with verified service evidence.
+Operators are untouched."
   (interactive (list (fleet--read-fleet "Stop commander of: ")))
   (fleet--require-owner)
   (let* ((store (fleet--store)) (fleet (fleet-core-fleet store name))
@@ -239,7 +243,8 @@
 
 ;;;###autoload
 (defun fleet-commander-replace (name)
-  "Stop fleet NAME's commander (verified), then start a fresh one with the handoff context."
+  "Stop fleet NAME's commander (verified), then start a fresh one.
+The new commander receives the handoff context."
   (interactive (list (fleet--read-fleet "Replace commander of: ")))
   (fleet--require-owner)
   (let* ((store (fleet--store)) (fleet (fleet-core-fleet store name)) (fid (plist-get fleet :id))
@@ -274,7 +279,8 @@
 
 ;;;###autoload
 (defun fleet-install-mcp ()
-  "Merge the Fleet MCP entry into ECA's global config with a backup and visible diff.
+  "Merge the Fleet MCP entry into ECA's global config.
+Takes a backup and shows a visible diff.
 Never touches other providers/servers/rules and never enables trust."
   (interactive)
   (let* ((file (expand-file-name "config.json" (fleet-paths-eca-config-root)))
@@ -307,7 +313,8 @@ Never touches other providers/servers/rules and never enables trust."
 
 ;;;###autoload
 (defun fleet-doctor ()
-  "Read-only compatibility, ownership, storage, runtime and worktree checks with evidence."
+  "Read-only compatibility, ownership, storage, runtime and worktree checks.
+Each check reports its evidence."
   (interactive)
   (let ((buf (get-buffer-create "*fleet-doctor*"))
         (probe (fleet-eca-probe)))

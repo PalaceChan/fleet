@@ -57,8 +57,10 @@
 ;;;; Projection (design §12.2)
 
 (defun fleet-dashboard-task-projection (task fleet)
-  "Compute (STATE SOURCE DETAIL ATTENTION) for enriched TASK in FLEET from orthogonal facts.
-STATE is a symbol from `fleet-dashboard-states'; SOURCE is eca/status/runtime/nil."
+  "Compute (STATE SOURCE DETAIL ATTENTION) for enriched TASK in FLEET.
+The projection is derived from orthogonal facts.
+STATE is a symbol from `fleet-dashboard-states'; SOURCE is
+eca/status/runtime/nil."
   (let* ((rt (plist-get task :runtime))
          (lifecycle (plist-get task :lifecycle))
          (phase (plist-get task :phase))
@@ -413,7 +415,8 @@ STATE is a symbol from `fleet-dashboard-states'; SOURCE is eca/status/runtime/ni
       (recenter 0))))
 
 (defun fleet-dash-attention ()
-  "Next entry requiring action, wrapping; header when only the commander has a problem."
+  "Next entry requiring action, wrapping.
+Header when only the commander has a problem."
   (interactive)
   (let* ((start (point))
          (next (lambda (from)
@@ -460,7 +463,8 @@ STATE is a symbol from `fleet-dashboard-states'; SOURCE is eca/status/runtime/ni
 ;;;; Actions
 
 (defun fleet-dash-visit ()
-  "Header -> commander chat; task -> operator chat.  Never creates an empty fake buffer."
+  "Header -> commander chat; task -> operator chat.
+Never creates an empty fake buffer."
   (interactive)
   (pcase-let ((`(,_store ,fleet ,task ,_rev) (fleet-dashboard--target)))
     (let* ((rt (fleet-dashboard--runtime (or task fleet)))
