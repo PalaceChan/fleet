@@ -41,7 +41,9 @@
 (ert-deftest fleet-runtime-provider-variable-selection ()
   (should (fleet-runtime-provider-variable-p "OPENAI_API_KEY"))
   (should (fleet-runtime-provider-variable-p "ANTHROPIC_BASE_URL"))
-  (should (fleet-runtime-provider-variable-p "ECA_CONFIG"))
+  ;; ECA_* markers of the spawning chat must not leak; Fleet sets ECA_CONFIG itself
+  (should-not (fleet-runtime-provider-variable-p "ECA_CONFIG"))
+  (should-not (fleet-runtime-provider-variable-p "ECA_CHAT_ID"))
   (should-not (fleet-runtime-provider-variable-p "PATH"))
   (should-not (fleet-runtime-provider-variable-p "MY_SECRET")))
 

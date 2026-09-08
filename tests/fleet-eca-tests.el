@@ -74,7 +74,10 @@
   (let ((win (selected-window)) (buf (current-buffer)))
     (fleet-eca-test-with-conn conn
       (should (eq (fleet-eca-conn-state conn) 'ready))
-      (should (equal (fleet-eca-test-kinds) '(connection-ready)))
+      ;; readiness follows the models announcement; nothing else happened yet
+      (should (memq 'models-ready (fleet-eca-test-kinds)))
+      (should (< (cl-position 'models-ready (fleet-eca-test-kinds)) (cl-position 'connection-ready (fleet-eca-test-kinds))))
+      (should-not (cl-intersection '(turn-started prompt-accepted turn-idle-observed) (fleet-eca-test-kinds)))
       (should (buffer-live-p (fleet-eca-conn-buffer conn)))
       (should (equal (buffer-local-value 'eca-chat--id (fleet-eca-conn-buffer conn)) (fleet-eca-conn-chat-id conn)))
       (should (equal (buffer-local-value 'fleet-eca-runtime-id (fleet-eca-conn-buffer conn)) (fleet-eca-conn-runtime-id conn)))
