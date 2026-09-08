@@ -1,0 +1,36 @@
+{
+  "protocolVersion": 1,
+  "transport": "Unix-domain stream socket at $FLEET_SOCKET; newline-delimited UTF-8 JSON, one object per line (newlines inside strings are JSON-escaped). This is Fleet's own protocol, not ECA's Content-Length framing.",
+  "limits": {"maxRequestBytes": 1048576, "maxLineBytes": 1048576, "defaultPageSize": 100, "maxPageSize": 200},
+  "request": {
+    "type": "object",
+    "required": ["protocolVersion", "id", "operation", "params"],
+    "properties": {
+      "protocolVersion": {"const": 1},
+      "id": {"type": ["string", "integer"]},
+      "operation": {"type": "string", "description": "A tool name from tools-v1.json, or `tools_list`, or `ping`."},
+      "credential": {"type": "string", "description": "Runtime token from $FLEET_CREDENTIAL_FILE. Absent for tools_list/ping only."},
+      "idempotencyKey": {"type": "string", "description": "Required for mutations; bound to the logical actor, not the runtime."},
+      "params": {"type": "object"}
+    }
+  },
+  "response": {
+    "oneOf": [
+      {"type": "object", "required": ["id", "result"], "properties": {"id": {}, "result": {"type": "object"}}},
+      {"type": "object", "required": ["id", "error"], "properties": {"id": {}, "error": {"type": "object", "required": ["code", "message", "retryable"], "properties": {"code": {"type": "string"}, "message": {"type": "string"}, "evidence": {}, "retryable": {"type": "boolean"}}}}}
+    ]
+  },
+  "errorCodes": {
+    "invalid-request": "Malformed JSON, oversize line, wrong protocolVersion, or schema violation.",
+    "unauthenticated": "Missing or unknown credential.",
+    "stale-runtime": "Credential belongs to a revoked or non-current runtime incarnation.",
+    "forbidden": "Operation not permitted for this actor/role or outside its fleet/task.",
+    "unknown-operation": "No such operation.",
+    "revision-mismatch": "expected_revision does not match the entity.",
+    "action-payload-mismatch": "Same idempotency key reused with different arguments.",
+    "owner-unproven": "This Emacs no longer holds the Fleet lease.",
+    "read-only": "Store opened read-only (another Emacs owns the root).",
+    "fleet-not-active": "Fleet parked/parking/retiring; operators cannot be started or messaged.",
+    "*": "Any fleet-error code from the owning module (e.g. deliverable-unverified, runtime-not-stopped, brief-not-runnable, invalid-task, dependency-unsatisfied, resource-claimed, terminal-phase, no-such-decision)."
+  }
+}

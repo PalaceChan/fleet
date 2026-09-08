@@ -90,7 +90,8 @@
   (fleet-eca-test-with-conn conn
     (let ((out (fleet-eca-test-submit conn "hello")))
       (should (eq (plist-get out :outcome) 'accepted))
-      (should (fleet-eca-test-wait-kind 'turn-idle-observed))
+      ;; `title' (metadata) arrives after both terminal events
+      (should (fleet-eca-test-wait-kind 'title))
       (let ((kinds (fleet-eca-test-kinds)))
         ;; running is observed before acceptance (as on the native pair)
         (should (< (cl-position 'turn-started kinds) (cl-position 'prompt-accepted kinds)))

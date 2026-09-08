@@ -1,0 +1,133 @@
+{
+  "version": 1,
+  "notes": "Fleet MCP tools. `roles` lists which runtime roles see the tool. Every mutation takes idempotency_key (a fresh UUID per logical action; reuse it with identical arguments to retry).",
+  "tools": [
+    {
+      "name": "fleet_snapshot",
+      "roles": ["commander", "operator"],
+      "description": "Coherent snapshot of your fleet (commander) or your own task (operator): lifecycle, phases, runtimes, pending operations, artifacts, open decisions, attention items, and the snapshot revision.",
+      "inputSchema": {"type": "object", "properties": {"task_id": {"type": "string", "description": "Optional task id to scope the snapshot (commander only)."}}, "additionalProperties": false}
+    },
+    {
+      "name": "fleet_task_create",
+      "roles": ["commander"],
+      "description": "Create a ready task from a complete brief. Validates name grammar, kind, brief completeness, repository, dependencies (same fleet, no cycles) and resource claims. Returns the task or a structured refusal.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["idempotency_key", "name", "kind", "brief"],
+        "properties": {
+          "idempotency_key": {"type": "string"},
+          "name": {"type": "string", "description": "[A-Za-z0-9][A-Za-z0-9._-]*"},
+          "kind": {"type": "string", "enum": ["change", "study", "ops"]},
+          "brief": {"type": "string", "description": "Complete brief text (see the brief contract)."},
+          "repo": {"type": "string", "description": "Primary clone path under the development root (change tasks)."},
+          "base_ref": {"type": "string", "description": "Explicit base ref; default is the remote default branch."},
+          "branch": {"type": "string", "description": "Branch name for new work; default fleet/<fleet>/<task>."},
+          "delivery": {"type": "string", "enum": ["remote-review", "local-ready", "integrated"]},
+          "workspace_mode": {"type": "string", "enum": ["new", "adopt-branch", "adopt-worktree"], "default": "new"},
+          "adopt_path": {"type": "string", "description": "Branch name (adopt-branch) or worktree path (adopt-worktree)."},
+          "dependencies": {"type": "array", "items": {"type": "string"}, "description": "Task ids in this fleet that must be verified done first."},
+          "resources": {"type": "array", "items": {"type": "string"}, "description": "Named exclusive resources this task mutates."},
+          "context_paths": {"type": "array", "items": {"type": "string"}},
+          "model": {"type": "string", "description": "ECA provider/model override for the operator."}
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "fleet_task_start",
+      "roles": ["commander"],
+      "description": "Start a ready or suspended task. Returns an operation id; completion arrives as an event (do not poll).",
+      "inputSchema": {"type": "object", "required": ["idempotency_key", "task_id"], "properties": {"idempotency_key": {"type": "string"}, "task_id": {"type": "string"}, "expected_revision": {"type": "integer"}}, "additionalProperties": false}
+    },
+    {
+      "name": "fleet_task_retask",
+      "roles": ["commander"],
+      "description": "Give a suspended/failed/done task new durable scope (a new brief revision). Requires the old runtime to be proven stopped; done tasks require non-empty new scope.",
+      "inputSchema": {"type": "object", "required": ["idempotency_key", "task_id", "brief"], "properties": {"idempotency_key": {"type": "string"}, "task_id": {"type": "string"}, "brief": {"type": "string"}, "note": {"type": "string"}, "expected_revision": {"type": "integer"}}, "additionalProperties": false}
+    },
+    {
+      "name": "fleet_message_send",
+      "roles": ["commander"],
+      "description": "Queue a message to an operator's chat. Records queued/accepted/rejected/delivery-unknown truthfully; never a terminal fact about the task.",
+      "inputSchema": {"type": "object", "required": ["idempotency_key", "task_id", "text"], "properties": {"idempotency_key": {"type": "string"}, "task_id": {"type": "string"}, "text": {"type": "string"}}, "additionalProperties": false}
+    },
+    {
+      "name": "fleet_status",
+      "roles": ["operator"],
+      "description": "Publish your task's semantic phase: working, needs-decision (with decision), blocked, paused (with wait), done (artifacts registered), failed. Terminal phases cannot revert.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["phase"],
+        "properties": {
+          "phase": {"type": "string", "enum": ["working", "needs-decision", "blocked", "paused", "done", "failed"]},
+          "detail": {"type": "string", "description": "One line, <= 300 chars."},
+          "decision": {"type": "object", "properties": {"question": {"type": "string"}, "options": {"type": "array", "items": {"type": "string"}}, "recommendation": {"type": "string"}, "authority": {"type": "string", "enum": ["commander", "human"]}}},
+          "wait": {"type": "object", "properties": {"reason": {"type": "string"}, "deadline": {"type": "string", "description": "UTC ISO-8601"}, "job_id": {"type": "string"}}},
+          "artifacts": {"type": "array", "items": {"type": "object", "properties": {"kind": {"type": "string"}, "rel_path": {"type": "string"}, "external_ref": {"type": "string"}, "description": {"type": "string"}, "expected_identity": {"type": "string"}}}}
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "fleet_artifact_register",
+      "roles": ["commander", "operator"],
+      "description": "Register a named deliverable (task-relative path or external URL/ref). Not automatically verified.",
+      "inputSchema": {"type": "object", "required": ["idempotency_key", "kind"], "properties": {"idempotency_key": {"type": "string"}, "task_id": {"type": "string", "description": "Commander only; operators register on their own task."}, "kind": {"type": "string"}, "rel_path": {"type": "string"}, "external_ref": {"type": "string"}, "description": {"type": "string"}, "expected_identity": {"type": "string", "description": "Commit OID or digest."}}, "additionalProperties": false}
+    },
+    {
+      "name": "fleet_artifact_verify",
+      "roles": ["commander"],
+      "description": "Record verification (accepted or rejected) of an artifact against the task's current brief revision and the artifact's current hash. Include criteria, evidence and limitations.",
+      "inputSchema": {"type": "object", "required": ["idempotency_key", "artifact_id", "accepted", "criteria", "evidence"], "properties": {"idempotency_key": {"type": "string"}, "artifact_id": {"type": "string"}, "accepted": {"type": "boolean"}, "criteria": {"type": "string"}, "evidence": {"type": "string"}, "limitations": {"type": "string"}}, "additionalProperties": false}
+    },
+    {
+      "name": "fleet_decision_resolve",
+      "roles": ["commander"],
+      "description": "Resolve an operator's open decision with an answer under your authority (human-authority decisions must be escalated). Delivering the answer to the operator is a separate fleet_message_send.",
+      "inputSchema": {"type": "object", "required": ["idempotency_key", "decision_id", "answer"], "properties": {"idempotency_key": {"type": "string"}, "decision_id": {"type": "string"}, "answer": {"type": "string"}, "expected_revision": {"type": "integer"}, "evidence": {"type": "string"}}, "additionalProperties": false}
+    },
+    {
+      "name": "fleet_external_job",
+      "roles": ["operator"],
+      "description": "Register or update an external job that may outlive you: system, identifier, state, completion source, deadline, cancel/continue policy.",
+      "inputSchema": {"type": "object", "required": ["idempotency_key", "state"], "properties": {"idempotency_key": {"type": "string"}, "job_id": {"type": "string"}, "system": {"type": "string"}, "job_ref": {"type": "string"}, "state": {"type": "string", "enum": ["running", "completed", "failed", "cancelled", "unknown"]}, "completion_source": {"type": "string"}, "deadline": {"type": "string"}, "cancel_policy": {"type": "string"}, "disposition": {"type": "string"}}, "additionalProperties": false}
+    },
+    {
+      "name": "fleet_events_pending",
+      "roles": ["commander"],
+      "description": "Non-destructive list of unhandled events (and your already-started actions) with the current snapshot revision. Reading does not acknowledge.",
+      "inputSchema": {"type": "object", "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 200}}, "additionalProperties": false}
+    },
+    {
+      "name": "fleet_events_ack",
+      "roles": ["commander"],
+      "description": "Acknowledge exact event ids after handling them (or durably recording a user decision), with a disposition.",
+      "inputSchema": {"type": "object", "required": ["idempotency_key", "event_ids", "disposition"], "properties": {"idempotency_key": {"type": "string"}, "event_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1}, "disposition": {"type": "string"}}, "additionalProperties": false}
+    },
+    {
+      "name": "fleet_wait",
+      "roles": ["operator"],
+      "description": "Declare a bounded wait (reason, deadline, optional external job id, who/how completion is reported). Equivalent to fleet_status paused; a single deadline-expired event follows if nothing supersedes it.",
+      "inputSchema": {"type": "object", "required": ["reason", "deadline"], "properties": {"reason": {"type": "string"}, "deadline": {"type": "string"}, "job_id": {"type": "string"}, "completion_report": {"type": "string"}}, "additionalProperties": false}
+    },
+    {
+      "name": "fleet_cleanup_evidence",
+      "roles": ["commander"],
+      "description": "Read-only preservation/ownership/quiescence evidence for a change task's workspace (single Git evidence pass).",
+      "inputSchema": {"type": "object", "required": ["task_id"], "properties": {"task_id": {"type": "string"}}, "additionalProperties": false}
+    },
+    {
+      "name": "fleet_task_teardown",
+      "roles": ["commander"],
+      "description": "Request normal verified teardown of a done+verified task. Returns an operation id; the result is an event. There is no force or discard option.",
+      "inputSchema": {"type": "object", "required": ["idempotency_key", "task_id"], "properties": {"idempotency_key": {"type": "string"}, "task_id": {"type": "string"}, "expected_revision": {"type": "integer"}}, "additionalProperties": false}
+    },
+    {
+      "name": "fleet_operation",
+      "roles": ["commander", "operator"],
+      "description": "Inspect an asynchronous operation by id (state, step, evidence, error). Look once if needed; completion arrives as an event.",
+      "inputSchema": {"type": "object", "required": ["operation_id"], "properties": {"operation_id": {"type": "string"}}, "additionalProperties": false}
+    }
+  ]
+}
