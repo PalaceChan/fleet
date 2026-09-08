@@ -221,8 +221,8 @@ Reseeds from system entropy so consecutive ids never repeat."
           (random (ash 1 48))))
 
 (defun fleet-paths-short-id (uuid)
-  "First 8 hex characters of UUID."
-  (substring uuid 0 8))
+  "First 8 characters of UUID (whole string when shorter)."
+  (substring uuid 0 (min 8 (length uuid))))
 
 (defun fleet-paths-root-hash ()
   "Short stable hash of the data root, for socket/descriptor disambiguation."
