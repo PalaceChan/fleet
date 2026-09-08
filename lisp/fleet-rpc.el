@@ -136,8 +136,16 @@
            (unless (member (plist-get actor :role) (append (plist-get tool :roles) nil))
              (fleet-fail 'forbidden "Operation not available to this role" :role (plist-get actor :role) :operation operation))
            (unless (fleet-supervisor-owner-p) (fleet-fail 'owner-unproven "Fleet owner lease not live"))
-           (fleet-rpc--validate params tool)
-           (fleet-rpc--run store actor operation idempotency-key params)))))))
+           ;; The key may travel in the envelope (bridge) or in the arguments (model); they are one fact.
+           (let* ((key (or idempotency-key (plist-get params :idempotency_key)))
+                  (params (if (and key (not (plist-member params :idempotency_key)))
+                              (append (list :idempotency_key key) params)
+                            params)))
+             (when (and idempotency-key (plist-get params :idempotency_key)
+                        (not (equal idempotency-key (plist-get params :idempotency_key))))
+               (fleet-fail 'invalid-request "idempotency key differs between envelope and arguments"))
+             (fleet-rpc--validate params tool)
+             (fleet-rpc--run store actor operation key params))))))))
 
 (defun fleet-rpc--validate (params tool)
   "Minimal structural validation of PARAMS against TOOL's inputSchema (required keys, types, enums)."

@@ -48,6 +48,7 @@ Plists stay plists; other lists become vectors."
    ((eq v :false) :false)
    ((stringp v) v)
    ((numberp v) v)
+   ((hash-table-p v) v) ; an empty hash table is the only way to spell {}
    ((vectorp v) (apply #'vector (mapcar #'fleet-store--jsonify (append v nil))))
    ((and (consp v) (keywordp (car v)))
     (cl-loop for (k val) on v by #'cddr
