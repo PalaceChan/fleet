@@ -118,6 +118,11 @@
 (defconst fleet-eca-ack-timeout-sec 45
   "Bounded wait for the chat/prompt response.  Not a turn-duration cap.")
 
+(defconst fleet-eca-models-timeout-sec 90
+  "Bounded wait after initialize for `config/updated' carrying models.
+The native server loads providers asynchronously; a prompt sent earlier is
+answered with an error turn (recorded trace), so readiness waits for it.")
+
 (defun fleet-eca--client-version ()
   "Installed eca-emacs package version string, or nil."
   (or (when (bound-and-true-p package-alist)
@@ -191,6 +196,9 @@ Never launches a server.  Loads the ECA package if present."
   turn                 ; nil or plist for the single in-flight turn
   pending-question pending-approvals active-tools
   watchdog transcript-file assistant-buffer title
+  models-ready         ; non-nil once config/updated announced models
+  on-models            ; continuation waiting for models, or nil
+  tool-servers         ; alist name -> plist of the last tool/serverUpdated
   (observation-revision 0))
 
 (defvar fleet-eca--conns (make-hash-table :test 'equal)
@@ -348,18 +356,51 @@ CALLBACK gets (:ok t :conn CONN) after verified initialization, or
        (setf (eca--session-status session) 'started)
        (setf (eca--session-chat-welcome-message session) (or (plist-get res :chatWelcomeMessage) ""))
        (eca-api-notify session :method "initialized")
-       (condition-case err
-           (progn
-             (fleet-eca--create-chat conn model agent variant)
-             (setf (fleet-eca-conn-state conn) 'ready)
-             (fleet-eca--emit conn 'connection-ready)
-             (funcall callback t nil))
-         (error (funcall callback nil (error-message-string err)))))
+       ;; Readiness requires models: the server answers earlier prompts with an error turn.
+       (fleet-eca--when-models
+        conn
+        (lambda (ok)
+          (if (not ok)
+              (progn (setf (fleet-eca-conn-state conn) 'lost)
+                     (fleet-eca--emit conn 'protocol-error :phase "models" :error "no models announced before deadline")
+                     (funcall callback nil "server announced no models before the deadline"))
+            (condition-case err
+                (progn
+                  (fleet-eca--create-chat conn model agent variant)
+                  (setf (fleet-eca-conn-state conn) 'ready)
+                  (fleet-eca--emit conn 'connection-ready :tool-servers (mapcar #'car (fleet-eca-conn-tool-servers conn)))
+                  (funcall callback t nil))
+              (error (funcall callback nil (error-message-string err))))))))
      :error-callback
      (lambda (e)
        (setf (fleet-eca-conn-state conn) 'lost)
        (fleet-eca--emit conn 'protocol-error :phase "initialize" :error (format "%S" e))
        (funcall callback nil (format "initialize failed: %S" e))))))
+
+(defun fleet-eca--when-models (conn k)
+  "Call K with t once CONN's server announced models, or nil after the deadline."
+  (if (fleet-eca-conn-models-ready conn)
+      (funcall k t)
+    (let ((timer nil) (done nil))
+      (setf (fleet-eca-conn-on-models conn)
+            (lambda ()
+              (unless done (setq done t) (when timer (cancel-timer timer)) (funcall k t))))
+      (setq timer (run-with-timer fleet-eca-models-timeout-sec nil
+                                  (lambda ()
+                                    (unless done (setq done t)
+                                            (setf (fleet-eca-conn-on-models conn) nil)
+                                            (funcall k nil))))))))
+
+(defun fleet-eca--observe-config (conn params)
+  "Record model availability from a config/updated notification PARAMS."
+  (let ((chat (plist-get params :chat)))
+    (when (and chat (plist-get chat :models) (> (length (plist-get chat :models)) 0))
+      (unless (fleet-eca-conn-models-ready conn)
+        (setf (fleet-eca-conn-models-ready conn) t)
+        (fleet-eca--emit conn 'models-ready :default-model (plist-get chat :selectModel))
+        (when-let* ((k (fleet-eca-conn-on-models conn)))
+          (setf (fleet-eca-conn-on-models conn) nil)
+          (funcall k))))))
 
 (defun fleet-eca--create-chat (conn model agent variant)
   "Create and register CONN's designated chat buffer silently (no window changes).
@@ -512,6 +553,14 @@ CALLBACK is invoked once with (:outcome accepted|rejected|delivery-unknown|obser
         ("chat/statusChanged" (fleet-eca--observe-status conn params))
         ("chat/contentReceived" (fleet-eca--observe-content conn params))
         ("chat/askQuestion" (when (plist-get msg :id) (fleet-eca--observe-question conn msg params)))
+        ("config/updated" (fleet-eca--observe-config conn params))
+        ("tool/serverUpdated"
+         (let ((name (plist-get params :name)))
+           (setf (alist-get name (fleet-eca-conn-tool-servers conn) nil nil #'equal)
+                 (list :status (plist-get params :status)
+                       :tools (mapcar (lambda (tl) (plist-get tl :name)) (append (plist-get params :tools) nil))))
+           (fleet-eca--emit conn 'tool-server-updated :name name :status (plist-get params :status)
+                            :tools (mapcar (lambda (tl) (plist-get tl :name)) (append (plist-get params :tools) nil)))))
         ("$/showMessage" (when (equal (plist-get params :type) "error")
                            (fleet-eca--emit conn 'server-message :level "error" :text (plist-get params :message))))
         (_ nil)))))

@@ -46,10 +46,12 @@ Values are never recorded; see `fleet-runtime-provider-variable-p' for
 provider credentials selected by pattern.")
 
 (defun fleet-runtime-provider-variable-p (name)
-  "Non-nil when NAME looks like a provider credential/config variable."
+  "Non-nil when NAME looks like a provider credential/config variable.
+ECA_* variables are deliberately excluded: Fleet sets ECA_CONFIG itself and
+the ECA_AGENT/ECA_CHAT_ID markers of a spawning chat must not leak in."
   (string-match-p (rx bos (or (seq (+ (any "A-Z0-9_")) "_API_KEY")
                               (seq (or "ANTHROPIC" "OPENAI" "OPENROUTER" "GEMINI" "GOOGLE" "AZURE"
-                                       "AWS" "OLLAMA" "DEEPSEEK" "MISTRAL" "GROQ" "XAI" "ECA")
+                                       "AWS" "OLLAMA" "DEEPSEEK" "MISTRAL" "GROQ" "XAI")
                                    "_" (+ (any "A-Z0-9_"))))
                       eos)
                   name))

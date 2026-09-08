@@ -526,10 +526,15 @@ phases cannot revert; done requires registered artifacts.  Returns a plist."
                          (plist-get rt :id))))
 
 (defun fleet-core--role-config-overlay (role)
-  "ECA_CONFIG overlay for ROLE.  Native subagents would inherit the runtime
-credential, so spawning is disabled in Fleet runtimes (design §5.3)."
+  "ECA_CONFIG overlay for ROLE, deep-merged over the user's ordinary config.
+Carries the Fleet MCP entry (so ordinary sessions never see the bridge) and
+disables native subagent spawning, which would inherit the runtime
+credential (design §5.3)."
   (ignore role)
-  (fleet-store-json (list :disabledTools (vector "eca__spawn_agent"))))
+  (fleet-store-json
+   (list :mcpServers (list :fleet (list :command fleet-python-executable
+                                        :args (vector (fleet-paths-bridge-executable) "mcp")))
+         :disabledTools (vector "eca__spawn_agent"))))
 
 (cl-defun fleet-core-launch-runtime (store rt &key roots cwd callback)
   "Launch runtime row RT as a systemd user service running native ECA; CALLBACK gets (:ok t :conn) or (:ok nil :error).

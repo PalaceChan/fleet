@@ -27,7 +27,7 @@
                                 :fleet-id "f1" :task-id "t1" :display-name "*eca:operator:f:t*"
                                 :command (fleet-eca-test-fake-command) :roots (list fleet-test--roots)
                                 :environment (list (cons "FAKE_ECA_LOG" log))
-                                :model "fake/model" :agent "agent"
+                                :model "fake/model" :agent nil
                                 :transcript-file (expand-file-name "transcript.jsonl" fleet-test--roots)
                                 :sink (lambda (ev) (push ev fleet-eca-test--events))
                                 :callback (lambda (r) (setq result r))))
@@ -313,7 +313,7 @@
                                      :fleet-id "f" :task-id "t" :display-name "*eca:operator:native-test*"
                                      :command (plist-get probe :command) :roots (list fleet-test--roots)
                                      :environment (list (cons "XDG_CACHE_HOME" fleet-cache-root))
-                                     :model nil :agent "agent"
+                                     :model nil :agent nil
                                      :transcript-file (expand-file-name "transcript.jsonl" fleet-test--roots)
                                      :sink (lambda (ev) (push ev events))
                                      :callback (lambda (r) (setq result r)))))

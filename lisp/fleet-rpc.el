@@ -24,6 +24,7 @@
 
 (defvar fleet-rpc--server nil "Listening process, or nil.")
 (defvar fleet-rpc--tools nil "Parsed schema/tools-v1.json.")
+(defvar fleet-rpc-request-log nil "Recent (OPERATION . ACTOR-ROLE) requests, newest first, bounded; diagnostics only.")
 
 ;;;; Tool schema
 
@@ -133,6 +134,8 @@
        (let* ((tool (cl-find-if (lambda (tool) (equal (plist-get tool :name) operation)) (fleet-rpc-tools))))
          (unless tool (fleet-fail 'unknown-operation "No such operation" :operation operation))
          (let ((actor (fleet-rpc-authenticate store credential)))
+           (push (cons operation (plist-get actor :role)) fleet-rpc-request-log)
+           (when (> (length fleet-rpc-request-log) 200) (setcdr (nthcdr 199 fleet-rpc-request-log) nil))
            (unless (member (plist-get actor :role) (append (plist-get tool :roles) nil))
              (fleet-fail 'forbidden "Operation not available to this role" :role (plist-get actor :role) :operation operation))
            (unless (fleet-supervisor-owner-p) (fleet-fail 'owner-unproven "Fleet owner lease not live"))
