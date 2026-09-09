@@ -18,7 +18,7 @@
 (require 'json)
 (require 'fleet-paths)
 
-(defconst fleet-store-schema-version 1
+(defconst fleet-store-schema-version 2
   "Newest schema this package can open for writing.")
 
 (defconst fleet-store-busy-timeout-ms 3000
@@ -213,6 +213,38 @@ Nested use joins the outer transaction.  Any error rolls back everything."
 (defun fleet-store-snapshot-revision (store)
   "Global commit sequence of STORE."
   (string-to-number (or (fleet-store-scalar store "SELECT value FROM meta WHERE key='snapshot_revision'") "0")))
+
+;;;; Meta key/value
+
+(defun fleet-store-meta (store key)
+  "String value of meta KEY in STORE, or nil."
+  (fleet-store-scalar store "SELECT value FROM meta WHERE key = ?" key))
+
+(defun fleet-store-set-meta (store key value)
+  "Set meta KEY to string VALUE inside an open transaction."
+  (fleet-store-exec store "INSERT OR REPLACE INTO meta(key,value) VALUES (?, ?)" key value))
+
+(defun fleet-store-eca-catalog (store)
+  "The ECA model catalog last observed by any Fleet runtime, as a plist.
+Keys :models (list of ids), :default-model, :variants (list); each nil when
+no runtime has announced it yet."
+  (let ((models (fleet-store-meta store "eca_models"))
+        (variants (fleet-store-meta store "eca_variants")))
+    (list :models (and models (append (fleet-store-unjson models) nil))
+          :default-model (fleet-store-meta store "eca_default_model")
+          :variants (and variants (append (fleet-store-unjson variants) nil)))))
+
+(defun fleet-store-record-eca-catalog (store &rest catalog)
+  "Persist CATALOG (:models :default-model :variants) as observed from ECA.
+Runs its own transaction; empty values are ignored so a partial announcement
+never erases a fuller earlier one."
+  (fleet-store-transaction store
+    (when-let* ((m (plist-get catalog :models)) ((> (length m) 0)))
+      (fleet-store-set-meta store "eca_models" (fleet-store-json (vconcat m))))
+    (when-let* ((d (plist-get catalog :default-model)))
+      (fleet-store-set-meta store "eca_default_model" d))
+    (when-let* ((v (plist-get catalog :variants)) ((> (length v) 0)))
+      (fleet-store-set-meta store "eca_variants" (fleet-store-json (vconcat v))))))
 
 ;;;; Generic row helpers
 

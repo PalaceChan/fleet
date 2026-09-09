@@ -44,6 +44,31 @@
         (fleet-test-should-fail 'invalid-task (fleet-core-create-task store fid :name "x" :kind "weird" :brief fleet-test-brief))
         (fleet-test-should-fail 'invalid-task (fleet-core-create-task store fid :name "x" :kind "change" :brief fleet-test-brief :repo "/nonexistent"))))))
 
+(ert-deftest fleet-core-model-and-variant-flow-to-runtimes-and-unknown-models-are-refused ()
+  (fleet-test-with-fakes
+    ;; Nothing announced yet: any id passes through (ECA judges it later).
+    (let* ((fid (plist-get (fleet-core-create-fleet store "m" :model "whatever/x" :variant "high") :id))
+           (fleet (fleet-store-get store "fleets" fid)))
+      (should (equal (plist-get fleet :commander-model) "whatever/x"))
+      (should (equal (plist-get fleet :commander-variant) "high"))
+      ;; Catalog known (the fake announces it at every start): refusal with suggestions.
+      (fleet-store-record-eca-catalog store :models '("fake/model" "fake/other" "openai/gpt-5.6-terra") :default-model "fake/model")
+      (let ((err (fleet-test-should-fail 'unknown-model
+                   (fleet-core-create-task store fid :name "bad" :kind "study" :brief fleet-test-brief :model "gpt 5.6 terra"))))
+        (should (equal (plist-get (fleet-error-evidence err) :suggestions) '("openai/gpt-5.6-terra"))))
+      ;; Explicit task model/variant reach the runtime; a task without them records the effective default.
+      (let* ((task (fleet-core-create-task store fid :name "picky" :kind "study" :brief fleet-test-brief :model "fake/other" :variant "low"))
+             (plain (fleet-core-test-study store fid "plain")))
+        (should (equal (plist-get task :variant) "low"))
+        (fleet-core-test-start store (plist-get task :id))
+        (fleet-core-test-start store (plist-get plain :id))
+        (let ((rt (fleet-store-get store "runtimes" (fleet-core-test-runtime store (plist-get task :id))))
+              (rt2 (fleet-store-get store "runtimes" (fleet-core-test-runtime store (plist-get plain :id)))))
+          (should (equal (plist-get rt :model) "fake/other"))
+          (should (equal (plist-get rt :variant) "low"))
+          (should (equal (plist-get rt2 :model) "fake/model"))
+          (should-not (plist-get rt2 :variant)))))))
+
 (ert-deftest fleet-core-dependencies-reject-cycles-and-cross-fleet ()
   (fleet-test-with-fakes
     (let* ((f1 (fleet-core-test-fleet store "a")) (f2 (fleet-core-test-fleet store "b"))

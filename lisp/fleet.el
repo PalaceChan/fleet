@@ -94,7 +94,8 @@ Then call CALLBACK with the mode plist."
       (unless (fleet-paths-valid-name-p name) (user-error "Invalid fleet name %S (use [A-Za-z0-9][A-Za-z0-9._-]*)" name))
       (when (yes-or-no-p (format "Create new fleet %s and start its commander? " name))
         (fleet-eca-assert-supported)
-        (let ((fleet (fleet-core-create-fleet store name)))
+        (let* ((choice (fleet--read-model-and-variant store "Commander"))
+               (fleet (fleet-core-create-fleet store name :model (car choice) :variant (cdr choice))))
           (fleet--start-commander-and-show fleet nil))))
      ((member (plist-get existing :lifecycle) '("parked"))
       (fleet--resume-or-visit existing))
@@ -113,6 +114,22 @@ Then call CALLBACK with the mode plist."
           (message "Commander runtime %s is %s; use fleet-commander-stop / fleet-doctor before starting another" (fleet-paths-short-id (plist-get rt :id)) (plist-get rt :lifecycle)))
          ((yes-or-no-p (format "Fleet %s is active without a live commander; start one? " name))
           (fleet--start-commander-and-show existing (fleet--recovery-summary store existing)))))))))
+
+(defun fleet--read-model-and-variant (store role)
+  "Offer completion over the known ECA catalog for ROLE; return (MODEL . VARIANT).
+Both nil means the configured/ECA default.  Skipped silently (nil . nil) when
+no Fleet runtime has announced the catalog yet, so nothing has to be typed."
+  (let* ((cat (fleet-store-eca-catalog store))
+         (models (plist-get cat :models))
+         (default-label (format "default (%s)" (or fleet-commander-model (plist-get cat :default-model) "ECA default"))))
+    (if (null models)
+        (cons nil nil)
+      (let* ((model (completing-read (format "%s model: " role) (cons default-label models) nil t nil nil default-label))
+             (model (unless (equal model default-label) model))
+             (variants (plist-get cat :variants))
+             (variant (completing-read (format "%s variant (empty = server default): " role)
+                                       (or variants '("low" "medium" "high")) nil nil nil nil "")))
+        (cons model (unless (member variant '("" "-")) variant))))))
 
 (defun fleet--resume-or-visit (fleet)
   "Explicit resume flow for a parked FLEET."

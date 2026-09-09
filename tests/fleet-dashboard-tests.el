@@ -64,7 +64,8 @@
       (should (string-match-p "Fleet compiler - commander none · supervision on · wakes 0 · no tasks" (fleet-dash-test-row-line (cons fid 'commander))))
       (fleet-sup-test-commander store fid) (fleet-sup-test-settle)
       (fleet-dashboard-render)
-      (should (string-match-p "commander live/idle" (fleet-dash-test-row-line (cons fid 'commander))))
+      ;; the commander's effective model (provider prefix dropped) sits next to its status
+      (should (string-match-p "commander live/idle \\[model\\]" (fleet-dash-test-row-line (cons fid 'commander))))
       (fleet-core-set-supervision store fid nil) (fleet-dashboard-render)
       (should (string-match-p "supervision paused" (fleet-dash-test-row-line (cons fid 'commander)))))))
 
@@ -109,6 +110,13 @@
         (should (string-match-p "ünicode 日本語" line))
         (should (string-match-p "working·" line))
         (should (string-match-p "study" line))
+        ;; model column: runtime's effective model without provider prefix
+        (should (string-match-p " model " line)))
+      ;; a task with an explicit model/variant shows them before it has a runtime
+      (let* ((picky (fleet-core-create-task store fid :name "picky" :kind "study" :brief fleet-test-brief :model "fake/other" :variant "high")))
+        (fleet-dashboard-render)
+        (should (string-match-p " other/high " (fleet-dash-test-row-line (cons fid (plist-get picky :id))))))
+      (let ((line (fleet-dash-test-row-line (cons fid tid))))
         ;; control characters stripped from detail
         (should-not (string-match-p "\t" line)))
       ;; name column capped at 28 display columns; rows aligned

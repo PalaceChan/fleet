@@ -12,6 +12,9 @@
   (list fleet-python-executable
         (expand-file-name "tests/fake_eca.py" (fleet-paths-source-root))))
 
+(defvar fleet-eca-test--model "fake/model" "Model requested by `fleet-eca-test-with-conn'.")
+(defvar fleet-eca-test--variant nil "Variant requested by `fleet-eca-test-with-conn'.")
+
 (defmacro fleet-eca-test-with-conn (var &rest body)
   "Start a fake-backed connection bound to VAR, run BODY, then stop the process."
   (declare (indent 1))
@@ -26,7 +29,7 @@
                                 :fleet-id "f1" :task-id "t1" :display-name "*eca:operator:f:t*"
                                 :command (fleet-eca-test-fake-command) :roots (list fleet-test--roots)
                                 :environment (list (cons "FAKE_ECA_LOG" log))
-                                :model "fake/model" :agent nil
+                                :model fleet-eca-test--model :agent nil :variant fleet-eca-test--variant
                                 :transcript-file (expand-file-name "transcript.jsonl" fleet-test--roots)
                                 :sink (lambda (ev) (push ev fleet-eca-test--events))
                                 :callback (lambda (r) (setq result r))))
@@ -116,6 +119,29 @@ and every workspace root must reach `initialize'."
             (should (= 1 (length folders)))
             (should (string-suffix-p (file-name-nondirectory (directory-file-name fleet-test--roots))
                                      (plist-get (car folders) :name)))))))))
+
+(ert-deftest fleet-eca-model-is-pinned-not-inherited-from-user-chat ()
+  "`eca-chat--model'/`eca-chat--variant' fall back to the user's last interactive
+selection.  A Fleet chat must send an explicit model (requested or the server
+default) and no variant unless asked, whatever the user's own chat uses."
+  (let ((eca-chat--last-known-model "user/other") (eca-chat--last-known-variant "xhigh"))
+    ;; No request: server default, no variant.
+    (let ((fleet-eca-test--model nil) (fleet-eca-test--variant nil))
+      (fleet-eca-test-with-conn conn
+        (should (equal (fleet-eca-conn-model conn) "fake/model"))
+        (should-not (fleet-eca-conn-variant conn))
+        (should (equal (plist-get (fleet-eca-conn-catalog conn) :models) '("fake/model")))
+        (should (eq (plist-get (fleet-eca-test-submit conn "hello") :outcome) 'accepted))
+        (let ((p (plist-get (car (fleet-eca-test-log-requests (expand-file-name "fake.log" fleet-test--roots) "chat/prompt")) :params)))
+          (should (equal (plist-get p :model) "fake/model"))
+          (should-not (plist-member p :variant)))))
+    ;; Explicit request wins and is forwarded.
+    (let ((fleet-eca-test--model "fake/model") (fleet-eca-test--variant "low"))
+      (fleet-eca-test-with-conn conn
+        (should (equal (fleet-eca-conn-variant conn) "low"))
+        (should (eq (plist-get (fleet-eca-test-submit conn "hello") :outcome) 'accepted))
+        (let ((p (plist-get (car (fleet-eca-test-log-requests (expand-file-name "fake.log" fleet-test--roots) "chat/prompt")) :params)))
+          (should (equal (plist-get p :variant) "low")))))))
 
 (ert-deftest fleet-eca-ui-error-does-not-drop-later-messages ()
   "The ECA UI half may error on a Fleet session; the observer must still see

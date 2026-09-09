@@ -194,6 +194,10 @@ information only.  Never launches a server."
   watchdog transcript-file assistant-buffer title
   models-ready         ; non-nil once config/updated announced models
   on-models            ; continuation waiting for models, or nil
+  default-model        ; server-selected default model id from config/updated
+  catalog              ; plist (:models :variants) as last announced by the server
+  model                ; effective model id the chat sends (requested or server default)
+  variant              ; effective variant, nil for the server default
   tool-servers         ; alist name -> plist of the last tool/serverUpdated
   (observation-revision 0))
 
@@ -410,15 +414,29 @@ Then register the chat."
                                             (funcall k nil))))))))
 
 (defun fleet-eca--observe-config (conn params)
-  "Record model availability from a config/updated notification PARAMS."
+  "Record model availability and the model catalog from config/updated PARAMS.
+The first announcement with models makes the connection ready; later ones
+(e.g. variants after a model selection) only refresh the catalog."
   (let ((chat (plist-get params :chat)))
-    (when (and chat (plist-get chat :models) (> (length (plist-get chat :models)) 0))
-      (unless (fleet-eca-conn-models-ready conn)
-        (setf (fleet-eca-conn-models-ready conn) t)
-        (fleet-eca--emit conn 'models-ready :default-model (plist-get chat :selectModel))
-        (when-let* ((k (fleet-eca-conn-on-models conn)))
-          (setf (fleet-eca-conn-on-models conn) nil)
-          (funcall k))))))
+    (when chat
+      (let ((models (append (plist-get chat :models) nil))
+            (variants (append (plist-get chat :variants) nil))
+            (default (plist-get chat :selectModel)))
+        (when (or models variants default)
+          (let ((cat (copy-sequence (fleet-eca-conn-catalog conn))))
+            (when models (setq cat (plist-put cat :models models)))
+            (when variants (setq cat (plist-put cat :variants variants)))
+            (setf (fleet-eca-conn-catalog conn) cat))
+          (when default (setf (fleet-eca-conn-default-model conn) default))
+          (fleet-eca--emit conn 'catalog-updated :models models :variants variants :default-model default))
+        (when (and models (not (fleet-eca-conn-models-ready conn)))
+          (setf (fleet-eca-conn-models-ready conn) t)
+          (fleet-eca--emit conn 'models-ready :default-model default)
+          (when-let* ((k (fleet-eca-conn-on-models conn)))
+            (setf (fleet-eca-conn-on-models conn) nil)
+            (funcall k)))))))
+
+
 
 (defun fleet-eca--create-chat (conn model agent variant)
   "Create and register CONN's designated chat buffer silently (no window changes).
@@ -430,9 +448,15 @@ Mirrors the buffer-setup half of `eca-chat-open' without its display half."
         (eca-chat-mode))
       (setq-local eca--session-id-cache (eca--session-id session))
       (setq-local eca-chat--id (fleet-eca-conn-chat-id conn))
-      (setq-local eca-chat--selected-model model)
+      ;; Pin the selection explicitly: `eca-chat--model'/`eca-chat--variant'
+      ;; otherwise fall back to the global last-known values, i.e. whatever the
+      ;; user's own interactive chat picked most recently.  A Fleet runtime
+      ;; must not change model because the user switched theirs.
+      (setf (fleet-eca-conn-model conn) (or model (fleet-eca-conn-default-model conn))
+            (fleet-eca-conn-variant conn) (and variant (not (string= variant "-")) variant))
+      (setq-local eca-chat--selected-model (fleet-eca-conn-model conn))
       (setq-local eca-chat--selected-agent agent)
-      (setq-local eca-chat--selected-variant variant)
+      (setq-local eca-chat--selected-variant (or (fleet-eca-conn-variant conn) "-"))
       ;; Same seed `eca-chat-open' uses: the user's `eca-chat-trust-enable'
       ;; as tracked by the session.  Trust is the only client-side way past
       ;; ECA's outside-workspace approval check (rehearsal 1), and

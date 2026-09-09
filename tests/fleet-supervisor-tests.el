@@ -43,6 +43,22 @@
   "Let coalescing timers and fake turns run."
   (fleet-test-wait-for (lambda () nil) 0.5))
 
+(ert-deftest fleet-supervisor-persists-eca-catalog-from-any-runtime ()
+  "The model catalog a runtime announces becomes durable so fleet-new can offer
+completion and the commander can resolve casual model names."
+  (fleet-sup-test-with
+    (should-not (plist-get (fleet-store-eca-catalog store) :models))
+    (let ((fid (fleet-core-test-fleet store)))
+      (fleet-sup-test-commander store fid)
+      (should (equal (fleet-store-eca-catalog store)
+                     '(:models ("fake/model" "fake/other") :default-model "fake/model" :variants ("low" "high"))))
+      ;; The commander's boot message carries the catalog and its own effective model.
+      (let ((boot (plist-get (car (fleet-sup-test-submissions (lambda (s) (string-match-p "## Models" s)))) :text)))
+        (should boot)
+        (should (string-match-p "You run on `fake/model`" boot))
+        (should (string-match-p "fake/model, fake/other" boot))
+        (should (string-match-p "Variants announced.*low, high" boot))))))
+
 (ert-deftest fleet-supervisor-wake-requires-idle-commander-and-pending-events ()
   (fleet-sup-test-with
     (let* ((fid (fleet-core-test-fleet store)) (cid (fleet-sup-test-commander store fid))

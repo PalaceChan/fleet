@@ -292,6 +292,11 @@ Returns nil when nothing changes so callers can append it unconditionally."
                                    :actionable (equal (plist-get rt :role) "operator")))
        (fleet-supervisor-kick fid 'event))
       ('question-answered (fleet-supervisor--observe store rid (list :pending-question nil)))
+      ;; The model catalog is the same for every runtime of this ECA install;
+      ;; keep the latest durably so fleet-new and the commander can offer it.
+      ('catalog-updated
+       (fleet-store-record-eca-catalog store :models (plist-get ev :models) :variants (plist-get ev :variants)
+                                       :default-model (plist-get ev :default-model)))
       ('delivery-unknown
        (fleet-supervisor--observe store rid (list :turn-state "unknown"))
        (fleet-supervisor--message-transition store (plist-get ev :message-id) "delivery-unknown" nil)

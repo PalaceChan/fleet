@@ -29,7 +29,8 @@
           "dependencies": {"type": "array", "items": {"type": "string"}, "description": "Task ids in this fleet that must be verified done first."},
           "resources": {"type": "array", "items": {"type": "string"}, "description": "Named exclusive resources this task mutates."},
           "context_paths": {"type": "array", "items": {"type": "string"}},
-          "model": {"type": "string", "description": "ECA provider/model override for the operator."}
+          "model": {"type": "string", "description": "Exact ECA model id for the operator, taken from the catalog in your boot message. Omit for the ECA default."},
+          "variant": {"type": "string", "description": "Model variant for the operator (e.g. low/medium/high/xhigh/max where the model supports it). Omit for the server default."}
         },
         "additionalProperties": false
       }

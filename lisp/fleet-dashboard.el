@@ -266,11 +266,12 @@ eca/status/runtime/nil."
          (w-task (fleet-dashboard--col-width (mapcar (lambda (task) (plist-get task :name)) all-tasks) 12 28))
          (projections (mapcar (lambda (task) (cons (plist-get task :id) (fleet-dashboard-task-projection task (fleet-dashboard--fleet-of fleets task)))) all-tasks))
          (w-state (fleet-dashboard--col-width (mapcar (lambda (p) (fleet-dashboard--state-label (cdr p))) projections) 12 20))
-         (w-repo (fleet-dashboard--col-width (mapcar #'fleet-dashboard--repo-label all-tasks) 4 20)))
+         (w-repo (fleet-dashboard--col-width (mapcar #'fleet-dashboard--repo-label all-tasks) 4 20))
+         (w-model (fleet-dashboard--col-width (mapcar #'fleet-dashboard--task-model-label all-tasks) 5 30)))
     (dolist (fleet fleets)
       (fleet-dashboard--insert-header fleet projections)
       (dolist (task (plist-get fleet :tasks))
-        (fleet-dashboard--insert-task fleet task (cdr (assoc (plist-get task :id) projections)) w-task w-state w-repo))
+        (fleet-dashboard--insert-task fleet task (cdr (assoc (plist-get task :id) projections)) w-task w-state w-repo w-model))
       (insert "\n"))))
 
 (defun fleet-dashboard--fleet-of (fleets task)
@@ -284,6 +285,22 @@ eca/status/runtime/nil."
 (defun fleet-dashboard--repo-label (task)
   "Repo column for TASK."
   (if (plist-get task :repo-path) (file-name-nondirectory (directory-file-name (plist-get task :repo-path))) "."))
+
+(defun fleet-dashboard-model-label (rt &optional full)
+  "Model column text for runtime RT: model/variant, or \"\" without a runtime.
+The provider prefix is dropped unless FULL; the peek view shows full ids."
+  (let ((model (and rt (plist-get rt :model))))
+    (cond
+     ((null model) (if (and rt (plist-get rt :variant)) (format "?/%s" (plist-get rt :variant)) ""))
+     (t (concat (if full model (replace-regexp-in-string "\\`[^/]+/" "" model))
+                (if (plist-get rt :variant) (format "/%s" (plist-get rt :variant)) ""))))))
+
+(defun fleet-dashboard--task-model-label (task)
+  "Model column for TASK from its current runtime, else the task's own request."
+  (let ((rt (plist-get task :runtime)))
+    (if rt (fleet-dashboard-model-label rt)
+      (fleet-dashboard-model-label (and (or (plist-get task :model) (plist-get task :variant))
+                                        (list :model (plist-get task :model) :variant (plist-get task :variant)))))))
 
 (defun fleet-dashboard--tally (fleet projections)
   "Fixed-order tally string for FLEET from PROJECTIONS."
@@ -308,8 +325,11 @@ eca/status/runtime/nil."
          (sup (cond ((member lifecycle '("parked" "parking" "retiring")) lifecycle)
                     ((eql 1 (plist-get fleet :supervision)) "supervision on")
                     (t "supervision paused")))
-         (line (format "Fleet %s - commander %s · %s · wakes %d · %s"
-                       (plist-get fleet :name) (car cmd) sup (plist-get fleet :queued-wakes)
+         (model (fleet-dashboard-model-label (plist-get fleet :commander)))
+         (line (format "Fleet %s - commander %s%s · %s · wakes %d · %s"
+                       (plist-get fleet :name) (car cmd)
+                       (if (string-empty-p model) "" (format " [%s]" model))
+                       sup (plist-get fleet :queued-wakes)
                        (fleet-dashboard--tally fleet projections)))
          (beg (point)))
     (insert (propertize (fleet-dashboard--clean line) 'face face) "\n")
@@ -318,7 +338,7 @@ eca/status/runtime/nil."
                                            'fleet-attention (and (memq (nth 1 cmd) '(warn error)) (not (member lifecycle '("parked")))) ))
     (push (cons (plist-get fleet :id) 'commander) fleet-dashboard--rows)))
 
-(defun fleet-dashboard--insert-task (fleet task p w-task w-state w-repo)
+(defun fleet-dashboard--insert-task (fleet task p w-task w-state w-repo w-model)
   "Insert one TASK row of FLEET with projection P and column widths."
   (let* ((state (nth 0 p))
          (face (if (and (member (plist-get fleet :lifecycle) '("parked" "parking")) (memq state '(suspended stopping)))
@@ -331,6 +351,7 @@ eca/status/runtime/nil."
             (propertize (fleet-dashboard--fit (fleet-dashboard--state-label p) w-state) 'face face) " "
             (fleet-dashboard--fit (plist-get task :kind) 6) " "
             (fleet-dashboard--fit (fleet-dashboard--repo-label task) w-repo) " "
+            (propertize (fleet-dashboard--fit (fleet-dashboard--task-model-label task) w-model) 'face 'shadow) " "
             (fleet-dashboard--fit (fleet-dashboard--age (plist-get task :detail-at)) 5 t) " "
             (fleet-dashboard--clean (nth 2 p))
             "\n")
@@ -515,8 +536,9 @@ Never creates an empty fake buffer."
       (with-current-buffer buf
         (let ((inhibit-read-only t))
           (erase-buffer)
-          (insert (format "%s — %s\n\n" (if task (format "operator %s" (plist-get task :name)) (format "commander of %s" (plist-get fleet :name)))
-                          (if conn (format "live chat, %s" (fleet-eca-conn-state conn)) "retained transcript")))
+          (insert (format "%s — %s%s\n\n" (if task (format "operator %s" (plist-get task :name)) (format "commander of %s" (plist-get fleet :name)))
+                          (if conn (format "live chat, %s" (fleet-eca-conn-state conn)) "retained transcript")
+                          (let ((m (fleet-dashboard-model-label rt t))) (if (string-empty-p m) "" (format " — model %s" m)))))
           (insert text)
           (goto-char (point-max))
           (special-mode)))

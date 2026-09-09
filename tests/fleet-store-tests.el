@@ -48,24 +48,32 @@
 
 (ert-deftest fleet-store-migration-takes-backup-then-applies ()
   (fleet-test-with-roots
+    ;; A database left by the v1 package: open with the version pinned to 1.
+    (cl-letf (((symbol-value 'fleet-store-schema-version) 1))
+      (let ((store (fleet-store-open (fleet-paths-db-file))))
+        (should (= 1 (fleet-store--current-version store)))
+        (fleet-store-test-fleet store "old")
+        (fleet-store-close store)))
+    ;; The current package upgrades it additively (real schema/002.sql).
     (let ((store (fleet-store-open (fleet-paths-db-file))))
-      (fleet-store-test-fleet store "old")
+      (should (= fleet-store-schema-version (fleet-store--current-version store)))
+      (should (= 1 (length (fleet-store-fleets store))))
+      (should (member "variant" (mapcar (lambda (r) (nth 1 r)) (sqlite-select (fleet-store-db store) "PRAGMA table_info(tasks)"))))
+      (should (member "commander_variant" (mapcar (lambda (r) (nth 1 r)) (sqlite-select (fleet-store-db store) "PRAGMA table_info(fleets)"))))
       (fleet-store-close store))
-    ;; Simulate a package upgrade to schema v2 with a small additive script.
-    (let ((v2 (fleet-test-write (expand-file-name "002.sql" fleet-test--roots)
-                                "CREATE TABLE fleet_test_extra (x TEXT);\n")))
-      (cl-letf* ((fleet-store-schema-version 2)
-                 (orig (symbol-function 'fleet-paths-schema-file))
-                 ((symbol-function 'fleet-paths-schema-file)
-                  (lambda (name) (if (equal name "002.sql") v2 (funcall orig name)))))
-        (let ((store (fleet-store-open (fleet-paths-db-file))))
-          (should (= 2 (fleet-store--current-version store)))
-          (should (= 1 (length (fleet-store-fleets store))))
-          (should (sqlite-select (fleet-store-db store) "SELECT 1 FROM sqlite_master WHERE name='fleet_test_extra'"))
-          (fleet-store-close store))))
     (should (directory-files (fleet-paths-data-root) nil "pre-migration-v1"))
     ;; The old package must now refuse to write the upgraded database.
-    (fleet-test-should-fail 'schema-too-new (fleet-store-open (fleet-paths-db-file)))))
+    (cl-letf (((symbol-value 'fleet-store-schema-version) 1))
+      (fleet-test-should-fail 'schema-too-new (fleet-store-open (fleet-paths-db-file))))))
+
+(ert-deftest fleet-store-eca-catalog-round-trips-and-keeps-fuller-data ()
+  (fleet-store-test-with store
+    (should (equal (fleet-store-eca-catalog store) '(:models nil :default-model nil :variants nil)))
+    (fleet-store-record-eca-catalog store :models '("a/x" "b/y") :default-model "a/x" :variants '("low" "high"))
+    (should (equal (fleet-store-eca-catalog store) '(:models ("a/x" "b/y") :default-model "a/x" :variants ("low" "high"))))
+    ;; An announcement without models or variants must not erase them.
+    (fleet-store-record-eca-catalog store :models nil :default-model "b/y" :variants nil)
+    (should (equal (fleet-store-eca-catalog store) '(:models ("a/x" "b/y") :default-model "b/y" :variants ("low" "high"))))))
 
 (ert-deftest fleet-store-mutation-requires-transaction ()
   (fleet-store-test-with store

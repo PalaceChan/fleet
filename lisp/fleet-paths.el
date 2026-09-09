@@ -84,6 +84,15 @@ Nil discovers the executable the installed ECA package would use."
   "ECA provider/model id for operators.  Nil uses the ECA default."
   :type '(choice (const nil) string) :group 'fleet)
 
+(defcustom fleet-commander-variant nil
+  "ECA model variant (e.g. \"high\") for commanders.  Nil uses the server default."
+  :type '(choice (const nil) string) :group 'fleet)
+
+(defcustom fleet-operator-variant nil
+  "ECA model variant for operators.  Nil uses the server default.
+Per-task overrides come from the commander via fleet_task_create."
+  :type '(choice (const nil) string) :group 'fleet)
+
 (defcustom fleet-agent nil
   "ECA chat agent name used for Fleet runtimes.  Nil uses the server default."
   :type '(choice (const nil) string) :group 'fleet)

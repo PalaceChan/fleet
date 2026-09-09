@@ -1993,3 +1993,12 @@ Each was driven by evidence from the installed pair (see `docs/eca-compatibility
 9. **Actionable events always schedule their own wake admission** through `fleet-store-actionable-event-hook`,
    regardless of origin (adapter observation, RPC tool call, operations journal). Rehearsal 1 showed a
    `task-done` raised by `fleet_status` waiting seven minutes for an unrelated trigger.
+10. **Models and variants (after rehearsal 2).** Every Fleet chat pins an explicit model: the task/fleet
+    request, else `fleet-operator-model`/`fleet-commander-model`, else the server's announced default. The
+    frontend's `eca-chat--model` would otherwise fall back to the user's last interactive selection. The
+    model catalog announced by any runtime (`config/updated` `chat.models`/`variants`/`selectModel`) is kept
+    durably in `meta`, so `fleet-new` can offer completion for the commander, `fleet_task_create` refuses ids
+    outside the catalog (with suggestions), and the commander's boot message lists the catalog so it can turn
+    casual names ("gpt 5.6 terra medium") into exact ids. Variants (`tasks.variant`, `fleets.commander_variant`,
+    schema v2) are passed through unvalidated because they are model-specific and ECA owns them. The effective
+    model/variant is recorded on the runtime row when the connection is ready and shown on the dashboard.

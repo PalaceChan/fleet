@@ -243,7 +243,7 @@ Checks required keys, types and enums."
                                                          :dependencies (fleet-rpc--lst (plist-get params :dependencies))
                                                          :resources (fleet-rpc--lst (plist-get params :resources))
                                                          :context-paths (fleet-rpc--lst (plist-get params :context_paths))
-                                                         :model (plist-get params :model) :actor logical)))
+                                                         :model (plist-get params :model) :variant (plist-get params :variant) :actor logical)))
                        (fleet-supervisor--changed fid)
                        (list :task-id (plist-get task :id) :name (plist-get task :name) :lifecycle (plist-get task :lifecycle)
                              :brief-revision (plist-get task :brief-revision) :entity-revision (plist-get task :entity-revision))))))

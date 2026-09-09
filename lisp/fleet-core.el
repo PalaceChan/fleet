@@ -49,11 +49,28 @@ Installed by the supervisor.")
 
 ;;;; Fleets
 
-(cl-defun fleet-core-create-fleet (store name &key model agent)
-  "Create an active fleet NAME with optional commander MODEL/AGENT; return its row."
+(defun fleet-core-assert-model (store model)
+  "Refuse MODEL when the ECA catalog is known and does not list it.
+Before any runtime has announced the catalog there is nothing to check
+against, so MODEL passes through and ECA judges it at first prompt."
+  (when model
+    (let ((known (plist-get (fleet-store-eca-catalog store) :models)))
+      (when (and known (not (member model known)))
+        (fleet-fail 'unknown-model "Model is not in the ECA catalog; use an exact id from the list"
+                    :model model
+                    :suggestions (cl-remove-if-not
+                                  (lambda (m) (cl-some (lambda (w) (string-match-p (regexp-quote w) m))
+                                                       (split-string (downcase model) "[^a-z0-9.]+" t)))
+                                  known))))
+    model))
+
+(cl-defun fleet-core-create-fleet (store name &key model agent variant)
+  "Create an active fleet NAME; return its row.
+MODEL, AGENT and VARIANT select the commander's ECA model."
   (fleet-paths-assert-name name "fleet")
   (when (fleet-store-fleet-by-name store name)
     (fleet-fail 'fleet-exists "A fleet with that name is active or parked" :name name))
+  (fleet-core-assert-model store (or model fleet-commander-model))
   (let* ((id (fleet-paths-uuid)) (now (fleet-paths-now))
          (root (fleet-paths-fleet-dir id)))
     (fleet-paths-ensure-dir (expand-file-name "commander" root))
@@ -70,6 +87,7 @@ Installed by the supervisor.")
                                 :context-path "commander/context.md"
                                 :commander-model (or model fleet-commander-model)
                                 :commander-agent (or agent fleet-agent)
+                                :commander-variant (or variant fleet-commander-variant)
                                 :created-at now :updated-at now))
       (fleet-store-append-event store :fleet-id id :kind "fleet-created" :actor fleet-core-actor-human
                                 :payload (list :name name)))
@@ -121,16 +139,19 @@ Installed by the supervisor.")
       nil)))
 
 (cl-defun fleet-core-create-task (store fleet-id &key name kind brief repo base-ref branch delivery
-                                        workspace-mode adopt-path dependencies resources model context-paths
+                                        workspace-mode adopt-path dependencies resources model variant context-paths
                                         actor)
   "Create a ready task in FLEET-ID from a complete BRIEF; return its row.
 KIND is change/study/ops.  For change tasks REPO is the primary clone,
 WORKSPACE-MODE is `new' (default), `adopt-branch' or `adopt-worktree' with
 ADOPT-PATH naming the branch or worktree; BASE-REF/BRANCH/DELIVERY describe
 the Git contract.  DEPENDENCIES are task ids in the same fleet; RESOURCES are
-named exclusive resources; CONTEXT-PATHS list extra read context."
+named exclusive resources; CONTEXT-PATHS list extra read context.  MODEL and
+VARIANT override the operator's ECA model (default: `fleet-operator-model' /
+`fleet-operator-variant', else the server default)."
   (let ((fleet (fleet-core-fleet store fleet-id)))
     (fleet-paths-assert-name name "task")
+    (fleet-core-assert-model store (or model fleet-operator-model))
     (unless (member kind fleet-core-task-kinds) (fleet-fail 'invalid-task "Unknown task kind" :kind kind))
     (unless (and (stringp brief) (>= (length (string-trim brief)) 40))
       (fleet-fail 'invalid-task "Brief is missing or too short to be complete" :length (length (or brief ""))))
@@ -173,6 +194,7 @@ named exclusive resources; CONTEXT-PATHS list extra read context."
                                   :base-ref base-ref
                                   :delivery-mode (and (equal kind "change") (or delivery "remote-review"))
                                   :model (or model fleet-operator-model)
+                                  :variant (or variant fleet-operator-variant)
                                   :created-at now :updated-at now))
         (dolist (d dependencies)
           (fleet-store-insert store "task_dependencies" (list :task-id id :depends-on-id d)))
@@ -593,6 +615,9 @@ Records launch.json and the exact unit before calling systemd."
              (fleet-store-transaction store
                (fleet-store-update store "runtimes" id (fleet-store-touch (list :lifecycle "ready" :connection-state "ready" :turn-state "idle"
                                                                               :chat-id (fleet-eca-conn-chat-id conn)
+                                                                              ;; Effective values: a nil request resolved to the server default.
+                                                                              :model (fleet-eca-conn-model conn)
+                                                                              :variant (fleet-eca-conn-variant conn)
                                                                               :main-pid (and (fleet-eca-conn-process conn) (process-id (fleet-eca-conn-process conn)))))))
              ;; Capture the unit's identity once systemd has it; asynchronous and non-blocking.
              (fleet-runtime-inspect unit nil
@@ -655,12 +680,34 @@ Never marks stopped without proof."
                     (plist-get fleet :name) (plist-get fleet :id) (plist-get rt :id) root
                     (expand-file-name "about.md" root) (expand-file-name "commander/context.md" root))
             "- Fleet tools are available as MCP tools named `fleet_*`; they are scoped to this fleet.\n"
+            (fleet-core--models-section store rt)
             (when recovery-summary (concat "\n## Recovery summary\n" recovery-summary "\n"))
             "\n## Current snapshot\n```json\n" (fleet-store-json (fleet-core--compact-snapshot snap)) "\n```\n"
             (let ((about (fleet-paths-read-file (expand-file-name "about.md" root))))
               (when about (concat "\n## about.md\n" about)))
             (let ((ctx (fleet-paths-read-file (expand-file-name "commander/context.md" root))))
               (when ctx (concat "\n## commander/context.md\n" ctx))))))
+
+(defun fleet-core--models-section (store rt)
+  "Boot-message section listing the ECA model catalog, for commander RT.
+The catalog is what any runtime last announced (durable in the store); the
+commander needs it to turn casual model names into exact ids."
+  (let* ((cat (fleet-store-eca-catalog store))
+         (models (plist-get cat :models))
+         ;; Re-read: the row carries the effective model once the connection is ready.
+         (rt (or (fleet-store-get store "runtimes" (plist-get rt :id)) rt)))
+    (concat "\n## Models\n"
+            (format "- You run on `%s`%s.\n" (or (plist-get rt :model) "the ECA default")
+                    (if (plist-get rt :variant) (format " (variant `%s`)" (plist-get rt :variant)) ""))
+            (format "- Operator default: `%s`%s (used when a task sets no `model`).\n"
+                    (or fleet-operator-model (plist-get cat :default-model) "the ECA default")
+                    (if fleet-operator-variant (format " variant `%s`" fleet-operator-variant) ""))
+            (when (plist-get cat :variants)
+              (format "- Variants announced for the default model: %s.\n" (string-join (plist-get cat :variants) ", ")))
+            (if models
+                (format "- Catalog (%d exact ids; `fleet_task_create` accepts only these):\n  %s\n"
+                        (length models) (string-join models ", "))
+              "- Catalog not announced yet; `model` overrides are passed to ECA unchecked.\n"))))
 
 (defun fleet-core--compact-snapshot (snap)
   "Reduce SNAP to the fields a model needs."
@@ -864,7 +911,7 @@ evidence."
   "Step: create the runtime incarnation, launch it, and submit the boot payload."
   (let* ((tid (plist-get task :id))
          (rt (fleet-core--new-runtime store :role "operator" :fleet-id (plist-get task :fleet-id) :task-id tid
-                                      :model (plist-get task :model) :agent fleet-agent)))
+                                      :model (plist-get task :model) :agent fleet-agent :variant (plist-get task :variant))))
     (fleet-store-transaction store
       (fleet-store-update store "tasks" tid (fleet-store-touch (list :current-runtime-id (plist-get rt :id) :lifecycle "active"))))
     (fleet-core-operation-step store op "runtime-launched" (list :runtime-id (plist-get rt :id) :unit (plist-get rt :unit)))
@@ -940,7 +987,8 @@ Return the operation id."
     (fleet-core-owner-epoch)
     (fleet-eca-assert-supported)
     (let* ((op (fleet-core-operation-begin store "commander-start" :fleet-id fleet-id))
-           (rt (fleet-core--new-runtime store :role "commander" :fleet-id fleet-id :model (plist-get fleet :commander-model) :agent (plist-get fleet :commander-agent)))
+           (rt (fleet-core--new-runtime store :role "commander" :fleet-id fleet-id :model (plist-get fleet :commander-model)
+                                        :agent (plist-get fleet :commander-agent) :variant (plist-get fleet :commander-variant)))
            (cwd (fleet-paths-ensure-dir (expand-file-name "commander" (plist-get fleet :artifact-root)))))
       (fleet-store-transaction store
         (fleet-store-update store "fleets" fleet-id (fleet-store-touch (list :commander-runtime-id (plist-get rt :id)))))

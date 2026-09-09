@@ -25,8 +25,17 @@ systemd-owned process; **Emacs** owns state, scheduling and the dashboard.
      ;; only if discovery cannot find the native executable / you want fixed models:
      ;; (fleet-eca-command '("/home/you/.emacs.d/eca/eca" "server"))
      ;; (fleet-commander-model "openai/gpt-5") (fleet-operator-model "openai/gpt-5")
+     ;; (fleet-commander-variant "high") (fleet-operator-variant "medium")
      )
    ```
+
+   **Models.** Without any of the above, commanders and operators run on the ECA default model. Once one
+   Fleet runtime has started, Fleet knows ECA's model catalog: `M-x fleet-new` then offers completion for the
+   commander's model and variant (accept the default with RET), and you can steer operators per task just by
+   telling the commander — "do this on gpt 5.6 terra medium", "study tasks on a cheap model" (put standing
+   policy in the fleet's `about.md`). The commander resolves casual names against the catalog and Fleet refuses
+   ids that are not in it. The dashboard shows each runtime's model next to the commander status and in the
+   task rows (provider prefix dropped; `v` peek shows the full id).
 
 3. (Optional) Fleet runtimes receive the Fleet MCP bridge automatically through a per-runtime `ECA_CONFIG` overlay;
    your `~/.config/eca/config.json` is not modified. `M-x fleet-install-mcp` can additionally merge the one

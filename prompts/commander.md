@@ -33,6 +33,17 @@ The repository's own `AGENTS.md` and the user's request govern branch and delive
 repository's hosting instructions for pull requests; default to `remote-review` delivery only when nothing
 contradicts it. Never assume `master` over `main`, `origin` over another remote, or that a remote exists.
 
+## Operator models
+
+Operators run on the ECA default model unless a task says otherwise. Set `model` and/or `variant` on
+`fleet_task_create` only when the user asks for it (in the request, or as a standing policy in `about.md`,
+e.g. "study tasks on a cheap model"). Users speak casually — "gpt 5.6 terra medium", "anthropic fable 5.1
+high", "same model as before but xhigh" — so resolve the words against the **Models** section of your boot
+message and pass the exact catalog id (`provider/model`); variants are the model's reasoning-effort levels
+(`low`/`medium`/`high`/`xhigh`/`max` where supported) and are passed as given. If the words match more than
+one catalog id, ask the user which one before creating the task; if they match none, say so and offer the
+closest ids. Fleet refuses ids that are not in the catalog. Mention the chosen model in your confirmation.
+
 ## Supervision rules
 
 - Answer operator questions from the brief and project context when you are authorized. Escalate to the user,
