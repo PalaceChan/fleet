@@ -1,3 +1,5 @@
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 # Fleet
 
 Emacs-native orchestration of [ECA](https://eca.dev) agents: one commander per project fleet, independent
@@ -27,6 +29,22 @@ Verified on eca-emacs `20260529.1500` + eca `0.158.1`, Emacs 30.2, Arch Linux sy
 tests run with fakes; `make test-native` additionally runs one real commander boot through the MCP bridge
 and the real systemd detached-child stop test. See `docs/testing.md` for exactly which tests are native.
 
+## Install
+
+Load straight from the source tree with `use-package` (no copy into `~/.emacs.d/lisp` needed):
+
+```elisp
+(use-package fleet
+  :load-path "~/development/fleet/lisp"
+  :after eca
+  :commands (fleet-dashboard fleet-new fleet-park fleet-destroy fleet-doctor
+             fleet-watch-start fleet-watch-stop
+             fleet-commander-stop fleet-commander-replace fleet-install-mcp)
+  :bind (("C-c h f" . fleet-dashboard))
+  :custom
+  (fleet-development-root "~/development"))
+```
+
 ## License
 
-Not yet chosen by the author; no license is granted until a `LICENSE` file is added.
+[MIT](LICENSE).

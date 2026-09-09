@@ -1,6 +1,6 @@
 ;;; fleet-paths.el --- Fleet path/config resolution and identifiers -*- lexical-binding: t; -*-
 
-;; SPDX-License-Identifier: TBD (see README)
+;; SPDX-License-Identifier: MIT
 
 ;;; Commentary:
 

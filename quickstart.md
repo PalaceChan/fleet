@@ -8,20 +8,27 @@ systemd-owned process; **Emacs** owns state, scheduling and the dashboard.
 
 1. An ordinary native ECA chat already works in your Emacs (`M-x eca`), `systemctl --user` works, and Emacs
    was built with SQLite (`(sqlite-available-p)` → `t`). Python 3.11+ at `/usr/bin/python3`, Git.
-2. Fleet lives at `~/development/fleet`. Minimal configuration:
+2. Fleet lives at `~/development/fleet`. Load it from the source tree with `use-package` (no copy or
+   symlink under `~/.emacs.d/lisp`; edits are live after a reload). `C-c h f` is your binding, Fleet never
+   installs one itself:
 
    ```elisp
-   (add-to-list 'load-path "~/development/fleet/lisp")
-   (require 'fleet)
-   ;; only if your clones do not live under ~/development:
-   ;; (setq fleet-development-root "~/src")          ; worktrees go to <root>/.worktrees
-   ;; only if discovery cannot find the native executable / you want fixed models:
-   ;; (setq fleet-eca-command '("/home/you/.emacs.d/eca/eca" "server"))
-   ;; (setq fleet-commander-model "openai/gpt-5" fleet-operator-model "openai/gpt-5")
-   (global-set-key (kbd "C-c h f") #'fleet-dashboard)   ; optional; Fleet never binds it itself
+   (use-package fleet
+     :load-path "~/development/fleet/lisp"
+     :after eca
+     :commands (fleet-dashboard fleet-new fleet-park fleet-destroy fleet-doctor
+                fleet-watch-start fleet-watch-stop
+                fleet-commander-stop fleet-commander-replace fleet-install-mcp)
+     :bind (("C-c h f" . fleet-dashboard))
+     :custom
+     (fleet-development-root "~/development")       ; worktrees go to <root>/.worktrees
+     ;; only if discovery cannot find the native executable / you want fixed models:
+     ;; (fleet-eca-command '("/home/you/.emacs.d/eca/eca" "server"))
+     ;; (fleet-commander-model "openai/gpt-5") (fleet-operator-model "openai/gpt-5")
+     )
    ```
 
-3. Fleet runtimes receive the Fleet MCP bridge automatically through a per-runtime `ECA_CONFIG` overlay;
+3. (Optional) Fleet runtimes receive the Fleet MCP bridge automatically through a per-runtime `ECA_CONFIG` overlay;
    your `~/.config/eca/config.json` is not modified. `M-x fleet-install-mcp` can additionally merge the one
    entry into your global config (with a backup and a diff you confirm) if you want it visible there. Fleet
    never enables blanket trust; your `toolCall.approval` policy stays yours.
