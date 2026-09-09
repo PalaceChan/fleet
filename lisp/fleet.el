@@ -25,6 +25,7 @@
 (require 'fleet-supervisor)
 (require 'fleet-rpc)
 (require 'fleet-dashboard)
+(require 'fleet-telemetry)
 
 ;;;; Startup
 

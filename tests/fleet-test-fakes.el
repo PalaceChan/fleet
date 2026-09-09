@@ -25,7 +25,7 @@ idle until `fleet-test-fake-finish'), `reject', `unknown', or `noack'.")
   (when-let* ((turn (fleet-eca-conn-turn conn)))
     (setf (fleet-eca-conn-turn conn) nil)
     (fleet-eca--emit conn 'turn-idle-observed :message-id (plist-get turn :message-id) :source "fake" :error-text error-text
-                     :accepted (plist-get turn :accepted))))
+                     :accepted (plist-get turn :accepted) :submitted-at (plist-get turn :submitted-at))))
 
 (defun fleet-test-fake-start (&rest args)
   "Double for `fleet-eca-start'."
@@ -54,7 +54,8 @@ idle until `fleet-test-fake-finish'), `reject', `unknown', or `noack'.")
       ('unknown (setf (fleet-eca-conn-turn conn) (list :message-id message-id :state 'delivery-unknown))
                 (funcall callback (list :outcome 'delivery-unknown :message-id message-id)))
       (_
-       (setf (fleet-eca-conn-turn conn) (list :message-id message-id :state 'running :running-seen t :accepted (not (eq fleet-test-fake-turn 'noack))))
+       (setf (fleet-eca-conn-turn conn) (list :message-id message-id :state 'running :running-seen t :accepted (not (eq fleet-test-fake-turn 'noack))
+                                              :submitted-at (fleet-paths-now)))
        (fleet-eca--emit conn 'turn-started :message-id message-id)
        (funcall callback (list :outcome (if (eq fleet-test-fake-turn 'noack) 'observed-unacknowledged 'accepted) :message-id message-id))
        (when (eq fleet-test-fake-turn 'finish)

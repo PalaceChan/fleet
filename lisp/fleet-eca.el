@@ -615,7 +615,9 @@ Runs before the UI handler."
                        :source source :was-stopping (eq (plist-get turn :state) 'stopping)
                        :unattributed (plist-get turn :unattributed)
                        :accepted (plist-get turn :accepted)
-                       :error-text (plist-get turn :error-text))
+                       :error-text (plist-get turn :error-text)
+                       :usage (plist-get turn :usage)
+                       :submitted-at (plist-get turn :submitted-at))
       ;; A terminal event before the response resolves nothing yet; the
       ;; response (accepted/error) still arrives and is handled normally.
       (when (and (not (plist-get turn :accepted)) (plist-get turn :callback))
@@ -656,6 +658,15 @@ Runs before the UI handler."
         ("metadata"
          (setf (fleet-eca-conn-title conn) (plist-get content :title))
          (fleet-eca--emit conn 'title :title (plist-get content :title)))
+        ("usage"
+         ;; Attach the turn's usage to the in-flight turn so the terminal event carries it.
+         (when-let* ((turn (fleet-eca-conn-turn conn)))
+           (plist-put turn :usage (list :message-input-tokens (plist-get content :messageInputTokens)
+                                        :message-output-tokens (plist-get content :messageOutputTokens)
+                                        :session-tokens (plist-get content :sessionTokens)
+                                        :message-cost (plist-get content :messageCost)
+                                        :session-cost (plist-get content :sessionCost)
+                                        :context-limit (plist-get (plist-get content :limit) :context)))))
         ("toolCallPrepare"
          (let ((id (plist-get content :id)))
            (unless (assoc id (fleet-eca-conn-active-tools conn))

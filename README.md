@@ -16,7 +16,7 @@ state, scheduling and the dashboard. Zero-token supervision — no model is ever
 
 ```
 lisp/        fleet.el (commands) · fleet-paths · fleet-store · fleet-core · fleet-supervisor
-             fleet-eca (only ECA-aware module) · fleet-runtime (systemd) · fleet-git · fleet-rpc · fleet-dashboard
+             fleet-eca (only ECA-aware module) · fleet-runtime (systemd) · fleet-git · fleet-rpc · fleet-dashboard · fleet-telemetry
 bridge/      fleet_bridge.py — stdio MCP server / socket client / lease holder (stdlib only)
 prompts/     canonical commander/operator doctrine and task-kind briefs
 schema/      001.sql, rpc-v1.json, tools-v1.json
@@ -39,7 +39,8 @@ Load straight from the source tree with `use-package` (no copy into `~/.emacs.d/
   :after eca
   :commands (fleet-dashboard fleet-new fleet-park fleet-destroy fleet-doctor
              fleet-watch-start fleet-watch-stop
-             fleet-commander-stop fleet-commander-replace fleet-install-mcp)
+             fleet-commander-stop fleet-commander-replace fleet-install-mcp
+             fleet-timeline fleet-stats)
   :bind (("C-c h f" . fleet-dashboard))
   :custom
   (fleet-development-root "~/development"))

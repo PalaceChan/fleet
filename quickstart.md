@@ -48,6 +48,7 @@ systemd-owned process; **Emacs** owns state, scheduling and the dashboard.
 | `fleet-commander-stop` | Verified stop of the commander only; operators keep running. |
 | `fleet-commander-replace` | Verified stop, then a fresh commander booted with the durable snapshot and `commander/context.md`. |
 | `fleet-install-mcp` | Optional: merge the single Fleet MCP entry into ECA's global config with backup + diff. |
+| `fleet-timeline` / `fleet-stats` | Retrospective telemetry for a fleet: chronological events with event→wake/ack latencies; counts of tool calls and refusals, turn durations, tokens/cost, operation durations. Read-only; works on archived fleets too. |
 
 ## Dashboard keys
 
@@ -143,4 +144,7 @@ Tear down or close every task, then `M-x fleet-destroy`. The name is reusable af
 - **external jobs**: park lists them; Fleet cannot stop what it did not start.
 
 Evidence lives in `~/.local/share/fleet/fleets/<uuid>/…/runs/<runtime>/{launch.json,transcript.jsonl}`,
-the `operations` table (`fleet-doctor`), and `journalctl --user -u fleet-eca-<uuid>.service`.
+the `operations` table (`fleet-doctor`), and `journalctl --user -u fleet-eca-<uuid>.service`. For a
+retrospective, `M-x fleet-timeline` and `M-x fleet-stats` read the durable record: every tool call (with
+outcome/refusal code and duration), every finished turn (duration, tokens, cost), and wake/ack latencies per
+actionable event. The raw tables are plain SQLite (`sqlite3 ~/.local/share/fleet/fleet.sqlite3`).

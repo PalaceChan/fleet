@@ -207,6 +207,11 @@ Records observations, routes lane and wakes."
         (error (message "fleet-supervisor: event %s failed: %s" (plist-get ev :kind) (error-message-string err))))
       (fleet-supervisor--changed (plist-get rt :fleet-id)))))
 
+(defun fleet-supervisor--seconds-between (from to)
+  "Seconds between ISO timestamps FROM and TO, or nil."
+  (when (and (stringp from) (stringp to))
+    (ignore-errors (round (- (float-time (date-to-time to)) (float-time (date-to-time from)))))))
+
 (defun fleet-supervisor--observe (store rid plist)
   "Record observation PLIST on runtime RID."
   (fleet-store-transaction store
@@ -223,9 +228,20 @@ Records observations, routes lane and wakes."
       ('turn-stopping (fleet-supervisor--observe store rid (list :turn-state "stopping")))
       ('turn-idle-observed
        (fleet-supervisor--observe store rid (list :turn-state "idle" :active-tool nil))
-       (when-let* ((mid (plist-get ev :message-id)))
-         (fleet-supervisor--message-transition store mid "finished" (list :source (plist-get ev :source) :error-text (plist-get ev :error-text)))
-         (fleet-supervisor--on-message-finished store rt mid))
+       (let ((mid (plist-get ev :message-id))
+             (m (and (plist-get ev :message-id) (fleet-store-get store "messages" (plist-get ev :message-id)))))
+         (when mid
+           (fleet-supervisor--message-transition store mid "finished"
+                                                 (list :source (plist-get ev :source) :error-text (plist-get ev :error-text)
+                                                       :usage (plist-get ev :usage))))
+         ;; Telemetry: one non-actionable event per finished turn with usage and duration.
+         (fleet-store-transaction store
+           (fleet-store-append-event store :fleet-id fid :task-id tid :runtime-id rid :kind "turn-finished" :source "eca"
+                                     :payload (list :message-id mid :origin (and m (plist-get m :origin))
+                                                    :stopped (plist-get ev :was-stopping) :error (and (plist-get ev :error-text) t)
+                                                    :usage (plist-get ev :usage)
+                                                    :seconds (fleet-supervisor--seconds-between (plist-get ev :submitted-at) (plist-get ev :at)))))
+         (when mid (fleet-supervisor--on-message-finished store rt mid)))
        (fleet-supervisor--dispatch-lane store rid)
        (when (equal (plist-get rt :role) "commander") (fleet-supervisor-kick fid 'turn-end)))
       ((or 'tool-running 'tool-preparing)

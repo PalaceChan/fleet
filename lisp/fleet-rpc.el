@@ -137,22 +137,47 @@ Return a result plist."
       (_
        (let* ((tool (cl-find-if (lambda (tool) (equal (plist-get tool :name) operation)) (fleet-rpc-tools))))
          (unless tool (fleet-fail 'unknown-operation "No such operation" :operation operation))
-         (let ((actor (fleet-rpc-authenticate store credential)))
+         (let ((actor (fleet-rpc-authenticate store credential))
+               (started (float-time)))
            (push (cons operation (plist-get actor :role)) fleet-rpc-request-log)
            (when (> (length fleet-rpc-request-log) 200) (setcdr (nthcdr 199 fleet-rpc-request-log) nil))
-           (unless (member (plist-get actor :role) (append (plist-get tool :roles) nil))
-             (fleet-fail 'forbidden "Operation not available to this role" :role (plist-get actor :role) :operation operation))
-           (unless (fleet-supervisor-owner-p) (fleet-fail 'owner-unproven "Fleet owner lease not live"))
-           ;; The key may travel in the envelope (bridge) or in the arguments (model); they are one fact.
-           (let* ((key (or idempotency-key (plist-get params :idempotency_key)))
-                  (params (if (and key (not (plist-member params :idempotency_key)))
-                              (append (list :idempotency_key key) params)
-                            params)))
-             (when (and idempotency-key (plist-get params :idempotency_key)
-                        (not (equal idempotency-key (plist-get params :idempotency_key))))
-               (fleet-fail 'invalid-request "idempotency key differs between envelope and arguments"))
-             (fleet-rpc--validate params tool)
-             (fleet-rpc--run store actor operation key params))))))))
+           ;; Every authenticated tool call becomes a durable, non-actionable
+           ;; telemetry event: outcome, refusal code and duration.
+           (condition-case err
+               (let ((result (fleet-rpc--dispatch-authenticated store actor tool operation idempotency-key params)))
+                 (fleet-rpc--record-call store actor operation started "ok" nil params)
+                 result)
+             (fleet-error (fleet-rpc--record-call store actor operation started "refused" (fleet-error-code err) params)
+                          (signal (car err) (cdr err)))
+             (error (fleet-rpc--record-call store actor operation started "error" 'internal params)
+                    (signal (car err) (cdr err))))))))))
+
+(defun fleet-rpc--record-call (store actor operation started outcome code params)
+  "Append a `tool-call' event for OPERATION by ACTOR with OUTCOME/CODE and duration."
+  (ignore-errors
+    (fleet-store-transaction store
+      (fleet-store-append-event store :fleet-id (plist-get actor :fleet-id) :task-id (or (plist-get params :task_id) (plist-get actor :task-id))
+                                :runtime-id (plist-get actor :runtime-id) :kind "tool-call" :source "rpc" :actor (plist-get actor :logical)
+                                :payload (list :operation operation :role (plist-get actor :role) :outcome outcome
+                                               :code (and code (format "%s" code))
+                                               :ms (round (* 1000 (- (float-time) started)))
+                                               :phase (plist-get params :phase))))))
+
+(defun fleet-rpc--dispatch-authenticated (store actor tool operation idempotency-key params)
+  "Role check, key normalization, validation and execution for authenticated ACTOR."
+  (unless (member (plist-get actor :role) (append (plist-get tool :roles) nil))
+    (fleet-fail 'forbidden "Operation not available to this role" :role (plist-get actor :role) :operation operation))
+  (unless (fleet-supervisor-owner-p) (fleet-fail 'owner-unproven "Fleet owner lease not live"))
+  ;; The key may travel in the envelope (bridge) or in the arguments (model); they are one fact.
+  (let* ((key (or idempotency-key (plist-get params :idempotency_key)))
+         (params (if (and key (not (plist-member params :idempotency_key)))
+                     (append (list :idempotency_key key) params)
+                   params)))
+    (when (and idempotency-key (plist-get params :idempotency_key)
+               (not (equal idempotency-key (plist-get params :idempotency_key))))
+      (fleet-fail 'invalid-request "idempotency key differs between envelope and arguments"))
+    (fleet-rpc--validate params tool)
+    (fleet-rpc--run store actor operation key params)))
 
 (defun fleet-rpc--validate (params tool)
   "Minimal structural validation of PARAMS against TOOL's inputSchema.
