@@ -34,7 +34,7 @@ are intact.
 | Late `metadata` (title) | arrives 0.6–1 s after `finished` | not activity |
 | Second prompt while running | **accepted** (`prompting`), server emits a second `running`, then a single `idle`; the first prompt's answer is dropped (`trace-double.json`) | Fleet admits at most one in-flight prompt per chat; a second submission is refused with `lane-busy` |
 | Question | `chat/askQuestion` is a **server request** (has `id`) after `toolCallRun/Running` of `ask_user` and `progress "Waiting answer"`; answered with `{answer, cancelled}` | captured before the UI renders it; `fleet-eca-answer-question` replies to the exact request id |
-| Tool approval | `toolCallRun` with `manualApproval: true`; `chat/toolCallApprove` / `chat/toolCallReject` notifications | captured as `tool-approval-required`; never auto-approved |
+| Tool approval | `toolCallRun` with `manualApproval: true`; `chat/toolCallApprove` / `chat/toolCallReject` notifications; `toolCallRunning` follows an approval | captured as `tool-approval-required` (dashboard attention, not a commander wake); cleared on `toolCallRunning`/`toolCalled`/`toolCallRejected`; never auto-approved by Fleet |
 | Subagent activity | `chat/contentReceived` with `parentChatId`; child `statusChanged` | recorded as `subagent-activity`; can never finish the parent turn |
 | Models | first `config/updated` with non-empty `chat.models` arrives ~6 s after `initialized` | connection readiness waits for it (`fleet-eca-models-timeout-sec`, 90 s) |
 | Cancellation | `chat/promptStop` is a notification; frontend has a 10 s UI-only fallback to idle | `cancel-requested` only; stop proof comes from systemd |
@@ -73,6 +73,28 @@ and on `unload-feature`. Non-Fleet buffers/sessions take the original code path 
 - The server logs `[MCP] Started MCP server fleet` on stderr when the overlay is applied (native test).
 - Agent names on this pair are `code`/`plan`; an unknown name falls back with a warning. `fleet-agent`
   defaults to nil (server default).
+- **Tool approval precedence (server source `eca.features.tools/approval-decision`, verified 0.158.1 and
+  0.159.0):** config `deny` > session "approve and remember" > **tool built-in check** > config `ask` >
+  config `allow` > legacy `manualApproval` > `byDefault`. The built-in check makes every filesystem tool ask
+  for a `path` outside the session's workspace roots and `shell_command` ask for a `working_directory`
+  outside them, so `toolCall.approval.byDefault: "allow"` cannot suppress those prompts. Only trust mode
+  does (it promotes `ask` to allow and never overrides `deny`): `chat/prompt` `trust: true`,
+  `chat/update {chatId, trust}` (frontend `C-c C-t`, applies to the next tool call), or server config
+  `chat.defaultTrust`. Consequences for Fleet (rehearsal 1, 2026-09-09):
+  - workspace roots must cover everything the brief entitles an operator to touch: the task directory
+    (progress, report, artifacts, Fleet workspace) plus the studied repository or the change worktree;
+    the commander gets the fleet directory (`fleet-core-operator-roots`);
+  - Fleet chat buffers seed `eca-chat--selected-trust` from `eca-chat--last-known-trust` exactly like
+    `eca-chat-open`, and `fleet-eca-submit` forwards it as `trust`, so the user's `eca-chat-trust-enable`
+    governs Fleet chats too. Fleet itself never turns trust on.
+  - `tool-approval-required` is recorded but not actionable: only a human can answer it.
+- **Usage notifications** on `openai/gpt-5.6-*` (openai-responses) carry `sessionTokens` and `sessionCost`
+  (a string) but null `messageInputTokens`/`messageOutputTokens`; telemetry derives per-turn deltas.
+- **ECA UI on Fleet sessions:** `eca-chat--handle-init-progress` and `eca-chat--handle-mcp-server-updated`
+  call `(with-current-buffer (eca-chat--get-last-buffer session))`, which is nil until Fleet's silent chat
+  exists, raising `Wrong type argument: stringp, nil` (logged to `<eca:emacs-errors[…]>`). Harmless, but
+  `eca-process--make-filter` maps `handle-msg` over a whole chunk, so Fleet guards its call to
+  `eca--handle-message` to keep observing the rest of the chunk.
 - **Unverified:** whether `disabledTools` fully prevents `eca__spawn_agent` on this server version. Until a
   trace confirms it, treat native subagent spawning inside Fleet runtimes as possible; the bridge still binds
   authority to the runtime credential, so a child would share its parent's scope (never more).

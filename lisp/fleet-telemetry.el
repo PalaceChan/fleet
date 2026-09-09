@@ -19,8 +19,40 @@
 
 (defun fleet-telemetry--secs (from to)
   "Seconds between ISO timestamps FROM and TO, or nil."
-  (when (and (stringp from) (stringp to))
-    (ignore-errors (- (float-time (date-to-time to)) (float-time (date-to-time from))))))
+  (fleet-paths-seconds-between from to))
+
+(defun fleet-telemetry--num (v)
+  "V as a number, or nil.  ECA sends costs as strings (\"0.11\")."
+  (cond ((numberp v) v)
+        ((and (stringp v) (string-match-p "\\`-?[0-9.]+\\'" v)) (string-to-number v))
+        (t nil)))
+
+(defun fleet-telemetry-turn-usage (turns)
+  "Attribute tokens and cost to each of TURNS (payload plists, oldest first).
+Returns a list of (:in N :out N :cost C :derived BOOL) aligned with TURNS.
+Providers such as openai-responses report only session totals
+\(`session-tokens', `session-cost') and null message-level fields; then the
+turn's share is the increase of the session total since the previous turn of
+the same runtime (the first turn gets the whole total).  Message-level fields
+win when present."
+  (let ((last-tokens (make-hash-table :test 'equal))
+        (last-cost (make-hash-table :test 'equal)))
+    (mapcar
+     (lambda (p)
+       (let* ((u (plist-get p :usage)) (rid (or (plist-get p :runtime-id) "?"))
+              (min (fleet-telemetry--num (plist-get u :message-input-tokens)))
+              (mout (fleet-telemetry--num (plist-get u :message-output-tokens)))
+              (mcost (fleet-telemetry--num (plist-get u :message-cost)))
+              (stok (fleet-telemetry--num (plist-get u :session-tokens)))
+              (scost (fleet-telemetry--num (plist-get u :session-cost)))
+              (derived nil)
+              (in (or min (and stok (progn (setq derived t) (max 0 (- stok (gethash rid last-tokens 0)))))))
+              (out (or mout (and min 0)))
+              (cost (or mcost (and scost (max 0.0 (- scost (gethash rid last-cost 0.0)))))))
+         (when stok (puthash rid stok last-tokens))
+         (when scost (puthash rid scost last-cost))
+         (list :in (or in 0) :out (or out 0) :cost (or cost 0.0) :derived derived)))
+     turns)))
 
 (defun fleet-telemetry--fmt-secs (s)
   "Compact duration string for S seconds (nil -> \"-\")."
@@ -51,7 +83,7 @@
          (by-kind (make-hash-table :test 'equal))
          (tool-calls (make-hash-table :test 'equal))
          (refusals (make-hash-table :test 'equal))
-         (turns nil) (usage-in 0) (usage-out 0) (cost 0.0) (turn-secs nil)
+         (turns nil) (usage-in 0) (usage-out 0) (cost 0.0) (turn-secs nil) (tokens-derived nil)
          (receipts (fleet-store-query store "SELECT r.*, e.created_at AS event_at FROM event_receipts r JOIN events e ON e.id = r.event_id WHERE r.fleet_id = ?" fleet-id))
          (batches (fleet-store-query store "SELECT b.*, m.created_at AS message_at FROM wake_batches b LEFT JOIN messages m ON m.id = b.message_id WHERE b.fleet_id = ?" fleet-id))
          (ops (fleet-store-query store "SELECT * FROM operations WHERE fleet_id = ?" fleet-id))
@@ -65,13 +97,13 @@
            (unless (equal (plist-get p :outcome) "ok")
              (cl-incf (gethash (format "%s: %s" (plist-get p :operation) (plist-get p :code)) refusals 0))))
           ("turn-finished"
-           (push p turns)
-           (when (plist-get p :seconds) (push (plist-get p :seconds) turn-secs))
-           (let ((u (plist-get p :usage)))
-             (when u
-               (cl-incf usage-in (or (plist-get u :message-input-tokens) 0))
-               (cl-incf usage-out (or (plist-get u :message-output-tokens) 0))
-               (cl-incf cost (or (plist-get u :message-cost) 0))))))))
+           (push (plist-put (copy-sequence p) :runtime-id (plist-get e :runtime-id)) turns)
+           (when (plist-get p :seconds) (push (plist-get p :seconds) turn-secs))))))
+    (dolist (u (fleet-telemetry-turn-usage (reverse turns)))
+      (cl-incf usage-in (plist-get u :in))
+      (cl-incf usage-out (plist-get u :out))
+      (cl-incf cost (plist-get u :cost))
+      (when (plist-get u :derived) (setq tokens-derived t)))
     (let* ((event->wake (cl-loop for r in receipts
                                  for b = (cl-find-if (lambda (b) (equal (plist-get b :id) (plist-get r :batch-id))) batches)
                                  when (and b (plist-get b :message-at)) collect (fleet-telemetry--secs (plist-get r :event-at) (plist-get b :message-at))))
@@ -85,7 +117,7 @@
             :refusals (let (l) (maphash (lambda (k v) (push (cons k v) l)) refusals) l)
             :turns (length turns)
             :turn-seconds (fleet-telemetry--stats turn-secs)
-            :tokens-in usage-in :tokens-out usage-out :cost cost
+            :tokens-in usage-in :tokens-out usage-out :cost cost :tokens-derived tokens-derived
             :receipts (length receipts)
             :unacknowledged (cl-count-if (lambda (r) (not (equal (plist-get r :state) "acknowledged"))) receipts)
             :event->wake (fleet-telemetry--stats event->wake)
@@ -98,7 +130,8 @@
             :messages (mapcar (lambda (m) (list (plist-get m :origin) (plist-get m :state) (plist-get m :n))) messages)))))
 
 (defun fleet-telemetry-timeline (store fleet-id &optional limit)
-  "Chronological rows (plists) for FLEET-ID: :at :kind :task :runtime :summary :latency."
+  "Chronological rows (plists) for FLEET-ID, at most LIMIT.
+Each row has :at :kind :task :runtime :summary :latency."
   (let* ((tasks (make-hash-table :test 'equal))
          (events (fleet-store-query store (format "SELECT * FROM events WHERE fleet_id = ? ORDER BY seq %s" (if limit (format "LIMIT %d" limit) "")) fleet-id)))
     (dolist (task (fleet-store-tasks store fleet-id t)) (puthash (plist-get task :id) (plist-get task :name) tasks))
@@ -127,7 +160,12 @@
     ("turn-finished" (let ((u (plist-get p :usage)))
                        (format "%s turn %s%s%s" (or (plist-get p :origin) "?")
                                (fleet-telemetry--fmt-secs (plist-get p :seconds))
-                               (if u (format " · %s+%s tok" (or (plist-get u :message-input-tokens) "?") (or (plist-get u :message-output-tokens) "?")) "")
+                               (cond ((and u (plist-get u :message-input-tokens))
+                                      (format " · %s+%s tok" (plist-get u :message-input-tokens) (or (plist-get u :message-output-tokens) "?")))
+                                     ((and u (plist-get u :session-tokens))
+                                      (format " · session %s tok%s" (plist-get u :session-tokens)
+                                              (if (plist-get u :session-cost) (format " $%s" (plist-get u :session-cost)) "")))
+                                     (t ""))
                                (cond ((plist-get p :stopped) " · stopped") ((plist-get p :error) " · error") (t "")))))
     ((or "task-done" "task-failed" "task-blocked" "task-working" "task-paused" "decision-requested")
      (or (plist-get p :detail) ""))
@@ -175,7 +213,8 @@
 
 ;;;###autoload
 (defun fleet-stats (fleet-name)
-  "Show supervision statistics for FLEET-NAME: latencies, tool calls, refusals, tokens."
+  "Show supervision statistics for FLEET-NAME.
+Latencies, tool calls, refusals, tokens and cost."
   (interactive (list (plist-get (fleet-telemetry--read-fleet "Stats for fleet: ") :name)))
   (let* ((store (fleet-supervisor-store))
          (fleet (or (cl-find-if (lambda (f) (equal (plist-get f :name) fleet-name)) (fleet-store-fleets store t)) (user-error "No such fleet")))
@@ -188,8 +227,10 @@
         (insert (format "Events: %d   Actionable receipts: %d (unacknowledged %d)\n" (plist-get s :events) (plist-get s :receipts) (plist-get s :unacknowledged)))
         (insert (format "Wakes: %d   reminders: %d   held/reconcile batches: %d\n" (plist-get s :wakes) (plist-get s :reminders) (plist-get s :held-batches)))
         (insert (format "Latency event→wake: %s\nLatency event→ack:  %s\n" (fleet-telemetry--fmt-stats (plist-get s :event->wake)) (fleet-telemetry--fmt-stats (plist-get s :event->ack))))
-        (insert (format "\nTurns: %d   duration: %s\nTokens: %d in / %d out   cost: %.4f\n" (plist-get s :turns) (fleet-telemetry--fmt-stats (plist-get s :turn-seconds))
-                        (plist-get s :tokens-in) (plist-get s :tokens-out) (plist-get s :cost)))
+        (insert (format "\nTurns: %d   duration: %s\n" (plist-get s :turns) (fleet-telemetry--fmt-stats (plist-get s :turn-seconds))))
+        (insert (if (plist-get s :tokens-derived)
+                    (format "Tokens: %d (session totals; provider gave no per-message split)   cost: %.4f\n" (plist-get s :tokens-in) (plist-get s :cost))
+                  (format "Tokens: %d in / %d out   cost: %.4f\n" (plist-get s :tokens-in) (plist-get s :tokens-out) (plist-get s :cost))))
         (insert "\nTool calls:\n")
         (if (plist-get s :tool-calls)
             (dolist (c (plist-get s :tool-calls)) (insert (format "  %5d  %s\n" (cdr c) (car c))))

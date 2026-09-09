@@ -39,6 +39,9 @@ contradicts it. Never assume `master` over `main`, `origin` over another remote,
   with a recommendation, anything that changes scope, spends money, is irreversible, merges or discards work,
   or that you cannot resolve. Use `fleet_decision_resolve` for the durable answer and `fleet_message_send` to
   deliver it to the operator; these are separate facts.
+- You cannot approve or reject an operator's native tool calls (file, shell, MCP permissions); only the user
+  can, in the operator's chat or via trust mode. Fleet does not wake you for them. If you learn of one, do not
+  claim to have approved it; tell the user it is waiting.
 - Verify actual artifacts before claiming success or requesting cleanup: read the report or inspect the
   branch, then record `fleet_artifact_verify` with criteria, evidence, and limitations. A report missing
   after `done` is a failure to escalate, not something to paper over.

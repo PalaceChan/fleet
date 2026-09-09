@@ -216,6 +216,59 @@
           (fleet-test-write report "# Report\nchanged after verification\n")
           (should-not (fleet-core-task-verified-p store (fleet-store-get store "tasks" tid))))))))
 
+(ert-deftest fleet-core-artifact-registration-is-idempotent-per-location ()
+  "Rehearsal 1 bug I: the operator registered report.md twice (register tool,
+then fleet_status :artifacts) and the commander had to verify two rows."
+  (fleet-test-with-fakes
+    (let* ((fid (fleet-core-test-fleet store))
+           (task (fleet-core-test-study store fid)) (tid (plist-get task :id)))
+      (fleet-core-test-start store tid)
+      (let* ((rt (fleet-core-test-runtime store tid))
+             (r1 (fleet-core-artifact-register store :runtime-id rt :kind "report" :rel-path "report.md" :description "first"))
+             (r2 (fleet-core-artifact-register store :runtime-id rt :kind "report" :rel-path "report.md" :description "second, fuller")))
+        (should (equal (plist-get r1 :artifact-id) (plist-get r2 :artifact-id)))
+        (fleet-core-task-status store :runtime-id rt :phase "done" :artifacts '((:kind "report" :rel-path "report.md")))
+        (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM artifacts WHERE task_id = ?" tid)))
+        (should (equal "second, fuller" (plist-get (fleet-store-query1 store "SELECT description FROM artifacts WHERE task_id = ?" tid) :description)))
+        ;; a different location is a different artifact
+        (fleet-core-artifact-register store :runtime-id rt :kind "report" :external-ref "file:///elsewhere/report.md")
+        (should (= 2 (fleet-store-scalar store "SELECT COUNT(*) FROM artifacts WHERE task_id = ?" tid)))))))
+
+(ert-deftest fleet-core-operator-roots-cover-task-dir-repo-and-worktree ()
+  "Rehearsal 1 bug E: ECA forces approval for paths outside its workspace
+roots, so the roots must cover the task dir (progress/report), the studied
+repo, or the change worktree; commander roots must cover the fleet dir."
+  (fleet-test-with-fakes
+    (let* ((repo (fleet-git-test-repo "proj"))
+           (fid (fleet-core-test-fleet store "fl"))
+           (fleet (fleet-store-get store "fleets" fid))
+           (study (fleet-core-create-task store fid :name "look" :kind "study" :brief fleet-test-brief :repo repo))
+           (study-ws (expand-file-name "workspace" (fleet-core-task-dir store study))))
+      ;; study: task dir (workspace nested inside is collapsed) + repo
+      (should (equal (fleet-core-operator-roots store study study-ws)
+                     (list (fleet-paths-canonical (fleet-core-task-dir store study)) (fleet-paths-canonical repo))))
+      ;; no repo: task dir only
+      (let ((plain (fleet-core-test-study store fid "plain")))
+        (should (equal (fleet-core-operator-roots store plain (expand-file-name "workspace" (fleet-core-task-dir store plain)))
+                       (list (fleet-paths-canonical (fleet-core-task-dir store plain))))))
+      ;; change: task dir + worktree (the primary clone is NOT a root)
+      (let* ((change (fleet-core-create-task store fid :name "feat" :kind "change" :brief fleet-test-brief :repo repo :delivery "local-ready"))
+             (tid (plist-get change :id)))
+        (should (equal (plist-get (fleet-core-test-start store tid) :state) "done"))
+        (let* ((change (fleet-store-get store "tasks" tid))
+               (roots (fleet-core-operator-roots store change (plist-get change :workspace-path))))
+          (should (equal roots (list (fleet-paths-canonical (fleet-core-task-dir store change)) (plist-get change :workspace-path))))
+          (should-not (member (fleet-paths-canonical repo) roots))
+          ;; what the runtime was actually launched with
+          (let ((ev (fleet-store-unjson (plist-get (fleet-store-get store "runtimes" (fleet-core-test-runtime store tid)) :launch-evidence))))
+            (should (equal (append (plist-get ev :roots) nil) roots)))))
+      ;; commander: the fleet directory
+      (let ((op (fleet-core-start-commander store fid)))
+        (fleet-test-wait-op store op)
+        (let* ((cid (plist-get (fleet-store-get store "fleets" fid) :commander-runtime-id))
+               (ev (fleet-store-unjson (plist-get (fleet-store-get store "runtimes" cid) :launch-evidence))))
+          (should (equal (append (plist-get ev :roots) nil) (list (fleet-paths-canonical (plist-get fleet :artifact-root))))))))))
+
 (ert-deftest fleet-core-change-task-creates-worktree-and-claims ()
   (fleet-test-with-fakes
     (let* ((repo (fleet-git-test-repo "proj"))

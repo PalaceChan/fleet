@@ -159,6 +159,7 @@ CALLBACK gets a mode plist."
                        fleet-supervisor--read-only nil
                        fleet-core-event-sink #'fleet-supervisor-handle-event
                        fleet-eca-human-sink #'fleet-supervisor--human-sink)
+                 (add-hook 'fleet-store-actionable-event-hook #'fleet-supervisor--on-actionable-event)
                  (fleet-supervisor--start-timers)
                  (fleet-core-reconcile-runtimes
                   fleet-supervisor--store
@@ -185,8 +186,16 @@ CALLBACK gets a mode plist."
           (dolist (f (fleet-store-fleets fleet-supervisor--store)) (fleet-supervisor-kick (plist-get f :id) 'event)))
       (error (message "fleet-supervisor: tick error: %s" (error-message-string err))))))
 
+(defun fleet-supervisor--on-actionable-event (fleet-id _event-id _kind)
+  "Schedule a wake admission for FLEET-ID after an actionable event.
+Installed on `fleet-store-actionable-event-hook' so that actionable events
+raised by RPC tool calls (task done/failed/blocked, decisions) and by the
+operations journal are delivered without waiting for an unrelated kick."
+  (fleet-supervisor-kick fleet-id 'event))
+
 (defun fleet-supervisor-stop ()
   "Close the store and timers in this Emacs without stopping any runtime."
+  (remove-hook 'fleet-store-actionable-event-hook #'fleet-supervisor--on-actionable-event)
   (when fleet-supervisor--wait-timer (cancel-timer fleet-supervisor--wait-timer) (setq fleet-supervisor--wait-timer nil))
   (maphash (lambda (_k tm) (cancel-timer tm)) fleet-supervisor--kick-timers)
   (clrhash fleet-supervisor--kick-timers)
@@ -208,9 +217,19 @@ Records observations, routes lane and wakes."
       (fleet-supervisor--changed (plist-get rt :fleet-id)))))
 
 (defun fleet-supervisor--seconds-between (from to)
-  "Seconds between ISO timestamps FROM and TO, or nil."
-  (when (and (stringp from) (stringp to))
-    (ignore-errors (round (- (float-time (date-to-time to)) (float-time (date-to-time from)))))))
+  "Float seconds between ISO timestamps FROM and TO, or nil."
+  (fleet-paths-seconds-between from to))
+
+(defun fleet-supervisor--approval-cleared (rt tool-id)
+  "Observation plist removing TOOL-ID from RT's stored pending approvals.
+A tool that starts running, finishes, or is answered by Fleet is no longer
+waiting for approval, whichever side (human, trust mode, Fleet) resolved it.
+Returns nil when nothing changes so callers can append it unconditionally."
+  (let* ((raw (plist-get rt :pending-approvals))
+         (current (and raw (append (fleet-store-unjson raw) nil))))
+    (when (and current tool-id (member tool-id current))
+      (let ((rest (delete tool-id current)))
+        (list :pending-approvals (and rest (fleet-store-json (vconcat rest))))))))
 
 (defun fleet-supervisor--observe (store rid plist)
   "Record observation PLIST on runtime RID."
@@ -245,16 +264,25 @@ Records observations, routes lane and wakes."
        (fleet-supervisor--dispatch-lane store rid)
        (when (equal (plist-get rt :role) "commander") (fleet-supervisor-kick fid 'turn-end)))
       ((or 'tool-running 'tool-preparing)
-       (fleet-supervisor--observe store rid (list :active-tool (fleet-store-json (list :id (plist-get ev :tool-id) :name (plist-get ev :name) :since (plist-get ev :at))))))
-      ('tool-finished (fleet-supervisor--observe store rid (list :active-tool nil)))
+       (fleet-supervisor--observe store rid (append (list :active-tool (fleet-store-json (list :id (plist-get ev :tool-id) :name (plist-get ev :name) :since (plist-get ev :at))))
+                                                    (fleet-supervisor--approval-cleared rt (plist-get ev :tool-id)))))
+      ('tool-finished (fleet-supervisor--observe store rid (append (list :active-tool nil)
+                                                                   (fleet-supervisor--approval-cleared rt (plist-get ev :tool-id)))))
+      ((or 'tool-approved-by-fleet 'tool-rejected-by-fleet)
+       (fleet-supervisor--observe store rid (fleet-supervisor--approval-cleared rt (plist-get ev :tool-id))))
       ('tool-approval-required
-       (fleet-supervisor--observe store rid (list :pending-approvals (fleet-store-json (vector (plist-get ev :tool-id)))))
+       (fleet-supervisor--observe store rid (list :pending-approvals (fleet-store-json (vconcat (cl-adjoin (plist-get ev :tool-id)
+                                                                                                              (let ((raw (plist-get rt :pending-approvals)))
+                                                                                                                (and raw (append (fleet-store-unjson raw) nil)))
+                                                                                                              :test #'equal)))))
+       ;; Not actionable: only a human can approve a native tool call (in the
+       ;; chat, or by trust mode).  Waking the commander for it produced paid
+       ;; turns and fabricated "approved" dispositions in rehearsal 1.  The
+       ;; dashboard surfaces it as attention instead.
        (fleet-store-transaction store
          (fleet-store-append-event store :fleet-id fid :task-id tid :runtime-id rid :kind "tool-approval-required"
-                                   :payload (list :tool-id (plist-get ev :tool-id) :name (plist-get ev :name) :summary (plist-get ev :summary))
-                                   :actionable (equal (plist-get rt :role) "operator")))
-       (fleet-supervisor-kick fid 'event))
-      ('tool-rejected (fleet-supervisor--observe store rid (list :pending-approvals nil)))
+                                   :payload (list :tool-id (plist-get ev :tool-id) :name (plist-get ev :name) :summary (plist-get ev :summary)))))
+      ('tool-rejected (fleet-supervisor--observe store rid (fleet-supervisor--approval-cleared rt (plist-get ev :tool-id))))
       ('question-opened
        (fleet-supervisor--observe store rid (list :pending-question (fleet-store-json (list :request-id (plist-get ev :request-id) :question (plist-get ev :question)
                                                                                          :options (vconcat (plist-get ev :options)) :at (plist-get ev :at)))))

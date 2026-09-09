@@ -345,23 +345,39 @@ phases cannot revert; done requires registered artifacts.  Returns a plist."
 (defun fleet-core--register-artifact (store task-id a)
   "Insert artifact plist A for TASK-ID (inside a transaction)."
   (let ((now (fleet-paths-now)))
-    (fleet-store-insert store "artifacts"
-                        (list :id (fleet-paths-uuid) :task-id task-id :kind (or (plist-get a :kind) "file")
-                              :rel-path (plist-get a :rel-path) :external-ref (plist-get a :external-ref)
-                              :description (plist-get a :description) :expected-identity (plist-get a :expected-identity)
-                              :created-at now :updated-at now))))
+    ;; Operators tend to register the same deliverable twice (once with
+    ;; fleet_artifact_register, again in fleet_status :artifacts).  Two rows
+    ;; for one file mean two verifications for one fact; keep one row per
+    ;; (task, kind, location) and refresh its description instead.
+    (let* ((kind (or (plist-get a :kind) "file"))
+           (existing (fleet-store-query1 store "SELECT * FROM artifacts WHERE task_id = ? AND kind = ? AND COALESCE(rel_path, '') = ? AND COALESCE(external_ref, '') = ?"
+                                        task-id kind (or (plist-get a :rel-path) "") (or (plist-get a :external-ref) ""))))
+      (if existing
+          (progn
+            (fleet-store-update store "artifacts" (plist-get existing :id)
+                                (fleet-store-touch (list :description (or (plist-get a :description) (plist-get existing :description))
+                                                         :expected-identity (or (plist-get a :expected-identity) (plist-get existing :expected-identity)))))
+            (plist-get existing :id))
+        (let ((id (fleet-paths-uuid)))
+          (fleet-store-insert store "artifacts"
+                              (list :id id :task-id task-id :kind kind
+                                    :rel-path (plist-get a :rel-path) :external-ref (plist-get a :external-ref)
+                                    :description (plist-get a :description) :expected-identity (plist-get a :expected-identity)
+                                    :created-at now :updated-at now))
+          id)))))
 
 (cl-defun fleet-core-artifact-register (store &key runtime-id task-id kind rel-path external-ref description expected-identity)
   "Register a named artifact for TASK-ID from RUNTIME-ID (operator: own task only)."
   (let* ((rt (fleet-core-runtime-authorized store runtime-id (and (equal (plist-get (fleet-store-get store "runtimes" runtime-id) :role) "operator") task-id)))
          (tid (or task-id (plist-get rt :task-id))))
     (when rel-path (fleet-paths-assert-safe-relative rel-path))
-    (fleet-store-transaction store
-      (fleet-core--register-artifact store tid (list :kind kind :rel-path rel-path :external-ref external-ref
-                                                     :description description :expected-identity expected-identity))
-      (fleet-store-append-event store :fleet-id (plist-get rt :fleet-id) :task-id tid :runtime-id runtime-id
-                                :kind "artifact-registered" :payload (list :kind kind :rel-path rel-path :external-ref external-ref)))
-    (list :ok t :task-id tid)))
+    (let (aid)
+      (fleet-store-transaction store
+        (setq aid (fleet-core--register-artifact store tid (list :kind kind :rel-path rel-path :external-ref external-ref
+                                                                 :description description :expected-identity expected-identity)))
+        (fleet-store-append-event store :fleet-id (plist-get rt :fleet-id) :task-id tid :runtime-id runtime-id
+                                  :kind "artifact-registered" :payload (list :artifact-id aid :kind kind :rel-path rel-path :external-ref external-ref)))
+      (list :ok t :task-id tid :artifact-id aid))))
 
 (cl-defun fleet-core-artifact-verify (store &key artifact-id actor criteria evidence accepted limitations)
   "Record verification of ARTIFACT-ID by ACTOR (commander/human).
@@ -819,6 +835,31 @@ Signal `resource-claimed' when another task holds it."
        ((not (equal (plist-get existing :task-id) (plist-get task :id)))
         (fleet-fail 'resource-claimed "Workspace is claimed by another task" :path path :task-id (plist-get existing :task-id)))))))
 
+(defun fleet-core-operator-roots (store task workspace)
+  "ECA workspace roots for an operator of TASK working in WORKSPACE.
+ECA's native file and shell tools force a manual approval for any path
+outside the session's workspace roots, above every `allow' rule (rehearsal
+1).  The roots therefore cover everything the brief entitles the operator
+to touch without a human: the task directory (progress, report, artifacts
+and the Fleet-owned workspace beneath it) and, for study and ops tasks,
+the repository they inspect.  A change task's worktree is outside the task
+directory and is added as its own root.  Roots also give ECA the
+repository's AGENTS.md and @-contexts.  Duplicates and nested paths are
+collapsed; order is stable (task dir first) for reproducible launch
+evidence."
+  (let* ((task-dir (fleet-paths-canonical (fleet-core-task-dir store task)))
+         (candidates (delq nil (list task-dir
+                                     (and workspace (fleet-paths-canonical workspace))
+                                     (and (member (plist-get task :kind) '("study" "ops"))
+                                          (plist-get task :repo-path)
+                                          (file-directory-p (plist-get task :repo-path))
+                                          (fleet-paths-canonical (plist-get task :repo-path))))))
+         (roots nil))
+    (dolist (c candidates)
+      (unless (cl-some (lambda (r) (fleet-paths-contains-p r c)) roots)
+        (push c roots)))
+    (nreverse roots)))
+
 (defun fleet-core--task-start-launch (store op task workspace callback)
   "Step: create the runtime incarnation, launch it, and submit the boot payload."
   (let* ((tid (plist-get task :id))
@@ -829,7 +870,7 @@ Signal `resource-claimed' when another task holds it."
     (fleet-core-operation-step store op "runtime-launched" (list :runtime-id (plist-get rt :id) :unit (plist-get rt :unit)))
     (condition-case err
         (fleet-core-launch-runtime
-         store rt :roots (list workspace) :cwd workspace
+         store rt :roots (fleet-core-operator-roots store task workspace) :cwd workspace
          :callback
          (lambda (r)
            (if (not (plist-get r :ok))
@@ -905,7 +946,9 @@ Return the operation id."
         (fleet-store-update store "fleets" fleet-id (fleet-store-touch (list :commander-runtime-id (plist-get rt :id)))))
       (fleet-core-operation-step store op "runtime-launched" (list :runtime-id (plist-get rt :id)))
       (fleet-core-launch-runtime
-       store rt :roots (list cwd) :cwd cwd
+       ;; The whole fleet directory: the commander reads task reports and
+       ;; progress files under tasks/ (rehearsal 1 needed approvals for it).
+       store rt :roots (list (fleet-paths-canonical (plist-get fleet :artifact-root))) :cwd cwd
        :callback
        (lambda (r)
          (if (not (plist-get r :ok))

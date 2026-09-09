@@ -81,6 +81,7 @@
 (defvar eca-chat--selected-agent)
 (defvar eca-chat--selected-variant)
 (defvar eca-chat--selected-trust)
+(defvar eca-chat--last-known-trust)
 (defvar eca-chat--last-request-id)
 (defvar eca-chat--queued-prompt)
 (defvar eca-chat--steered-prompt)
@@ -307,13 +308,34 @@ CALLBACK gets (:ok t :conn CONN) after verified initialization, or
              (condition-case err
                  (fleet-eca--observe conn msg)
                (error (message "fleet-eca: observe error: %s" (error-message-string err))))
-             (eca--handle-message session msg)))
+             ;; ECA's UI half may error on Fleet sessions (e.g. mode-line
+             ;; refreshes before the silent chat buffer exists).  It logs
+             ;; and re-signals; `eca-process--make-filter' maps handle-msg
+             ;; over every message of a chunk, so an unguarded error here
+             ;; would drop the remaining messages of that chunk for the
+             ;; observer above as well.  Protocol facts must never depend
+             ;; on the UI.
+             (condition-case err
+                 (eca--handle-message session msg)
+               (error (fleet-eca--note-ui-error conn err)))))
         (error
          (setf (fleet-eca-conn-state conn) 'lost)
          (unless done
            (setq done t)
            (funcall callback (list :ok nil :error (error-message-string err) :conn conn))))))
     conn))
+
+(defvar fleet-eca--ui-error-noted (make-hash-table :test 'equal)
+  "Runtime ids whose ECA UI error has already been reported once.")
+
+(defun fleet-eca--note-ui-error (conn err)
+  "Report ERR from ECA's UI handling for CONN once per runtime.
+ECA already appends every occurrence to its own emacs-errors buffer."
+  (let ((rid (fleet-eca-conn-runtime-id conn)))
+    (unless (gethash rid fleet-eca--ui-error-noted)
+      (puthash rid t fleet-eca--ui-error-noted)
+      (message "fleet-eca: ECA UI error on %s ignored (see its emacs-errors buffer): %s"
+               (fleet-eca-conn-display-name conn) (error-message-string err)))))
 
 (defun fleet-eca--wrap-sentinel (conn)
   "Observe process exit of CONN before ECA's own sentinel runs."
@@ -416,7 +438,11 @@ Mirrors the buffer-setup half of `eca-chat-open' without its display half."
       (setq-local eca-chat--selected-model model)
       (setq-local eca-chat--selected-agent agent)
       (setq-local eca-chat--selected-variant variant)
-      (setq-local eca-chat--selected-trust nil)
+      ;; Same seed `eca-chat-open' uses: the user's `eca-chat-trust-enable'
+      ;; as tracked by the session.  Trust is the only client-side way past
+      ;; ECA's outside-workspace approval check (rehearsal 1), and
+      ;; `fleet-eca-submit' forwards it as the chat/prompt `trust' param.
+      (setq-local eca-chat--selected-trust eca-chat--last-known-trust)
       (setq-local fleet-eca-runtime-id (fleet-eca-conn-runtime-id conn))
       (add-hook 'kill-buffer-query-functions #'fleet-eca--refuse-kill nil t))
     (setf (eca--session-chats session) (eca-assoc (eca--session-chats session) (fleet-eca-conn-chat-id conn) buf))

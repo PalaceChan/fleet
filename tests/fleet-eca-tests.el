@@ -89,6 +89,49 @@
       (should-not (kill-buffer (fleet-eca-conn-buffer conn)))
       (should (buffer-live-p (fleet-eca-conn-buffer conn))))))
 
+(defun fleet-eca-test-log-requests (log method)
+  "Requests of METHOD the fake received, oldest first."
+  (cl-remove-if-not (lambda (m) (equal (plist-get m :method) method))
+                    (mapcar (lambda (l) (fleet-store-unjson l))
+                            (split-string (or (fleet-paths-read-file log) "") "\n" t))))
+
+(ert-deftest fleet-eca-trust-follows-user-setting-and-roots-are-all-sent ()
+  "Rehearsal 1: the user's `eca-chat-trust-enable' never reached Fleet chats,
+so ECA's outside-workspace check prompted for every operator tool call.
+Fleet chats must seed trust like `eca-chat-open' and send `trust' on prompts;
+and every workspace root must reach `initialize'."
+  (dolist (trust '(t nil))
+    (let ((eca-chat--last-known-trust trust))
+      (fleet-eca-test-with-conn conn
+        (let ((log (expand-file-name "fake.log" fleet-test--roots)))
+          (should (eq (buffer-local-value 'eca-chat--selected-trust (fleet-eca-conn-buffer conn)) trust))
+          (should (eq (plist-get (fleet-eca-test-submit conn "hello") :outcome) 'accepted))
+          (let ((prompt (car (fleet-eca-test-log-requests log "chat/prompt"))))
+            (should prompt)
+            (should (eq (plist-get (plist-get prompt :params) :trust) (if trust t nil))))
+          (let* ((init (car (fleet-eca-test-log-requests log "initialize")))
+                 (folders (append (plist-get (plist-get init :params) :workspaceFolders) nil)))
+            (should (= 1 (length folders)))
+            (should (string-suffix-p (file-name-nondirectory (directory-file-name fleet-test--roots))
+                                     (plist-get (car folders) :name)))))))))
+
+(ert-deftest fleet-eca-ui-error-does-not-drop-later-messages ()
+  "The ECA UI half may error on a Fleet session; the observer must still see
+every message of the chunk and the connection must stay usable."
+  (fleet-eca-test-with-conn conn
+    (cl-letf* ((orig (symbol-function 'eca--handle-message))
+               ((symbol-function 'eca--handle-message)
+                (lambda (session msg)
+                  ;; the UI errors on every notification (as with the mode-line refreshes)
+                  (if (plist-get msg :method)
+                      (error "Wrong type argument: stringp, nil")
+                    (funcall orig session msg)))))
+      (let ((out (fleet-eca-test-submit conn "hello")))
+        (should (eq (plist-get out :outcome) 'accepted))
+        (should (fleet-eca-test-wait-kind 'turn-idle-observed))
+        (should (null (fleet-eca-conn-turn conn)))
+        (should (eq (fleet-eca-conn-state conn) 'ready))))))
+
 (ert-deftest fleet-eca-submit-normal-turn-ordering ()
   (fleet-eca-test-with-conn conn
     (let ((out (fleet-eca-test-submit conn "hello")))

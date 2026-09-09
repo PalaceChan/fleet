@@ -239,6 +239,22 @@ Reseeds from system entropy so consecutive ids never repeat."
   "UTC timestamp string with millisecond precision."
   (format-time-string "%Y-%m-%dT%H:%M:%S.%3NZ" nil t))
 
+(defun fleet-paths-time-float (iso)
+  "Seconds since the epoch for the `fleet-paths-now' style string ISO, or nil.
+`date-to-time' discards fractional seconds, which made every sub-second
+latency in the telemetry read as 0ms; the fraction is added back here."
+  (when (stringp iso)
+    (let ((whole (ignore-errors (float-time (date-to-time iso))))
+          (frac (and (string-match "\\.\\([0-9]+\\)Z?\\'" iso)
+                     (/ (float (string-to-number (match-string 1 iso)))
+                        (expt 10 (length (match-string 1 iso)))))))
+      (and whole (+ whole (or frac 0.0))))))
+
+(defun fleet-paths-seconds-between (from to)
+  "Float seconds from ISO timestamp FROM to TO, or nil when either is missing."
+  (let ((a (fleet-paths-time-float from)) (b (fleet-paths-time-float to)))
+    (and a b (- b a))))
+
 ;;;; Derived locations
 
 (defun fleet-paths-db-file () "Authoritative database path." (expand-file-name "fleet.sqlite3" (fleet-paths-data-root)))

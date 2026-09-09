@@ -32,6 +32,16 @@ systemd-owned process; **Emacs** owns state, scheduling and the dashboard.
    your `~/.config/eca/config.json` is not modified. `M-x fleet-install-mcp` can additionally merge the one
    entry into your global config (with a backup and a diff you confirm) if you want it visible there. Fleet
    never enables blanket trust; your `toolCall.approval` policy stays yours.
+
+   **Approvals.** ECA always asks before a native file or shell tool touches a path outside the session's
+   workspace roots, regardless of `toolCall.approval` (`allow` rules cannot override that built-in check).
+   Fleet sets each runtime's roots to what its brief covers (task directory plus the studied repository or
+   the change worktree; the fleet directory for the commander), so a well-scoped operator rarely prompts.
+   When it does, only you can answer: in the operator's chat (`C-c C-a`, or `C-c C-y` to remember for the
+   session), or by running operators in trust mode. Trust follows your normal ECA settings — Fleet chats
+   honor `eca-chat-trust-enable` / `C-c C-t` like any other chat, and the server-side
+   `"chat": {"defaultTrust": true}` in `~/.config/eca/config.json` makes every new chat trusted. The
+   commander is not woken for approvals; the dashboard shows them as attention.
 4. `M-x fleet-doctor`. Fix anything marked `✗` (unsupported ECA pair, missing SQLite/systemd, unsafe
    runtime dir, stale owner) before unattended work.
 

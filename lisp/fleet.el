@@ -345,11 +345,15 @@ Each check reports its evidence."
         (let* ((cfg (expand-file-name "config.json" (fleet-paths-eca-config-root)))
                (json (and (file-exists-p cfg) (ignore-errors (fleet-store-unjson (fleet-paths-read-file cfg)))))
                (entry (plist-get (plist-get json :mcpServers) :fleet)))
+          ;; Fleet injects its MCP server per runtime through ECA_CONFIG, so a
+          ;; global entry is optional; only a stale one is worth flagging.
           (fleet--doctor-line "MCP entry" (cond ((null json) (format "%s unreadable" cfg))
-                                                ((null entry) "absent — M-x fleet-install-mcp")
+                                                ((null entry) "not in global config (per-runtime ECA_CONFIG overlay in use; fleet-install-mcp is optional)")
                                                 ((equal entry (fleet-mcp-entry)) "present and current")
                                                 (t "present but differs — M-x fleet-install-mcp shows the diff"))
-                              (equal entry (fleet-mcp-entry)))
+                              (if (and json entry) (equal entry (fleet-mcp-entry)) 'info))
+          (when (eq t (plist-get (plist-get json :chat) :defaultTrust))
+            (insert "  note: chat.defaultTrust=true — operators and commanders auto-approve tool calls (ECA otherwise asks for paths outside workspace roots)\n"))
           (when (equal (plist-get (plist-get (plist-get json :toolCall) :approval) :byDefault) "allow")
             (insert "  note: toolCall.approval.byDefault=allow — full autonomous shell access is your explicit choice\n")))
         (when fleet-supervisor--store
@@ -369,7 +373,7 @@ Each check reports its evidence."
                   (insert (format "  %s %s %s lifecycle=%s turn=%s unit=%s\n" (fleet-paths-short-id (plist-get rt :id)) (plist-get rt :role)
                                   (or (plist-get rt :task-id) "") (plist-get rt :lifecycle) (or (plist-get rt :turn-state) "-") (plist-get rt :unit)))
                   (fleet--doctor-inspect-unit rt (point-marker)))))
-            (insert "\n## Recovery actions (explicit)\n- fleet-commander-replace: fresh commander with handoff context\n- fleet-park: verified stop of operators\n- fleet-install-mcp: merge the MCP entry with backup\n")))
+            (insert "\n## Recovery actions (explicit)\n- fleet-commander-replace: fresh commander with handoff context\n- fleet-park: verified stop of operators\n")))
         (goto-char (point-min))
         (special-mode)))
     (pop-to-buffer buf)))
@@ -391,8 +395,9 @@ Each check reports its evidence."
                              (fleet-runtime-verdict 'created (plist-get rt :boot-id) insp))))))))))
 
 (defun fleet--doctor-line (label text ok)
-  "Insert a doctor line for LABEL with TEXT, marked by OK."
-  (insert (format "%s %-14s %s\n" (if ok "✓" "✗") label text)))
+  "Insert a doctor line for LABEL with TEXT, marked by OK.
+OK is t (pass), nil (fail) or `info' (neither; informational)."
+  (insert (format "%s %-14s %s\n" (pcase ok ('info "○") ('nil "✗") (_ "✓")) label text)))
 
 (provide 'fleet)
 ;;; fleet.el ends here

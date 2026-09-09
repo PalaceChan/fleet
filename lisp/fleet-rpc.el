@@ -153,7 +153,8 @@ Return a result plist."
                     (signal (car err) (cdr err))))))))))
 
 (defun fleet-rpc--record-call (store actor operation started outcome code params)
-  "Append a `tool-call' event for OPERATION by ACTOR with OUTCOME/CODE and duration."
+  "Append a `tool-call' event for OPERATION by ACTOR.
+Records OUTCOME, CODE and the duration since STARTED; PARAMS give the task."
   (ignore-errors
     (fleet-store-transaction store
       (fleet-store-append-event store :fleet-id (plist-get actor :fleet-id) :task-id (or (plist-get params :task_id) (plist-get actor :task-id))

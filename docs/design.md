@@ -1984,3 +1984,12 @@ Each was driven by evidence from the installed pair (see `docs/eca-compatibility
 6. **`fleet-watch-start/stop`** take a fleet name and toggle that fleet's persisted supervision flag.
 7. **Subagent tools.** The overlay sets `disabledTools: ["eca__spawn_agent"]`; whether this pair honors it is
    not yet verified by a trace and is listed as an open item in the compatibility profile.
+8. **Workspace roots (rehearsal 1, 2026-09-09).** ECA's native tools force a manual approval for any path
+   outside the session's workspace roots, above every `allow` rule. Operators therefore get the task directory
+   plus the studied repository (study/ops) or the change worktree as roots, and the commander gets the fleet
+   directory (`fleet-core-operator-roots`). Native tool approvals are a human matter: they are recorded and
+   shown on the dashboard but never wake the commander, and Fleet chats honor the user's ECA trust setting
+   (`eca-chat-trust-enable`, `chat.defaultTrust`) rather than enabling trust themselves.
+9. **Actionable events always schedule their own wake admission** through `fleet-store-actionable-event-hook`,
+   regardless of origin (adapter observation, RPC tool call, operations journal). Rehearsal 1 showed a
+   `task-done` raised by `fleet_status` waiting seven minutes for an unrelated trigger.

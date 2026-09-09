@@ -16,7 +16,9 @@
            (fleet-supervisor--kick-timers (make-hash-table :test 'equal))
            (fleet-supervisor--wake-incident (make-hash-table :test 'equal))
            (fleet-core-event-sink #'fleet-supervisor-handle-event)
-           (fleet-eca-human-sink #'fleet-supervisor--human-sink))
+           (fleet-eca-human-sink #'fleet-supervisor--human-sink)
+           ;; installed by `fleet-supervisor-start' in production
+           (fleet-store-actionable-event-hook (list #'fleet-supervisor--on-actionable-event)))
        (cl-letf (((symbol-function 'fleet-supervisor-owner-p) (lambda () (not fleet-supervisor--fenced))))
          ,@body))))
 
@@ -63,6 +65,57 @@
         (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM wake_batches WHERE fleet_id = ?" fid)))
         (should (= 1 (length (plist-get (fleet-supervisor-pending-for-commander store fid) :events))))
         (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM event_receipts WHERE fleet_id = ? AND state = 'claimed'" fid)))))))
+
+(ert-deftest fleet-supervisor-rpc-actionable-event-wakes-without-external-kick ()
+  "Rehearsal 1 bug A: `fleet_status done' created a pending receipt but nothing
+kicked the supervisor until an unrelated human message arrived 7 minutes later.
+Any actionable event must schedule its own admission."
+  (fleet-sup-test-with
+    (let* ((fid (fleet-core-test-fleet store)) (cid (fleet-sup-test-commander store fid))
+           (tid (plist-get (fleet-core-test-study store fid) :id)))
+      (fleet-sup-test-settle)
+      (fleet-core-test-start store tid)
+      (setq fleet-test-fake-turn 'busy)
+      ;; exactly what the RPC handler does: no kick, no --changed
+      (fleet-core-task-status store :runtime-id (fleet-core-test-runtime store tid) :phase "done" :detail "report written"
+                              :artifacts '((:kind "report" :rel-path "report.md")))
+      (fleet-sup-test-settle)
+      (let ((wakes (fleet-sup-test-wakes store fid)))
+        (should (= 1 (length wakes)))
+        (should (string-match-p "task-done" (plist-get (car wakes) :text)))
+        (should (equal (plist-get (car wakes) :target-runtime-id) cid)))
+      ;; and a non-actionable event does not
+      (fleet-store-transaction store
+        (fleet-store-append-event store :fleet-id fid :task-id tid :kind "tool-call" :payload '(:operation "x")))
+      (fleet-sup-test-settle)
+      (should (= 1 (length (fleet-sup-test-wakes store fid)))))))
+
+(ert-deftest fleet-supervisor-tool-approval-is-attention-not-a-wake-and-clears ()
+  "Rehearsal 1 bugs B and F: approvals are human-only, so they must not wake the
+commander, and the stored pending list must clear when the tool proceeds."
+  (fleet-sup-test-with
+    (let* ((fid (fleet-core-test-fleet store)) (_cid (fleet-sup-test-commander store fid))
+           (tid (plist-get (fleet-core-test-study store fid) :id)))
+      (fleet-sup-test-settle)
+      (fleet-core-test-start store tid)
+      (let* ((rid (fleet-core-test-runtime store tid)) (conn (fleet-eca-conn rid))
+             (pending (lambda () (let ((raw (plist-get (fleet-store-get store "runtimes" rid) :pending-approvals)))
+                                   (and raw (append (fleet-store-unjson raw) nil))))))
+        (fleet-eca--emit conn 'tool-approval-required :tool-id "call_1" :name "read_file" :summary "Reading x")
+        (fleet-eca--emit conn 'tool-approval-required :tool-id "call_2" :name "shell_command" :summary "$ ls")
+        (should (equal (sort (funcall pending) #'string<) '("call_1" "call_2")))
+        ;; recorded for the dashboard/timeline, but not actionable
+        (should (= 2 (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'tool-approval-required' AND actionable = 0")))
+        (should (= 0 (fleet-store-scalar store "SELECT COUNT(*) FROM event_receipts WHERE fleet_id = ?" fid)))
+        (fleet-sup-test-settle)
+        (should (= 0 (length (fleet-sup-test-wakes store fid))))
+        ;; human approves call_1 in the chat => toolCallRunning => cleared; call_2 still waits
+        (fleet-eca--emit conn 'tool-running :tool-id "call_1" :name "read_file")
+        (should (equal (funcall pending) '("call_2")))
+        ;; call_2 rejected => nothing pending; dashboard projection leaves 'decision
+        (fleet-eca--emit conn 'tool-rejected :tool-id "call_2" :name "shell_command")
+        (should (null (funcall pending)))
+        (should (null (plist-get (fleet-store-get store "runtimes" rid) :pending-approvals)))))))
 
 (ert-deftest fleet-supervisor-enqueue-blocked-by-busy-draft-parked-paused ()
   (fleet-sup-test-with

@@ -270,6 +270,15 @@ The check is skipped when EXPECTED is nil."
 
 ;;;; Events and receipts
 
+(defvar fleet-store-actionable-event-hook nil
+  "Functions called with (FLEET-ID EVENT-ID KIND) after an actionable event.
+Called from inside the appending transaction; hooks must only schedule
+work (e.g. a coalesced wake admission), never touch the store directly.
+This is the one place every actionable event passes through, regardless
+of whether it came from an adapter observation, an RPC tool call, or an
+operation journal; the supervisor uses it so that no actionable event
+can wait for an unrelated trigger before it is delivered.")
+
 (cl-defun fleet-store-append-event (store &key fleet-id task-id runtime-id kind payload source actor
                                           operation-id actionable)
   "Append a semantic event; when ACTIONABLE also create a pending receipt.
@@ -283,7 +292,8 @@ Returns the event id.  Must run inside a transaction with the fact update."
     (when (and actionable fleet-id)
       (fleet-store-insert store "event_receipts"
                           (list :id (fleet-paths-uuid) :event-id id :fleet-id fleet-id :consumer "commander"
-                                :state "pending" :created-at now :updated-at now)))
+                                :state "pending" :created-at now :updated-at now))
+      (run-hook-with-args 'fleet-store-actionable-event-hook fleet-id id kind))
     id))
 
 (defun fleet-store-pending-receipts (store fleet-id &optional states limit)
