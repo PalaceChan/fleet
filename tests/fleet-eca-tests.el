@@ -20,8 +20,7 @@
             (fleet-eca-test--events nil)
             (fleet-eca-human-sink nil)
             (result nil) (,var nil))
-       (cl-letf (((symbol-function 'fleet-eca--server-version) (lambda (_) "0.158.1"))
-                 ((symbol-function 'fleet-eca--client-version) (lambda () "20260529.1500")))
+       (progn
          (setq ,var
                (fleet-eca-start :runtime-id (fleet-paths-uuid) :owner-epoch "epoch-1" :role "operator"
                                 :fleet-id "f1" :task-id "t1" :display-name "*eca:operator:f:t*"
@@ -61,12 +60,15 @@
   (mapcar (lambda (l) (plist-get (fleet-store-unjson l) :method))
           (split-string (or (fleet-paths-read-file log) "") "\n" t)))
 
-(ert-deftest fleet-eca-probe-reports-pair ()
+(ert-deftest fleet-eca-probe-checks-dependencies-not-versions ()
   (let ((p (fleet-eca-probe)))
-    (should (plist-member p :supported))
+    (should (plist-get p :supported))
     (should (listp (plist-get p :reasons)))
-    ;; Unverified pair must not be supported.
+    ;; Versions are informational: an unknown server version is still supported.
     (cl-letf (((symbol-function 'fleet-eca--server-version) (lambda (_) "0.0.1")))
+      (should (plist-get (fleet-eca-probe) :supported)))
+    ;; A frontend symbol the adapter relies on going missing is a refusal.
+    (cl-letf (((symbol-function 'eca-chat--steer-prompt) nil))
       (should-not (plist-get (fleet-eca-probe) :supported))
       (fleet-test-should-fail 'unsupported-eca-contract (fleet-eca-assert-supported)))))
 

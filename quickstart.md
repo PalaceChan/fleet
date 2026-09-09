@@ -42,7 +42,7 @@ systemd-owned process; **Emacs** owns state, scheduling and the dashboard.
    honor `eca-chat-trust-enable` / `C-c C-t` like any other chat, and the server-side
    `"chat": {"defaultTrust": true}` in `~/.config/eca/config.json` makes every new chat trusted. The
    commander is not woken for approvals; the dashboard shows them as attention.
-4. `M-x fleet-doctor`. Fix anything marked `✗` (unsupported ECA pair, missing SQLite/systemd, unsafe
+4. `M-x fleet-doctor`. Fix anything marked `✗` (ECA not loadable/found, missing SQLite/systemd, unsafe
    runtime dir, stale owner) before unattended work.
 
 ## M-x reference
@@ -147,7 +147,8 @@ Tear down or close every task, then `M-x fleet-destroy`. The name is reusable af
 - **stays parking**: some service could not be proven stopped. `fleet-doctor` prints the unit and verdict;
   `systemctl --user status <unit>`; never `rm` the lock or worktree directories by guesswork.
 - **adopted workspace retained**: by design; dirty content is reported as left in place.
-- **unsupported ECA pair**: see `docs/eca-compatibility.md`; read-only inspection still works.
+- **`ECA` marked ✗ in fleet-doctor**: the frontend lost a symbol Fleet uses (or eca is not installed); see
+  `docs/eca-compatibility.md`; read-only inspection still works.
 - **outstanding permission/question**: shown as `decision`; answer it in the chat (`RET`) or with `s`.
 - **stale owner**: another Emacs (or a crashed one) holds `owner.json`. If that Emacs is truly gone, Fleet
   takes over automatically (pid + start time are checked); if it is alive, act there.

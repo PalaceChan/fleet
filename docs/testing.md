@@ -29,7 +29,7 @@ ERT runs through `emacsclient` against a **dedicated** daemon, never the editing
 Fixtures: `tests/fixtures/eca/*.json` are redacted raw traces with provenance; `probe.py` regenerates them
 against a server; `systemd-spike.sh` reproduces the child-lifetime evidence.
 
-## Acceptance evidence for the verified pair (2026-09-08)
+## Acceptance evidence (2026-09-08, eca-emacs 20260529.1500 + eca 0.158.1)
 
 - 97 deterministic ERT tests + 9 Python tests pass.
 - Native: `fleet-runtime-native-detached-child-stopped-with-unit`, `fleet-eca-native-minimal-turn`,

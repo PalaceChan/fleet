@@ -1,23 +1,21 @@
-# ECA compatibility profile
+# ECA integration notes
 
-Fleet's adapter (`lisp/fleet-eca.el`) is verified against exactly one frontend/server pair. On any other pair
-`fleet-eca-probe` reports `:supported nil`, `M-x fleet-doctor` names the mismatch, and autonomous dispatch
-(starting commanders/operators, sending prompts) is refused with `unsupported-eca-contract`. Read-only
-dashboard, artifact viewing, doctor, and independent `systemctl --user stop` of Fleet units keep working.
+Fleet's adapter (`lisp/fleet-eca.el`) is the only module that knows ECA internals. This document records the
+wire behavior and private frontend symbols it relies on, so that a future ECA change that breaks Fleet can be
+diagnosed quickly. ECA versions are **not** pinned: `fleet-eca-probe` (surfaced by `M-x fleet-doctor`) only
+checks that the eca-emacs package loads, a native executable is found, and every symbol listed below is still
+defined. If one of those fails, autonomous dispatch is refused with `unsupported-eca-contract`; read-only
+dashboard, artifact viewing, doctor, and `systemctl --user stop` of Fleet units keep working. Routine ECA
+upgrades need no change here; if an upgrade misbehaves, compare against the facts below and the traces.
 
-## Verified pair
+## Reference environment for the recorded facts
 
-| Component | Version | Evidence |
-|---|---|---|
-| eca-emacs (frontend) | MELPA `20260529.1500`, revision `f700be30f1e5` | `~/.emacs.d/elpa/eca-20260529.1500/eca.el` header |
-| eca (native server) | `0.158.1` | `eca --version`; `~/.emacs.d/eca/eca-version` |
-| Emacs | 30.2 with SQLite | reference host |
-| systemd | 260 (Arch), cgroup v2 | `tests/fixtures/eca/systemd-spike.sh` |
+Observed on eca-emacs `20260529.1500` (rev `f700be30f1e5`) with server `eca 0.158.1` (2026-09-08) and
+re-checked on `0.159.0` (2026-09-09), Emacs 30.2 with SQLite, systemd 260 (Arch, cgroup v2).
 
-Traces recorded on 2026-09-08 with `tests/fixtures/eca/probe.py` (raw Content-Length JSON-RPC against the
-native server, one real model turn each): `trace-prompt.json`, `trace-double.json`, `trace-badmodel.json`,
-`trace-stop.json`, `trace-question.json`. Welcome text and config payloads are redacted; ordering and shapes
-are intact.
+Traces recorded with `tests/fixtures/eca/probe.py` (raw Content-Length JSON-RPC against the native server, one
+real model turn each): `trace-prompt.json`, `trace-double.json`, `trace-badmodel.json`, `trace-stop.json`,
+`trace-question.json`. Welcome text and config payloads are redacted; ordering and shapes are intact.
 
 ## Transition table (observed, not assumed)
 
@@ -112,10 +110,9 @@ and on `unload-feature`. Non-Fleet buffers/sessions take the original code path 
   `LoadState=not-found`, `ControlGroup=` and the cgroup directory is gone. `fleet-runtime-verdict` treats
   `not-found` as `stopped` only for a settled launch with an empty/absent recorded cgroup.
 
-## What to do on upgrade
+## If an ECA upgrade breaks something
 
-1. `M-x fleet-doctor` will report the new pair as unsupported.
-2. Run `tests/fixtures/eca/probe.py prompt|double|badmodel|stop|question` against the new server and diff
-   against the recorded traces.
-3. Re-verify each symbol above in the new frontend source, update `fleet-eca-supported-pairs`, and rerun
+1. `M-x fleet-doctor`: a missing private symbol is named on the `ECA` line (refusal is deliberate there).
+2. For behavioral drift with all symbols present, run `tests/fixtures/eca/probe.py
+   prompt|double|badmodel|stop|question` against the new server and diff against the recorded traces, then
    `make test-native`.

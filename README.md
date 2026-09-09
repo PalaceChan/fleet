@@ -8,7 +8,7 @@ state, scheduling and the dashboard. Zero-token supervision — no model is ever
 
 - **Start here:** [`quickstart.md`](quickstart.md)
 - Design: [`docs/design.md`](docs/design.md) (the specification this repository implements)
-- Verified ECA pair and every private assumption: [`docs/eca-compatibility.md`](docs/eca-compatibility.md)
+- ECA wire facts and every private assumption: [`docs/eca-compatibility.md`](docs/eca-compatibility.md)
 - Recovery: [`docs/recovery.md`](docs/recovery.md) · Testing: [`docs/testing.md`](docs/testing.md)
 - Contributor rules: [`AGENTS.md`](AGENTS.md)
 
@@ -25,7 +25,8 @@ tests/       ERT suites, Python bridge tests, fake ECA server, recorded protocol
 
 ## Status
 
-Verified on eca-emacs `20260529.1500` + eca `0.158.1`, Emacs 30.2, Arch Linux systemd 260. Deterministic
+Developed against eca-emacs `20260529.1500` + eca `0.158.1`/`0.159.0`, Emacs 30.2, Arch Linux systemd 260;
+ECA versions are not pinned (`fleet-doctor` checks dependencies, not version numbers). Deterministic
 tests run with fakes; `make test-native` additionally runs one real commander boot through the MCP bridge
 and the real systemd detached-child stop test. See `docs/testing.md` for exactly which tests are native.
 

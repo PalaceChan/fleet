@@ -28,11 +28,11 @@ functions in the user's working Emacs. A dedicated test server is allowed and re
 (`make test` starts one). Keep process filters, timers, and interactive callbacks short; all Git, systemd, and
 RPC waits are asynchronous.
 
-**ECA:** Verify the installed frontend/server pair before coding against it. Keep private API assumptions
-listed in `docs/eca-compatibility.md` and covered by recorded/fake-server tests. Do not read undocumented ECA
-caches. Do not change ordinary non-Fleet ECA sessions or globally enable trust. The verified pair for this
-repository is eca-emacs `20260529.1500` (rev `f700be30f1e5`) with server `eca 0.158.1`; the compatibility
-profile in `fleet-eca.el` refuses autonomous dispatch on an unverified pair.
+**ECA:** Keep private API assumptions listed in `docs/eca-compatibility.md` and covered by recorded/fake-server
+tests; any new private symbol goes into `fleet-eca-required-functions`/`-variables` so `fleet-doctor` names
+it if a frontend upgrade removes it. Never pin or gate on ECA version numbers — upgrades must be
+friction-free; troubleshoot breakage when it actually happens. Do not read undocumented ECA caches. Do not
+change ordinary non-Fleet ECA sessions or globally enable trust.
 
 **Code quality:** Prefer deleting special cases to adding knobs. Comments explain constraints, not code history
 or the next line. Use lexical binding, explicit identities, structured errors (`fleet-error` with a stable

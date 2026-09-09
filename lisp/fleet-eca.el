@@ -2,9 +2,11 @@
 
 ;;; Commentary:
 
-;; Verified against eca-emacs 20260529.1500 (rev f700be30f1e5) with server
-;; eca 0.158.1.  See docs/eca-compatibility.md for every symbol and wire
-;; fact this file depends on, and tests/fixtures/eca for the traces.
+;; See docs/eca-compatibility.md for every private symbol and wire fact this
+;; file depends on, and tests/fixtures/eca for the recorded traces.  ECA
+;; versions are not pinned: `fleet-eca-probe' only checks that the frontend
+;; is loadable, the native executable exists and the symbols used here are
+;; still defined, so routine ECA upgrades need no change on the Fleet side.
 ;;
 ;; Contract implemented (design §5.4):
 ;;  - One designated chat per connection; at most one submitted turn.
@@ -153,37 +155,30 @@ answered with an error turn (recorded trace), so readiness waits for it.")
           (if (string-match "\\([0-9]+\\.[0-9]+\\.[0-9]+\\)" s) (match-string 1 s) s))))))
 
 (defun fleet-eca-probe ()
-  "Inspect the installed pair; return a plist with :supported and evidence.
-Never launches a server.  Loads the ECA package if present."
+  "Inspect the installed ECA; return a plist with :supported and evidence.
+Supported means: the eca-emacs package loads, a native executable is found,
+and every symbol this adapter uses is defined.  Versions are reported for
+information only.  Never launches a server."
   (let* ((loaded (require 'eca nil t))
          (client (and loaded (fleet-eca--client-version)))
          (command (fleet-eca-server-command))
          (server (fleet-eca--server-version command))
          (missing-fns (and loaded (cl-remove-if #'fboundp fleet-eca-required-functions)))
          (missing-vars (and loaded (cl-remove-if #'boundp fleet-eca-required-variables)))
-         (pair (cl-find-if (lambda (p) (and (equal (plist-get p :client) client)
-                                            (equal (plist-get p :server) server)))
-                           fleet-eca-supported-pairs))
          (reasons nil))
     (unless loaded (push "eca-emacs package not installed/loadable" reasons))
     (unless command (push "no native eca executable found (set `fleet-eca-command')" reasons))
-    (unless server (push "could not read native server version" reasons))
     (when missing-fns (push (format "missing functions: %s" missing-fns) reasons))
     (when missing-vars (push (format "missing variables: %s" missing-vars) reasons))
-    (unless pair
-      (push (format "unverified pair client=%s server=%s; verified: %S" client server fleet-eca-supported-pairs) reasons))
     (list :supported (null reasons) :client client :server server :command command
           :missing-functions missing-fns :missing-variables missing-vars
-          :profile (and pair (list :acceptance "chat/prompt response status=\"prompting\""
-                                   :terminal "first of top-level progress finished / statusChanged idle"
-                                   :serialized-lane t))
           :reasons (nreverse reasons))))
 
 (defun fleet-eca-assert-supported ()
-  "Signal `unsupported-eca-contract' unless the installed pair is verified."
+  "Signal `unsupported-eca-contract' unless `fleet-eca-probe' finds ECA usable."
   (let ((p (fleet-eca-probe)))
     (unless (plist-get p :supported)
-      (fleet-fail 'unsupported-eca-contract "Installed ECA pair is not verified for autonomous dispatch"
+      (fleet-fail 'unsupported-eca-contract "Installed ECA is missing something Fleet depends on"
                   :reasons (plist-get p :reasons) :client (plist-get p :client) :server (plist-get p :server)))
     p))
 

@@ -55,7 +55,8 @@ runtimes (park, then `fleet-commander-stop`), release ownership, replace `fleet.
 `fleet-dashboard`. Git worktrees are the repositories' own responsibility; retention refs
 (`refs/fleet/retained/<task>`) are local, not off-machine backups.
 
-## Unsupported ECA pair after an upgrade
+## ECA upgrade removed something Fleet uses
 
-`fleet-doctor` names the mismatch. Read-only inspection, artifact viewing and `systemctl --user stop` of
-Fleet units all work. Follow `docs/eca-compatibility.md` to re-verify.
+`fleet-doctor` names the missing symbol on its `ECA` line (versions themselves are never a failure). Read-only
+inspection, artifact viewing and `systemctl --user stop` of Fleet units all work. See
+`docs/eca-compatibility.md` for what each symbol is used for.
