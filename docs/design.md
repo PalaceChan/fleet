@@ -1112,7 +1112,7 @@ Change workspace modes:
 
 Task IDs/names are not branch names by accident. Resolve repository branch policy from its instructions or
 explicit brief; default to a simple Fleet-qualified branch only when no project rule contradicts it. Never
-assume `master` over `master`, `origin` over another remote, or that a repo has a remote at all. Persist repo
+assume `master` over `main`, `origin` over another remote, or that a repo has a remote at all. Persist repo
 common-dir identity, chosen remote/default/base ref, and resolved base OID.
 
 Starting a task reserves its workspace/resource claims, creates a runtime incarnation, launches it, and
