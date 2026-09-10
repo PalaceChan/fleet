@@ -37,8 +37,8 @@ against a server; `systemd-spike.sh` reproduces the child-lifetime evidence.
   commander's tool list over the socket with the commander credential and that ECA advertised the Fleet
   tools to the model, then a `stopped` verdict; whether the model calls a tool in its boot turn is only
   reported (it did in two of three runs).
-- Not yet exercised natively: a real change-task operator producing a pushed branch end-to-end; `disabledTools`
-  effect on `eca__spawn_agent`. Both are tracked in `docs/eca-compatibility.md`.
+- Not yet exercised natively: `disabledTools` effect on `eca__spawn_agent` and, for operators,
+  `eca__ask_user`. Tracked in `docs/eca-compatibility.md`.
 
 ## Writing tests
 

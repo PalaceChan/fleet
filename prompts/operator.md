@@ -27,5 +27,8 @@ preserve, not a reason to start over. If the brief is missing or contradicts the
 - Report `done` only when the brief's acceptance criteria are met and every deliverable is registered with
   `fleet_artifact_register`. Do not tear yourself down; the commander verifies first.
 - No merging, discarding, permission weakening, or scope expansion by implication. Ask instead.
-- Native tool permission prompts and questions in your chat are answered by a human; do not try to route
-  around them.
+- You have no interactive question tool. To ask anything — of the commander or of the human — update
+  `progress.md`, publish `needs-decision` with the precise question, options, and your recommendation, and
+  end your turn. The commander answers or escalates to the human, and its reply arrives as your next
+  message. Do not wait, poll, or improvise a question in prose and keep working as if it were answered.
+- Native tool permission prompts in your chat are answered by a human; do not try to route around them.

@@ -1982,8 +1982,9 @@ Each was driven by evidence from the installed pair (see `docs/eca-compatibility
 5. **Environment propagation.** `ECA_*` variables of the spawning environment are excluded from propagation
    (Fleet sets `ECA_CONFIG` itself); provider credentials are selected by name pattern, values never logged.
 6. **`fleet-watch-start/stop`** take a fleet name and toggle that fleet's persisted supervision flag.
-7. **Subagent tools.** The overlay sets `disabledTools: ["eca__spawn_agent"]`; whether this pair honors it is
-   not yet verified by a trace and is listed as an open item in the compatibility profile.
+7. **Subagent tools.** The overlay sets `disabledTools: ["eca__spawn_agent"]` (operators additionally
+   `eca__ask_user`, note 12); whether this pair honors `disabledTools` is not yet verified by a trace and is
+   listed as an open item in the compatibility profile.
 8. **Workspace roots (rehearsal 1, 2026-09-09).** ECA's native tools force a manual approval for any path
    outside the session's workspace roots, above every `allow` rule. Operators therefore get the task directory
    plus the studied repository (study/ops) or the change worktree as roots, and the commander gets the fleet
@@ -2020,3 +2021,12 @@ Each was driven by evidence from the installed pair (see `docs/eca-compatibility
     configured default), so a struggling operator can be replaced in place by a stronger model or reasoning
     effort while the workspace, brief history and `progress.md` carry over. Doctrine makes this user-driven:
     the commander may recommend a change but switches only when asked.
+12. **Operators have no `eca__ask_user` (openclaw, 2026-09-10).** An operator asked a human-attendance
+    question through ECA's native `ask_user`. That parks the operator's turn on a `chat/askQuestion` only a
+    human can answer (in the operator chat or the dashboard); the commander was woken by `question-opened`
+    but has no tool to answer it, so its three `fleet_message_send` replies queued unseen behind the busy
+    lane while the human had to notice the `decision` row. The question channel operators were always meant
+    to use is `fleet_status` `needs-decision`: it ends the turn, wakes the commander, and the commander
+    resolves (`fleet_decision_resolve`) or escalates to the human and delivers the answer as the next
+    message. The operator overlay therefore adds `eca__ask_user` to `disabledTools`
+    (`fleet-core-role-disabled-tools`); the commander keeps it because its questions are for the human.

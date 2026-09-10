@@ -645,16 +645,27 @@ Return the count of emitted events."
                            (expand-file-name (concat "tasks/" (plist-get rt :task-id)) (plist-get fleet :artifact-root)))
                          (plist-get rt :id))))
 
+(defun fleet-core-role-disabled-tools (role)
+  "Native ECA tools disabled for runtimes of ROLE.
+Every runtime loses `eca__spawn_agent': a subagent would inherit the runtime
+credential (design §5.3).  Operators also lose `eca__ask_user': that tool
+parks the operator's turn on a human-only `chat/askQuestion' that the
+commander cannot answer, so operator messages queue behind it unseen.  The
+operator channel for questions is `fleet_status' phase `needs-decision',
+which ends the turn and wakes the commander (implementation note 12).  The
+commander keeps `eca__ask_user' because its questions are for the human."
+  (if (equal role "commander")
+      (vector "eca__spawn_agent")
+    (vector "eca__spawn_agent" "eca__ask_user")))
+
 (defun fleet-core--role-config-overlay (role)
   "ECA_CONFIG overlay for ROLE, deep-merged over the user's ordinary config.
 Carries the Fleet MCP entry (so ordinary sessions never see the bridge) and
-disables native subagent spawning, which would inherit the runtime
-credential (design §5.3)."
-  (ignore role)
+the role's disabled native tools; see `fleet-core-role-disabled-tools'."
   (fleet-store-json
    (list :mcpServers (list :fleet (list :command fleet-python-executable
                                         :args (vector (fleet-paths-bridge-executable) "mcp")))
-         :disabledTools (vector "eca__spawn_agent"))))
+         :disabledTools (fleet-core-role-disabled-tools role))))
 
 (cl-defun fleet-core-launch-runtime (store rt &key roots cwd callback)
   "Launch runtime row RT as a systemd user service running native ECA.

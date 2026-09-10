@@ -44,6 +44,17 @@
         (fleet-test-should-fail 'invalid-task (fleet-core-create-task store fid :name "x" :kind "weird" :brief fleet-test-brief))
         (fleet-test-should-fail 'invalid-task (fleet-core-create-task store fid :name "x" :kind "change" :brief fleet-test-brief :repo "/nonexistent"))))))
 
+(ert-deftest fleet-core-eca-overlay-disables-ask-user-for-operators-only ()
+  "Operators lose ask_user (their question channel is needs-decision); the commander keeps it."
+  (let* ((parse (lambda (role) (fleet-store-unjson (fleet-core--role-config-overlay role))))
+         (commander (funcall parse "commander"))
+         (operator (funcall parse "operator")))
+    (should (equal (append (plist-get commander :disabledTools) nil) '("eca__spawn_agent")))
+    (should (equal (append (plist-get operator :disabledTools) nil) '("eca__spawn_agent" "eca__ask_user")))
+    ;; Both roles still get the MCP bridge entry.
+    (dolist (o (list commander operator))
+      (should (equal (plist-get (plist-get (plist-get o :mcpServers) :fleet) :command) fleet-python-executable)))))
+
 (ert-deftest fleet-core-model-and-variant-flow-to-runtimes-and-unknown-models-are-refused ()
   (fleet-test-with-fakes
     ;; Nothing announced yet: any id passes through (ECA judges it later).

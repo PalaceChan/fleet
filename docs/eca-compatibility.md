@@ -65,8 +65,10 @@ and on `unload-feature`. Non-Fleet buffers/sessions take the original code path 
 - Config waterfall (verified against docs and behavior): `ECA_CONFIG` env > `~/.config/eca/config.json` >
   `.eca/config.json` > `extraConfigs`, deep-merged. `--config-file` **replaces** discovery and is not used.
 - Fleet passes a per-runtime `ECA_CONFIG` overlay: `mcpServers.fleet` (the bridge) and
-  `disabledTools: ["eca__spawn_agent"]`. The MCP entry is therefore invisible to ordinary sessions;
-  `M-x fleet-install-mcp` is optional.
+  `disabledTools: ["eca__spawn_agent"]` for the commander, `["eca__spawn_agent", "eca__ask_user"]` for
+  operators (their question channel is `fleet_status needs-decision`; a native `ask_user` parks the turn on a
+  human-only `chat/askQuestion` the commander cannot answer). The MCP entry is therefore invisible to
+  ordinary sessions; `M-x fleet-install-mcp` is optional.
 - `XDG_CACHE_HOME` is honored: the server writes `<cache>/eca/<workspace-hash>/chats` and `models-dev.json`.
   Fleet sets it to `~/.cache/fleet/eca/<runtime-uuid>`.
 - The server logs `[MCP] Started MCP server fleet` on stderr when the overlay is applied (native test).
@@ -105,9 +107,11 @@ and on `unload-feature`. Non-Fleet buffers/sessions take the original code path 
   the same point as the frontend and pins model/variant later (`fleet-eca--pin-selection`). The guard around
   `eca--handle-message` stays: `eca-process--make-filter` maps `handle-msg` over a whole chunk, so a UI error
   must never cost the observer the rest of the chunk.
-- **Unverified:** whether `disabledTools` fully prevents `eca__spawn_agent` on this server version. Until a
-  trace confirms it, treat native subagent spawning inside Fleet runtimes as possible; the bridge still binds
-  authority to the runtime credential, so a child would share its parent's scope (never more).
+- **Unverified:** whether `disabledTools` fully prevents `eca__spawn_agent` (and, for operators,
+  `eca__ask_user`) on this server version. Until a trace confirms it, treat native subagent spawning inside
+  Fleet runtimes as possible; the bridge still binds authority to the runtime credential, so a child would
+  share its parent's scope (never more). Cheap check on the next operator: its `tool/serverUpdated` for the
+  `eca` server should not list `ask_user`, and the transcript should show no `ask_user` `toolCallRun`.
 
 ## Stop evidence (systemd 260)
 
