@@ -255,10 +255,14 @@ Checks required keys, types and enums."
         ("fleet_task_retask"
          (fleet-rpc--task-in-fleet store actor (plist-get params :task_id))
          (mutation params (lambda ()
-                            (let ((task (fleet-core-retask store (plist-get params :task_id) (plist-get params :brief) :expected-revision (plist-get params :expected_revision)
-                                                           :note (plist-get params :note) :actor logical)))
+                            (let ((r (fleet-core-retask store (plist-get params :task_id) (plist-get params :brief) :expected-revision (plist-get params :expected_revision)
+                                                        :note (plist-get params :note) :actor logical
+                                                        :callback (lambda (_op) (fleet-supervisor--changed fid)))))
                               (fleet-supervisor--changed fid)
-                              (list :task-id (plist-get task :id) :brief-revision (plist-get task :brief-revision) :lifecycle (plist-get task :lifecycle))))))
+                              (if (plist-get r :operation-id)
+                                  ;; Live idle runtime: stop first; completion arrives as a task-retasked event.
+                                  (list :task-id (plist-get r :task-id) :operation-id (plist-get r :operation-id) :state "stopping-runtime")
+                                (list :task-id (plist-get r :id) :brief-revision (plist-get r :brief-revision) :lifecycle (plist-get r :lifecycle)))))))
         ("fleet_message_send"
          (let ((task (fleet-rpc--task-in-fleet store actor (plist-get params :task_id))))
            (unless key (fleet-fail 'invalid-request "idempotency_key required"))

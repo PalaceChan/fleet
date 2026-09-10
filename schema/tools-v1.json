@@ -11,7 +11,7 @@
     {
       "name": "fleet_task_create",
       "roles": ["commander"],
-      "description": "Create a ready task from a complete brief. Validates name grammar, kind, brief completeness, repository, dependencies (same fleet, no cycles) and resource claims. Returns the task or a structured refusal.",
+      "description": "Create a ready task from a complete brief. Validates name grammar, kind, brief completeness, repository, dependencies (same fleet, no cycles) and resource claims. A named resource already held by an unarchived task is refused (resource-claimed, with the holder): retask that task instead of creating a replacement. Returns the task or a structured refusal.",
       "inputSchema": {
         "type": "object",
         "required": ["idempotency_key", "name", "kind", "brief"],
@@ -44,7 +44,7 @@
     {
       "name": "fleet_task_retask",
       "roles": ["commander"],
-      "description": "Give a suspended/failed/done task new durable scope (a new brief revision). Requires the old runtime to be proven stopped; done tasks require non-empty new scope.",
+      "description": "Give a suspended/failed/blocked/done task new durable scope (a new brief revision) and make it ready to start again. If the task's operator runtime is still live but idle, Fleet stops it first and returns an operation id; completion arrives as a task-retasked event (do not poll), then call fleet_task_start. A runtime mid-turn is refused (runtime-busy): wait for its status event. Done tasks require non-empty new scope. Named resource claims stay with the task, so retask rather than create a replacement.",
       "inputSchema": {"type": "object", "required": ["idempotency_key", "task_id", "brief"], "properties": {"idempotency_key": {"type": "string"}, "task_id": {"type": "string"}, "brief": {"type": "string"}, "note": {"type": "string"}, "expected_revision": {"type": "integer"}}, "additionalProperties": false}
     },
     {

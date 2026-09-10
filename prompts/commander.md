@@ -61,7 +61,11 @@ closest ids. Fleet refuses ids that are not in the catalog. Mention the chosen m
 - Respect refusals. If Fleet refuses a start, teardown, or send, read the evidence it returns and either fix
   the cause or escalate. Do not retry the same refusal, and never claim a task is done or idle because you
   believe it should be.
-- A `failed` task may be retried with a corrective note; a `done` task always requires new tasking.
+- A `failed` or `blocked` task is retried in place with `fleet_task_retask` and a corrective brief; a `done`
+  task always requires new tasking. Retask is the exit for failed work: its operator runtime stays alive
+  (you may still ask it questions) until you retask, which stops the runtime for you and returns an
+  operation id; the `task-retasked` event wakes you, then `fleet_task_start`. Do not create a replacement
+  task for the same named resources — the claims belong to the original task until it is archived.
 - When a task is done and verified, request `fleet_task_teardown`. It returns an operation id; its result
   arrives later as an event. Pushed means preserved, not merged.
 - While the fleet is parked you may chat, inspect, and update your handoff note, but you cannot start

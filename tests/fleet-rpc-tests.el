@@ -131,5 +131,34 @@
             (should (= 1 (length (append (plist-get snap :fleets) nil))))
             (should (equal "parser" (plist-get (car (append (plist-get (car (append (plist-get snap :fleets) nil)) :tasks) nil)) :name)))))))))
 
+(ert-deftest fleet-rpc-retask-failed-task-with-live-runtime-returns-operation ()
+  "The commander's fleet_task_retask on a failed task whose operator is idle
+returns an operation id (runtime stop first) and later a task-retasked wake."
+  (fleet-rpc-test-with
+    (let* ((fid (fleet-core-test-fleet store)) (cid (fleet-sup-test-commander store fid))
+           (ctok (fleet-rpc-test-token cid)))
+      (fleet-sup-test-settle)
+      (let* ((tid (plist-get (plist-get (fleet-rpc-test-req "fleet_task_create" ctok (list :name "clone" :kind "ops" :brief fleet-test-brief :resources ["clone-x"]) "c1") :result) :task-id))
+             (s1 (plist-get (fleet-rpc-test-req "fleet_task_start" ctok (list :task_id tid) "s1") :result)))
+        (fleet-test-wait-op store (plist-get s1 :operation-id))
+        (let* ((rt (fleet-core-test-runtime store tid)) (otok (fleet-rpc-test-token rt)))
+          (fleet-test-wait-for (lambda () (null (fleet-eca-conn-turn (fleet-eca-conn rt)))) 5)
+          (fleet-rpc-test-req "fleet_status" otok '(:phase "failed" :detail "source is not a git root"))
+          ;; a replacement for the same resource is refused with the holder
+          (let ((r (fleet-rpc-test-req "fleet_task_create" ctok (list :name "clone-2" :kind "ops" :brief fleet-test-brief :resources ["clone-x"]) "c2")))
+            (should (equal "resource-claimed" (fleet-rpc-test-err r))))
+          ;; retask stops the idle runtime as an operation; completion is a wake event
+          (let* ((r (plist-get (fleet-rpc-test-req "fleet_task_retask" ctok (list :task_id tid :brief "Corrected scope: use the real repository root." :note "fix") "r1") :result)))
+            (should (plist-get r :operation-id))
+            (should (equal "done" (plist-get (fleet-test-wait-op store (plist-get r :operation-id)) :state))))
+          (should (equal "stopped" (plist-get (fleet-store-get store "runtimes" rt) :lifecycle)))
+          (should (equal "ready" (plist-get (fleet-store-get store "tasks" tid) :lifecycle)))
+          (should (cl-some (lambda (e) (equal (plist-get e :kind) "task-retasked"))
+                           (append (plist-get (plist-get (fleet-rpc-test-req "fleet_events_pending" ctok) :result) :events) nil)))
+          ;; and the task starts again on a fresh runtime
+          (let ((s2 (plist-get (fleet-rpc-test-req "fleet_task_start" ctok (list :task_id tid) "s2") :result)))
+            (should (equal "done" (plist-get (fleet-test-wait-op store (plist-get s2 :operation-id)) :state))))
+          (should-not (equal rt (fleet-core-test-runtime store tid))))))))
+
 (provide 'fleet-rpc-tests)
 ;;; fleet-rpc-tests.el ends here

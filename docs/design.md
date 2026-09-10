@@ -2002,3 +2002,12 @@ Each was driven by evidence from the installed pair (see `docs/eca-compatibility
     casual names ("gpt 5.6 terra medium") into exact ids. Variants (`tasks.variant`, `fleets.commander_variant`,
     schema v2) are passed through unvalidated because they are model-specific and ECA owns them. The effective
     model/variant is recorded on the runtime row when the connection is ready and shown on the dashboard.
+11. **Retask stops an idle live runtime itself (openclaw incident, 2026-09-10).** An operator that reports
+    `failed`/`blocked` keeps its runtime alive by design (the commander may still question it), but the
+    commander had no way to satisfy retask's "runtime proven stopped" precondition and no tool stops an
+    operator, so a failed task was a dead end; creating a replacement then hit the task's still-held named
+    resource claim as a raw `UNIQUE` error. Per §10.3, `fleet_task_retask` now performs the stop when the
+    current runtime is live and idle: a `task-retask` operation stops it with the usual proof, then publishes
+    the brief and commits `ready`; the actionable `task-retasked` event wakes the commander to start it. A
+    runtime mid-turn is refused (`runtime-busy`), unproven stops stay refused, and `fleet_task_create` refuses
+    a held resource with `resource-claimed` naming the holder. Teardown remains done+verified only (§10.5).

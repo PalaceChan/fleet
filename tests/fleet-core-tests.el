@@ -479,16 +479,80 @@ repo, or the change worktree; commander roots must cover the fleet dir."
   (fleet-test-with-fakes
     (let* ((fid (fleet-core-test-fleet store))
            (tid (plist-get (fleet-core-test-study store fid) :id)))
+      ;; keep the boot turn open: an operator mid-turn is never yanked away
+      (setq fleet-test-fake-turn 'busy)
       (fleet-core-test-start store tid)
-      (fleet-test-should-fail 'runtime-not-stopped (fleet-core-retask store tid "new scope that is long enough to count"))
+      (fleet-test-should-fail 'runtime-busy (fleet-core-retask store tid "new scope that is long enough to count"))
+      (fleet-test-fake-finish (fleet-eca-conn (fleet-core-test-runtime store tid)))
       (fleet-core-task-status store :runtime-id (fleet-core-test-runtime store tid) :phase "done" :artifacts '((:kind "report" :rel-path "report.md")))
       (fleet-test-wait-op store (fleet-core-park-fleet store fid))
       (fleet-core-resume-fleet store fid)
       (fleet-test-should-fail 'invalid-task (fleet-core-retask store tid ""))
+      ;; stopped runtime: immediate, returns the task row
       (let ((task (fleet-core-retask store tid "Second scope: extend the report with benchmarks." :note "follow-up")))
         (should (= 2 (plist-get task :brief-revision)))
         (should (equal (plist-get task :lifecycle) "ready"))
         (should (null (plist-get task :phase)))))))
+
+(ert-deftest fleet-core-retask-failed-task-stops-idle-runtime-and-keeps-claims ()
+  "openclaw incident (2026-09-10): a failed ops task with a live idle runtime
+must be retaskable; the retask stops the runtime, the named resource claim
+stays with the task, and a replacement task is refused with the holder."
+  (fleet-test-with-fakes
+    (let* ((fid (fleet-core-test-fleet store))
+           (task (fleet-core-create-task store fid :name "prepare-clone" :kind "ops" :brief fleet-test-brief :resources '("openclaw-development-clone")))
+           (tid (plist-get task :id)))
+      (fleet-core-test-start store tid)
+      (let ((rt (fleet-core-test-runtime store tid)))
+        (fleet-test-wait-for (lambda () (null (fleet-eca-conn-turn (fleet-eca-conn rt)))) 5)
+        (fleet-core-task-status store :runtime-id rt :phase "blocked" :detail "source is not a git root")
+        (fleet-core-task-status store :runtime-id rt :phase "failed" :detail "ending at owner's request")
+        ;; the runtime is alive by design after a terminal status
+        (should (equal (plist-get (fleet-store-get store "runtimes" rt) :lifecycle) "ready"))
+        ;; a replacement task for the same resource is a structured refusal naming the holder, not a SQL error
+        (let ((err (fleet-test-should-fail 'resource-claimed
+                     (fleet-core-create-task store fid :name "prepare-clone-2" :kind "ops" :brief fleet-test-brief :resources '("openclaw-development-clone")))))
+          (should (equal (plist-get (fleet-error-evidence err) :task-id) tid))
+          (should (equal (plist-get (fleet-error-evidence err) :task-name) "prepare-clone")))
+        ;; retask stops the idle runtime as an operation, then commits ready
+        (let* ((r (fleet-core-retask store tid "Corrected scope: clone from the real OpenClaw repository root." :note "fix source"))
+               (op (fleet-test-wait-op store (plist-get r :operation-id))))
+          (should (plist-get r :operation-id))
+          (should (equal (plist-get op :kind) "task-retask"))
+          (should (equal (plist-get op :state) "done")))
+        (let ((task (fleet-store-get store "tasks" tid)) (rt-row (fleet-store-get store "runtimes" rt)))
+          (should (equal (plist-get rt-row :lifecycle) "stopped"))
+          (should (eql 1 (plist-get rt-row :credential-revoked)))
+          (should (equal (plist-get task :lifecycle) "ready"))
+          (should (null (plist-get task :phase)))
+          (should (= 2 (plist-get task :brief-revision))))
+        ;; the commander is woken to start the task again
+        (should (cl-some (lambda (r) (equal (plist-get r :kind) "task-retasked")) (fleet-store-pending-receipts store fid)))
+        ;; claims stayed with the task; a fresh start reuses them
+        (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM resource_claims WHERE key = ? AND task_id = ?" "openclaw-development-clone" tid)))
+        (should (equal (plist-get (fleet-core-test-start store tid) :state) "done"))
+        (should-not (equal (fleet-core-test-runtime store tid) rt))
+        (should (equal (plist-get (fleet-store-get store "tasks" tid) :phase) "working"))))))
+
+(ert-deftest fleet-core-retask-unproven-stop-leaves-task-unchanged ()
+  (fleet-test-with-fakes
+    (let* ((fid (fleet-core-test-fleet store))
+           (tid (plist-get (fleet-core-test-study store fid) :id)))
+      (fleet-core-test-start store tid)
+      (let ((rt (fleet-core-test-runtime store tid)))
+        (fleet-test-wait-for (lambda () (null (fleet-eca-conn-turn (fleet-eca-conn rt)))) 5)
+        (fleet-core-task-status store :runtime-id rt :phase "failed" :detail "gave up")
+        (setq fleet-test-fake-stop-verdict 'stop-unknown)
+        (let ((op (fleet-test-wait-op store (plist-get (fleet-core-retask store tid "Retry with a different approach, please." :note "retry") :operation-id))))
+          (should (equal (plist-get op :state) "failed"))
+          (should (string-match-p "stop not proven" (plist-get op :error))))
+        (let ((task (fleet-store-get store "tasks" tid)))
+          (should (equal (plist-get task :lifecycle) "active"))
+          (should (equal (plist-get task :phase) "failed"))
+          (should (= 1 (plist-get task :brief-revision))))
+        (should (equal (plist-get (fleet-store-get store "runtimes" rt) :lifecycle) "stop-unknown"))
+        ;; an unproven stop is not silently retried: retask stays refused until reconciliation
+        (fleet-test-should-fail 'runtime-not-stopped (fleet-core-retask store tid "Retry again with the same scope text here."))))))
 
 (provide 'fleet-core-tests)
 ;;; fleet-core-tests.el ends here
