@@ -73,13 +73,13 @@
     {
       "name": "fleet_artifact_register",
       "roles": ["commander", "operator"],
-      "description": "Register a named deliverable (task-relative path or external URL/ref). Not automatically verified.",
+      "description": "Register a named deliverable (task-relative path to a file or a non-empty directory, or an external URL/ref). Directories are verified by a digest over their whole tree. Not automatically verified.",
       "inputSchema": {"type": "object", "required": ["idempotency_key", "kind"], "properties": {"idempotency_key": {"type": "string"}, "task_id": {"type": "string", "description": "Commander only; operators register on their own task."}, "kind": {"type": "string"}, "rel_path": {"type": "string"}, "external_ref": {"type": "string"}, "description": {"type": "string"}, "expected_identity": {"type": "string", "description": "Commit OID or digest."}}, "additionalProperties": false}
     },
     {
       "name": "fleet_artifact_verify",
       "roles": ["commander"],
-      "description": "Record verification (accepted or rejected) of an artifact against the task's current brief revision and the artifact's current hash. Include criteria, evidence and limitations.",
+      "description": "Record verification (accepted or rejected) of an artifact against the task's current brief revision and the artifact's current content digest (file bytes, or the tree of a directory). Include criteria, evidence and limitations.",
       "inputSchema": {"type": "object", "required": ["idempotency_key", "artifact_id", "accepted", "criteria", "evidence"], "properties": {"idempotency_key": {"type": "string"}, "artifact_id": {"type": "string"}, "accepted": {"type": "boolean"}, "criteria": {"type": "string"}, "evidence": {"type": "string"}, "limitations": {"type": "string"}}, "additionalProperties": false}
     },
     {

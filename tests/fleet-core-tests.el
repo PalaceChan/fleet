@@ -252,6 +252,46 @@
           (fleet-test-write report "# Report\nchanged after verification\n")
           (should-not (fleet-core-task-verified-p store (fleet-store-get store "tasks" tid))))))))
 
+(ert-deftest fleet-core-directory-artifacts-verify-by-tree-digest ()
+  "openclaw 2026-09-10: a rollback bundle registered as a directory could not be
+verified (raw read error), so a fully successful task could not be torn down."
+  (fleet-test-with-fakes
+    (let* ((fid (fleet-core-test-fleet store))
+           (task (fleet-core-test-study store fid)) (tid (plist-get task :id)))
+      (fleet-core-test-start store tid)
+      (let* ((rt (fleet-core-test-runtime store tid))
+             (dir (fleet-core-task-dir store task))
+             (bundle (expand-file-name "workspace/rollback-pre-deploy" dir)))
+        (fleet-test-write (expand-file-name "report.md" dir) "# Report\n")
+        (fleet-test-write (expand-file-name "live/a.py" bundle) "print(1)\n")
+        (fleet-test-write (expand-file-name "target-sha256.before" bundle) "abc a.py\n")
+        ;; An empty directory or a special file is refused at registration, with a code.
+        (make-directory (expand-file-name "workspace/empty" dir) t)
+        (fleet-test-should-fail 'artifact-empty (fleet-core-artifact-register store :runtime-id rt :kind "bundle" :rel-path "workspace/empty"))
+        (when (zerop (call-process "mkfifo" nil nil nil (expand-file-name "workspace/pipe" dir)))
+          (fleet-test-should-fail 'artifact-unreadable (fleet-core-artifact-register store :runtime-id rt :kind "bundle" :rel-path "workspace/pipe")))
+        ;; A directory registers, verifies and gates teardown like a file.
+        (let ((r (fleet-core-artifact-register store :runtime-id rt :kind "rollback-bundle" :rel-path "workspace/rollback-pre-deploy")))
+          (fleet-core-task-status store :runtime-id rt :phase "done" :artifacts '((:kind "report" :rel-path "report.md")))
+          (let ((report (fleet-store-query1 store "SELECT id FROM artifacts WHERE task_id = ? AND kind = 'report'" tid)))
+            (should (plist-get (fleet-core-artifact-verify store :artifact-id (plist-get report :id) :actor "c" :accepted t) :verified))
+            (should-not (fleet-core-task-verified-p store (fleet-store-get store "tasks" tid)))
+            (let ((v (fleet-core-artifact-verify store :artifact-id (plist-get r :artifact-id) :actor "c" :accepted t)))
+              (should (plist-get v :verified))
+              (should (string= (plist-get v :hash) (fleet-paths-sha256-tree bundle))))
+            (should (fleet-core-task-verified-p store (fleet-store-get store "tasks" tid)))
+            ;; Any change under the tree after verification invalidates it.
+            (fleet-test-write (expand-file-name "live/a.py" bundle) "print(2)\n")
+            (should-not (fleet-core-task-verified-p store (fleet-store-get store "tasks" tid)))
+            (fleet-test-write (expand-file-name "live/a.py" bundle) "print(1)\n")
+            (should (fleet-core-task-verified-p store (fleet-store-get store "tasks" tid)))
+            (fleet-test-write (expand-file-name "extra" bundle) "")
+            (should-not (fleet-core-task-verified-p store (fleet-store-get store "tasks" tid)))
+            ;; A tree emptied after verification is "changed", not an error.
+            (delete-directory bundle t)
+            (make-directory bundle)
+            (should-not (fleet-core-task-verified-p store (fleet-store-get store "tasks" tid)))))))))
+
 (ert-deftest fleet-core-artifact-registration-is-idempotent-per-location ()
   "Rehearsal 1 bug I: the operator registered report.md twice (register tool,
 then fleet_status :artifacts) and the commander had to verify two rows."

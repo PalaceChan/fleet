@@ -368,6 +368,49 @@ latency in the telemetry read as 0ms; the fraction is added back here."
   "SHA-256 hex digest of STRING (UTF-8)."
   (secure-hash 'sha256 (encode-coding-string string 'utf-8)))
 
+(defun fleet-paths--tree-entry-digest (dir file)
+  "One manifest line for FILE under DIR: \"relpath\\0kind:digest\\n\".
+Regular files hash their bytes; symlinks hash their target string (they are
+not followed); anything else refuses with `artifact-unreadable'."
+  (let ((rel (file-relative-name file dir)))
+    (cond
+     ((file-symlink-p file)
+      (format "%s\0link:%s\n" rel (fleet-paths-sha256-string (file-symlink-p file))))
+     ((file-directory-p file) nil)
+     ((file-regular-p file)
+      (format "%s\0file:%s\n" rel
+              (or (condition-case err (fleet-paths-sha256-file file)
+                    (error (fleet-fail 'artifact-unreadable "Cannot read file inside artifact directory"
+                                       :path file :reason (error-message-string err))))
+                  (fleet-fail 'artifact-unreadable "Unreadable file inside artifact directory" :path file))))
+     (t (fleet-fail 'artifact-unreadable "Artifact directory contains a special file" :path file)))))
+
+(defun fleet-paths-sha256-tree (dir)
+  "Deterministic SHA-256 digest of the file tree under DIR.
+The digest covers the sorted relative path and content digest of every
+regular file and symlink beneath DIR (empty subdirectories do not count).
+Refuses an empty tree with `artifact-empty': an empty directory is not a
+deliverable.  Returns nil when DIR does not exist."
+  (when (file-directory-p dir)
+    (let* ((files (sort (directory-files-recursively dir "" t) #'string<))
+           (lines (delq nil (mapcar (lambda (f) (fleet-paths--tree-entry-digest dir f)) files))))
+      (unless lines
+        (fleet-fail 'artifact-empty "Artifact directory contains no files" :path dir))
+      (fleet-paths-sha256-string (apply #'concat lines)))))
+
+(defun fleet-paths-sha256-path (path)
+  "Content digest of PATH: `fleet-paths-sha256-file' for a regular file,
+`fleet-paths-sha256-tree' for a directory.  Returns nil when PATH is
+missing; refuses special files with `artifact-unreadable'."
+  (cond
+   ((file-directory-p path) (fleet-paths-sha256-tree path))
+   ((not (file-exists-p path)) nil)
+   ((file-regular-p path)
+    (or (condition-case err (fleet-paths-sha256-file path)
+          (error (fleet-fail 'artifact-unreadable "Cannot read artifact" :path path :reason (error-message-string err))))
+        (fleet-fail 'artifact-unreadable "Artifact is not readable" :path path)))
+   (t (fleet-fail 'artifact-unreadable "Artifact is not a regular file or directory" :path path))))
+
 (defun fleet-paths-relative (root file)
   "Return FILE relative to ROOT, signalling if FILE is outside ROOT."
   (unless (fleet-paths-contains-p root file)

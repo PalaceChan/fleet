@@ -788,7 +788,8 @@ a new revision and a visible scope boundary.
 Agents may edit `progress.md` and `report.md` through normal file tools. Completion includes artifact
 registration; commander verification reads actual files rather than trusting a path exists. A report missing
 after `done` is a verification failure, not successful teardown. `fleet_artifact_verify` records
-criteria/evidence against the exact brief revision and artifact hash/commit OID. Changed contents or scope
+criteria/evidence against the exact brief revision and artifact hash/commit OID (a directory artifact's hash
+is a digest over its whole tree; see implementation note 13). Changed contents or scope
 invalidate the verification. Rehash/recheck after runtime stop before cleanup; an old verified flag cannot
 bless a report changed afterward.
 
@@ -2030,3 +2031,15 @@ Each was driven by evidence from the installed pair (see `docs/eca-compatibility
     resolves (`fleet_decision_resolve`) or escalates to the human and delivers the answer as the next
     message. The operator overlay therefore adds `eca__ask_user` to `disabledTools`
     (`fleet-core-role-disabled-tools`); the commander keeps it because its questions are for the human.
+13. **Directory-valued artifacts (openclaw, 2026-09-10).** A deployment operator registered its rollback
+    bundle — a directory of pre-deployment copies plus manifests — as an artifact. Verification hashed it
+    with `insert-file-contents` and failed with a raw `Read error: Is a directory`, so the artifact stayed
+    unverified and teardown of a fully successful task was (correctly) refused for good. Artifact paths may
+    now be files or non-empty directories: `fleet-paths-sha256-path` digests a directory as the sorted
+    manifest of every regular file (relative path + content digest) and symlink (target string) beneath it,
+    so verification stays bound to content — any change under the tree after verification invalidates it,
+    exactly as for a file. What verification can never process is refused with a stable code at
+    registration time, where the operator can still fix it: `artifact-empty` (an empty directory is not a
+    deliverable) and `artifact-unreadable` (special files). `fleet-core-task-verified-p` treats a path that
+    became unreadable or empty after verification as changed rather than erroring. Teardown's guarantee is
+    unchanged: it still refuses while any deliverable is unverified.

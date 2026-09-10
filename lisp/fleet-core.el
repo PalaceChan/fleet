@@ -441,8 +441,16 @@ phases cannot revert; done requires registered artifacts.  Returns a plist."
           (list :ok t :task-id tid :phase phase :decision-id decision-id :event-id event-id))))))
 
 (defun fleet-core--register-artifact (store task-id a)
-  "Insert artifact plist A for TASK-ID (inside a transaction)."
-  (let ((now (fleet-paths-now)))
+  "Insert artifact plist A for TASK-ID (inside a transaction).
+A `:rel-path' may name a file or a directory (verified by tree digest).
+What verification could never process — a special file, an empty
+directory — is refused here, so the operator learns it at registration
+rather than the commander at teardown.  A path that does not exist yet is
+allowed; verification checks existence."
+  (let ((now (fleet-paths-now))
+        (task (and (plist-get a :rel-path) (fleet-store-get store "tasks" task-id))))
+    (when task
+      (fleet-paths-sha256-path (expand-file-name (plist-get a :rel-path) (fleet-core-task-dir store task))))
     ;; Operators tend to register the same deliverable twice (once with
     ;; fleet_artifact_register, again in fleet_status :artifacts).  Two rows
     ;; for one file mean two verifications for one fact; keep one row per
@@ -479,13 +487,14 @@ phases cannot revert; done requires registered artifacts.  Returns a plist."
 
 (cl-defun fleet-core-artifact-verify (store &key artifact-id actor criteria evidence accepted limitations)
   "Record verification of ARTIFACT-ID by ACTOR (commander/human).
-The verification is bound to the current brief and file hash."
+The verification is bound to the current brief and content digest: a file's
+bytes, or the tree digest of a directory (`fleet-paths-sha256-path')."
   (let* ((art (or (fleet-store-get store "artifacts" artifact-id) (fleet-fail 'no-such-artifact "Unknown artifact" :id artifact-id)))
          (task (fleet-store-get store "tasks" (plist-get art :task-id)))
          (file (and (plist-get art :rel-path) (expand-file-name (plist-get art :rel-path) (fleet-core-task-dir store task))))
-         (hash (and file (fleet-paths-sha256-file file))))
+         (hash (and file (fleet-paths-sha256-path file))))
     (when (and file (not hash))
-      (fleet-fail 'artifact-missing "Artifact file does not exist; verification refused" :path file))
+      (fleet-fail 'artifact-missing "Artifact path does not exist; verification refused" :path file))
     (fleet-store-transaction store
       (fleet-store-update store "artifacts" artifact-id
                           (fleet-store-touch (list :verified (if accepted 1 0) :verified-brief-revision (plist-get task :brief-revision)
@@ -498,7 +507,8 @@ The verification is bound to the current brief and file hash."
 
 (defun fleet-core-task-verified-p (store task)
   "Non-nil when TASK is done and every artifact is verified.
-Verification must be at the current brief revision and hash."
+Verification must be at the current brief revision and content digest; a
+path that became unreadable or empty since verification counts as changed."
   (and (equal (plist-get task :phase) "done")
        (let ((arts (fleet-store-query store "SELECT * FROM artifacts WHERE task_id = ?" (plist-get task :id))))
          (and arts
@@ -507,7 +517,9 @@ Verification must be at the current brief revision and hash."
                                (eql (plist-get a :verified-brief-revision) (plist-get task :brief-revision))
                                (or (null (plist-get a :rel-path))
                                    (equal (plist-get a :verified-hash)
-                                          (fleet-paths-sha256-file (expand-file-name (plist-get a :rel-path) (fleet-core-task-dir store task)))))))
+                                          (condition-case nil
+                                              (fleet-paths-sha256-path (expand-file-name (plist-get a :rel-path) (fleet-core-task-dir store task)))
+                                            (fleet-error nil))))))
                         arts)))))
 
 (cl-defun fleet-core-decision-resolve (store &key decision-id answer actor authority expected-revision evidence)

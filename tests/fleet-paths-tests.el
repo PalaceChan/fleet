@@ -60,6 +60,41 @@
       ;; no temp leftovers
       (should-not (directory-files (file-name-directory f) nil "\\`\\.fleet-tmp-")))))
 
+(ert-deftest fleet-paths-tree-digest-is-deterministic-and-content-bound ()
+  (fleet-test-with-roots
+    (let ((dir (expand-file-name "bundle" fleet-data-root)))
+      (fleet-paths-write-atomically (expand-file-name "live/a.py" dir) "print(1)\n")
+      (fleet-paths-write-atomically (expand-file-name "manifest.sha256" dir) "abc\n")
+      (make-directory (expand-file-name "empty-sub" dir))
+      (make-symbolic-link "live/a.py" (expand-file-name "link" dir))
+      (let ((h1 (fleet-paths-sha256-path dir)))
+        (should (= 64 (length h1)))
+        (should (string= h1 (fleet-paths-sha256-tree dir)))
+        ;; The same tree elsewhere digests identically (relative paths, not absolute).
+        (let ((copy (expand-file-name "bundle-copy" fleet-data-root)))
+          (copy-directory dir copy nil nil t)
+          (should (string= h1 (fleet-paths-sha256-path copy))))
+        ;; Content change, new file, and retargeted link all change the digest.
+        (fleet-paths-write-atomically (expand-file-name "live/a.py" dir) "print(2)\n")
+        (let ((h2 (fleet-paths-sha256-path dir)))
+          (should-not (string= h1 h2))
+          (fleet-paths-write-atomically (expand-file-name "live/b.py" dir) "")
+          (let ((h3 (fleet-paths-sha256-path dir)))
+            (should-not (string= h2 h3))
+            (delete-file (expand-file-name "link" dir))
+            (make-symbolic-link "manifest.sha256" (expand-file-name "link" dir))
+            (should-not (string= h3 (fleet-paths-sha256-path dir))))))
+      ;; Files still digest as before; missing paths are nil.
+      (should (string= (fleet-paths-sha256-path (expand-file-name "manifest.sha256" dir)) (fleet-paths-sha256-string "abc\n")))
+      (should-not (fleet-paths-sha256-path (expand-file-name "nope" dir)))
+      ;; An empty directory is not a deliverable.
+      (fleet-test-should-fail 'artifact-empty (fleet-paths-sha256-path (expand-file-name "empty-sub" dir)))
+      ;; Special files are refused, inside a tree and directly.
+      (let ((fifo (expand-file-name "pipe" dir)))
+        (when (zerop (call-process "mkfifo" nil nil nil fifo))
+          (fleet-test-should-fail 'artifact-unreadable (fleet-paths-sha256-path fifo))
+          (fleet-test-should-fail 'artifact-unreadable (fleet-paths-sha256-path dir)))))))
+
 (ert-deftest fleet-paths-runtime-root-validation ()
   (fleet-test-with-roots
     (should (string= (fleet-paths-runtime-root) (expand-file-name fleet-runtime-root)))
