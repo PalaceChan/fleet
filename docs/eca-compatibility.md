@@ -35,7 +35,7 @@ real model turn each): `trace-prompt.json`, `trace-double.json`, `trace-badmodel
 | Tool approval | `toolCallRun` with `manualApproval: true`; `chat/toolCallApprove` / `chat/toolCallReject` notifications; `toolCallRunning` follows an approval | captured as `tool-approval-required` (dashboard attention, not a commander wake); cleared on `toolCallRunning`/`toolCalled`/`toolCallRejected`; never auto-approved by Fleet |
 | Subagent activity | `chat/contentReceived` with `parentChatId`; child `statusChanged` | recorded as `subagent-activity`; can never finish the parent turn |
 | Models | first `config/updated` with non-empty `chat.models` arrives ~6 s after `initialized`; it also carries `selectModel` (server default) and `variants` (for the selected model only; e.g. `high low max medium xhigh` on `openai/gpt-5.6-*`). Per-chat `config/updated` later carry `chatId` + `selectVariant`. | connection readiness waits for it (`fleet-eca-models-timeout-sec`, 90 s); the catalog is persisted in `meta` (`fleet-store-eca-catalog`) |
-| Model selection | `eca-chat--model`/`--variant` fall back to the global `eca-chat--last-known-*`, i.e. the user's last interactive pick; variant `"-"` means "send none" | Fleet chats pin `eca-chat--selected-model` (request or `selectModel`) and `eca-chat--selected-variant` (request or `"-"`) at creation |
+| Model selection | `eca-chat--model`/`--variant` fall back to the global `eca-chat--last-known-*`, i.e. the user's last interactive pick; variant `"-"` means "send none". The session-wide `config/updated` (no `chatId`) is broadcast by `eca-chat-config-updated` → `eca-chat--apply-per-chat-config` into **every** chat buffer, rewriting `eca-chat--selected-model/-variant/-trust` with `selectModel`/`selectVariant`/`selectTrust` | the connection (`fleet-eca-conn-model`/`-variant`) is the source of truth for `chat/prompt`; the buffer-locals are only re-synced for the mode-line (`fleet-eca--sync-selection`). No requested variant ⇒ the server's announced `selectVariant` (what a fresh interactive chat gets), recorded on the runtime row |
 | Cancellation | `chat/promptStop` is a notification; frontend has a 10 s UI-only fallback to idle | `cancel-requested` only; stop proof comes from systemd |
 | `jobs/list`, `jobs/kill` | supported by the frontend (`eca-jobs.el`) | not used; full service stop owns cleanup |
 
@@ -90,10 +90,13 @@ and on `unload-feature`. Non-Fleet buffers/sessions take the original code path 
 - **Usage notifications** on `openai/gpt-5.6-*` (openai-responses) carry `sessionTokens` and `sessionCost`
   (a string) but null `messageInputTokens`/`messageOutputTokens`; telemetry derives per-turn deltas.
 - **ECA UI on Fleet sessions:** `eca-chat--handle-init-progress` and `eca-chat--handle-mcp-server-updated`
-  call `(with-current-buffer (eca-chat--get-last-buffer session))`, which is nil until Fleet's silent chat
-  exists, raising `Wrong type argument: stringp, nil` (logged to `<eca:emacs-errors[…]>`). Harmless, but
-  `eca-process--make-filter` maps `handle-msg` over a whole chunk, so Fleet guards its call to
-  `eca--handle-message` to keep observing the rest of the chunk.
+  call `(with-current-buffer (eca-chat--get-last-buffer session))`; interactively that buffer exists because
+  `eca--initialize` calls `eca-chat-open` right after `initialized`, before models. Fleet used to create its
+  silent chat only at readiness (~6 s later), so every `$/progress`/`tool/serverUpdated` in between raised
+  `Wrong type argument: stringp, nil` (logged to `<eca:emacs-errors[…]>`). Fleet now registers the chat at
+  the same point as the frontend and pins model/variant later (`fleet-eca--pin-selection`). The guard around
+  `eca--handle-message` stays: `eca-process--make-filter` maps `handle-msg` over a whole chunk, so a UI error
+  must never cost the observer the rest of the chunk.
 - **Unverified:** whether `disabledTools` fully prevents `eca__spawn_agent` on this server version. Until a
   trace confirms it, treat native subagent spawning inside Fleet runtimes as possible; the bridge still binds
   authority to the runtime credential, so a child would share its parent's scope (never more).

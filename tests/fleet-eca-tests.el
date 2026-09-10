@@ -122,26 +122,60 @@ and every workspace root must reach `initialize'."
 
 (ert-deftest fleet-eca-model-is-pinned-not-inherited-from-user-chat ()
   "`eca-chat--model'/`eca-chat--variant' fall back to the user's last interactive
-selection.  A Fleet chat must send an explicit model (requested or the server
-default) and no variant unless asked, whatever the user's own chat uses."
+selection, and ECA's session-wide config broadcast rewrites the buffer-local
+selection of every chat with the server defaults (openclaw commander,
+2026-09-10: Fleet believed \"no variant\" while the chat ran at medium).  A
+Fleet chat must send exactly the connection's pinned model/variant: the
+request when given, else the server's announced defaults."
   (let ((eca-chat--last-known-model "user/other") (eca-chat--last-known-variant "xhigh"))
-    ;; No request: server default, no variant.
+    ;; No request: server default model and the server's default variant.
     (let ((fleet-eca-test--model nil) (fleet-eca-test--variant nil))
       (fleet-eca-test-with-conn conn
         (should (equal (fleet-eca-conn-model conn) "fake/model"))
-        (should-not (fleet-eca-conn-variant conn))
-        (should (equal (plist-get (fleet-eca-conn-catalog conn) :models) '("fake/model")))
+        (should (equal (fleet-eca-conn-default-variant conn) "medium"))
+        (should (equal (fleet-eca-conn-variant conn) "medium"))
+        (should (equal (plist-get (fleet-eca-conn-catalog conn) :models) '("fake/model" "fake/other")))
+        (should (equal (plist-get (fleet-eca-conn-catalog conn) :variants) '("low" "medium" "high")))
         (should (eq (plist-get (fleet-eca-test-submit conn "hello") :outcome) 'accepted))
         (let ((p (plist-get (car (fleet-eca-test-log-requests (expand-file-name "fake.log" fleet-test--roots) "chat/prompt")) :params)))
           (should (equal (plist-get p :model) "fake/model"))
-          (should-not (plist-member p :variant)))))
-    ;; Explicit request wins and is forwarded.
-    (let ((fleet-eca-test--model "fake/model") (fleet-eca-test--variant "low"))
+          (should (equal (plist-get p :variant) "medium")))))
+    ;; Explicit request wins and is forwarded even though the broadcast (which
+    ;; arrives before the pin) and later UI rewrites disagree.
+    (let ((fleet-eca-test--model "fake/other") (fleet-eca-test--variant "low"))
       (fleet-eca-test-with-conn conn
+        (should (equal (fleet-eca-conn-model conn) "fake/other"))
         (should (equal (fleet-eca-conn-variant conn) "low"))
+        (with-current-buffer (fleet-eca-conn-buffer conn)
+          (should (equal eca-chat--selected-model "fake/other"))
+          (should (equal eca-chat--selected-variant "low"))
+          ;; a later broadcast/UI rewrite of the buffer-locals must not leak into the wire
+          (setq-local eca-chat--selected-model "fake/model")
+          (setq-local eca-chat--selected-variant "high"))
         (should (eq (plist-get (fleet-eca-test-submit conn "hello") :outcome) 'accepted))
         (let ((p (plist-get (car (fleet-eca-test-log-requests (expand-file-name "fake.log" fleet-test--roots) "chat/prompt")) :params)))
-          (should (equal (plist-get p :variant) "low")))))))
+          (should (equal (plist-get p :model) "fake/other"))
+          (should (equal (plist-get p :variant) "low")))
+        (with-current-buffer (fleet-eca-conn-buffer conn)
+          (should (equal eca-chat--selected-model "fake/other"))
+          (should (equal eca-chat--selected-variant "low")))))))
+
+(ert-deftest fleet-eca-chat-exists-before-init-notifications-so-ui-does-not-error ()
+  "ECA renders $/progress and tool/serverUpdated into the session's last chat
+buffer; those arrive right after `initialized', seconds before models.  The
+designated chat must exist by then (as with `eca-chat-open' interactively),
+so ECA's UI raises no \"Wrong type argument: stringp, nil\" on Fleet sessions."
+  (let ((ui-errors nil))
+    (cl-letf* ((orig (symbol-function 'fleet-eca--note-ui-error))
+               ((symbol-function 'fleet-eca--note-ui-error)
+                (lambda (conn err) (push (error-message-string err) ui-errors) (funcall orig conn err))))
+      (fleet-eca-test-with-conn conn
+        (should (fleet-test-wait-for (lambda () (assoc "fleet" (fleet-eca-conn-tool-servers conn))) 5))
+        (should (equal (plist-get (cdr (assoc "fleet" (fleet-eca-conn-tool-servers conn))) :status) "running"))
+        (should (buffer-live-p (fleet-eca-conn-buffer conn)))
+        (should (eq (eca--session-last-chat-buffer (fleet-eca-conn-session conn)) (fleet-eca-conn-buffer conn)))
+        (should-not (get-buffer-window (fleet-eca-conn-buffer conn)))
+        (should (null ui-errors))))))
 
 (ert-deftest fleet-eca-ui-error-does-not-drop-later-messages ()
   "The ECA UI half may error on a Fleet session; the observer must still see

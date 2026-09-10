@@ -85,7 +85,9 @@ Nil discovers the executable the installed ECA package would use."
   :type '(choice (const nil) string) :group 'fleet)
 
 (defcustom fleet-commander-variant nil
-  "ECA model variant (e.g. \"high\") for commanders.  Nil uses the server default."
+  "ECA model variant (e.g. \"high\") for commanders.
+Nil uses the server's announced default variant (what a fresh interactive
+chat gets)."
   :type '(choice (const nil) string) :group 'fleet)
 
 (defcustom fleet-operator-variant nil

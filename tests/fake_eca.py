@@ -204,8 +204,14 @@ def handle(msg):
     if method == "initialize":
         send({"jsonrpc": "2.0", "id": msg["id"], "result": {"chatWelcomeMessage": "# fake welcome\n"}})
     elif method == "initialized":
-        notify("config/updated", {"chat": {"models": ["fake/model"], "selectModel": "fake/model", "defaultModel": "fake/model",
-                                           "agents": ["agent"], "selectAgent": "agent", "variants": []}})
+        # Like the native server: init progress and tool servers are announced before
+        # models arrive, and the session-wide config broadcast carries selectVariant.
+        notify("$/progress", {"taskId": "init-1", "type": "running", "title": "Loading providers"})
+        notify("tool/serverUpdated", {"name": "fleet", "status": "starting", "command": "bridge", "args": [], "tools": []})
+        notify("config/updated", {"chat": {"models": ["fake/model", "fake/other"], "selectModel": "fake/model", "defaultModel": "fake/model",
+                                           "agents": ["agent"], "selectAgent": "agent",
+                                           "variants": ["low", "medium", "high"], "selectVariant": "medium"}})
+        notify("$/progress", {"taskId": "init-1", "type": "finished", "title": "Loading providers"})
         notify("tool/serverUpdated", {"name": "fleet", "status": "running", "command": "bridge", "args": [], "tools": []})
     elif method == "chat/prompt":
         threading.Thread(target=run_prompt, args=(msg,), daemon=True).start()

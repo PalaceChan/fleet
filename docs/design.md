@@ -2002,6 +2002,11 @@ Each was driven by evidence from the installed pair (see `docs/eca-compatibility
     casual names ("gpt 5.6 terra medium") into exact ids. Variants (`tasks.variant`, `fleets.commander_variant`,
     schema v2) are passed through unvalidated because they are model-specific and ECA owns them. The effective
     model/variant is recorded on the runtime row when the connection is ready and shown on the dashboard.
+    The connection, not the chat buffer, is the source of truth for what `chat/prompt` sends: ECA's
+    session-wide `config/updated` broadcast rewrites every chat buffer's selected model/variant with the
+    server defaults (found 2026-09-10: the openclaw commander ran at `medium` while Fleet recorded no
+    variant). With no requested variant Fleet uses the server's announced `selectVariant`, i.e. exactly what
+    a fresh interactive chat gets, and records it.
 11. **Retask stops an idle live runtime itself (openclaw incident, 2026-09-10).** An operator that reports
     `failed`/`blocked` keeps its runtime alive by design (the commander may still question it), but the
     commander had no way to satisfy retask's "runtime proven stopped" precondition and no tool stops an
