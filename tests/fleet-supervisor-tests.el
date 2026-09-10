@@ -189,6 +189,33 @@ commander, and the stored pending list must clear when the tool proceeds."
       (should (string-match-p "Fleet events" (plist-get (car fleet-test-fake-submissions) :text)))
       (should (equal "finished" (plist-get (fleet-store-query1 store "SELECT state FROM messages WHERE origin='human'") :state))))))
 
+(ert-deftest fleet-supervisor-queued-human-messages-drain-in-order-after-each-turn ()
+  "Two human prompts typed while the commander is mid-turn are queued and then
+sent one per turn end, in order; the lane never stays busy without a turn."
+  (fleet-sup-test-with
+    (let* ((fid (fleet-core-test-fleet store)) (cid (fleet-sup-test-commander store fid))
+           (conn (fleet-eca-conn cid)))
+      (fleet-sup-test-settle)
+      (setq fleet-test-fake-turn 'busy)
+      (should (fleet-supervisor--human-sink conn '(:text "message A")))
+      (fleet-sup-test-settle)
+      (should (equal (plist-get (car fleet-test-fake-submissions) :text) "message A"))
+      (should (fleet-supervisor--human-sink conn '(:text "message B")))
+      (should (fleet-supervisor--human-sink conn '(:text "message C")))
+      (fleet-sup-test-settle)
+      (should (equal '("queued" "queued") (mapcar (lambda (m) (plist-get m :state))
+                                                 (fleet-store-query store "SELECT state FROM messages WHERE origin='human' AND text IN ('message B','message C') ORDER BY created_at"))))
+      (fleet-test-fake-finish conn) (fleet-sup-test-settle)
+      (should (equal (plist-get (car fleet-test-fake-submissions) :text) "message B"))
+      (should (fleet-supervisor--lane-busy-p store cid conn))
+      (fleet-test-fake-finish conn) (fleet-sup-test-settle)
+      (should (equal (plist-get (car fleet-test-fake-submissions) :text) "message C"))
+      (fleet-test-fake-finish conn) (fleet-sup-test-settle)
+      (should-not (fleet-supervisor--lane-busy-p store cid conn))
+      (should (equal '("finished" "finished" "finished")
+                     (mapcar (lambda (m) (plist-get m :state))
+                             (fleet-store-query store "SELECT state FROM messages WHERE origin='human' ORDER BY created_at")))))))
+
 (ert-deftest fleet-supervisor-ack-lifecycle-and-reminder-once ()
   (fleet-sup-test-with
     (let* ((fid (fleet-core-test-fleet store)) (cid (fleet-sup-test-commander store fid))

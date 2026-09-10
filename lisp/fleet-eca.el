@@ -693,10 +693,20 @@ Runs before the UI handler."
       (fleet-eca--emit conn 'turn-started :message-id nil :unattributed t)))))
 
 (defun fleet-eca--turn-terminal (conn source)
-  "Consume the terminal activity event from SOURCE exactly once."
+  "Consume the terminal activity event from SOURCE exactly once.
+A turn's own terminal is always preceded by its `running' (or, for a
+definite rejection, by the error response that clears the turn).  A
+terminal that reaches a turn which has seen neither is the previous
+turn's second terminal (`statusChanged idle' and `progress finished'
+arrive together; the next prompt may be submitted between them) and must
+not be charged to the new turn."
   (let ((turn (fleet-eca-conn-turn conn)))
-    (if (null turn)
-        (fleet-eca--emit conn 'turn-idle-duplicate :source source)
+    (cond
+     ((null turn)
+      (fleet-eca--emit conn 'turn-idle-duplicate :source source))
+     ((and (not (plist-get turn :running-seen)) (not (plist-get turn :accepted)))
+      (fleet-eca--emit conn 'turn-idle-duplicate :source source :stale t :message-id (plist-get turn :message-id)))
+     (t
       (setf (fleet-eca-conn-turn conn) nil)
       (fleet-eca--cancel-watchdog conn)
       (fleet-eca--flush-assistant conn)
@@ -716,7 +726,7 @@ Runs before the UI handler."
         (run-with-timer 5 nil (lambda ()
                                 (when (eq (fleet-eca-conn-turn conn) turn)
                                   (setf (fleet-eca-conn-turn conn) nil)
-                                  (fleet-eca--resolve-submission conn turn 'observed-unacknowledged :finished t))))))))
+                                  (fleet-eca--resolve-submission conn turn 'observed-unacknowledged :finished t)))))))))
 
 (defun fleet-eca--observe-content (conn params)
   "Handle chat/contentReceived PARAMS."

@@ -89,6 +89,14 @@ and on `unload-feature`. Non-Fleet buffers/sessions take the original code path 
   - `tool-approval-required` is recorded but not actionable: only a human can answer it.
 - **Usage notifications** on `openai/gpt-5.6-*` (openai-responses) carry `sessionTokens` and `sessionCost`
   (a string) but null `messageInputTokens`/`messageOutputTokens`; telemetry derives per-turn deltas.
+- **Terminal pair vs. the next prompt (openclaw, 2026-09-10):** `statusChanged idle` and `progress finished`
+  arrive in one chunk. A prompt submitted from inside the `idle` handler (the supervisor dispatching a queued
+  message) received the `finished` as *its own* terminal: a 4 ms "turn", the connection's turn cleared by
+  the 5 s finished-before-ack timer while the real turn ran, the real terminal dropped as a duplicate, the
+  message stuck `accepted`, and the lane busy forever. Two guards: `fleet-eca--turn-terminal` ignores a
+  terminal for a turn that has seen neither `running` nor acceptance (a prompt's own terminal is always
+  preceded by its `running`; a definite rejection clears the turn via the error response), and the supervisor
+  dispatches the next queued message from a zero timer, after the chunk.
 - **ECA UI on Fleet sessions:** `eca-chat--handle-init-progress` and `eca-chat--handle-mcp-server-updated`
   call `(with-current-buffer (eca-chat--get-last-buffer session))`; interactively that buffer exists because
   `eca--initialize` calls `eca-chat-open` right after `initialized`, before models. Fleet used to create its

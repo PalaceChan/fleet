@@ -261,7 +261,11 @@ Returns nil when nothing changes so callers can append it unconditionally."
                                                     :usage (plist-get ev :usage)
                                                     :seconds (fleet-supervisor--seconds-between (plist-get ev :submitted-at) (plist-get ev :at)))))
          (when mid (fleet-supervisor--on-message-finished store rt mid)))
-       (fleet-supervisor--dispatch-lane store rid)
+       ;; Dispatch the next queued message only after the current input chunk
+       ;; is fully observed: ECA emits `statusChanged idle' and `progress
+       ;; finished' together, and a prompt submitted from inside the first
+       ;; would receive the second as its own terminal (openclaw, 2026-09-10).
+       (run-with-timer 0 nil #'fleet-supervisor--dispatch-lane store rid)
        (when (equal (plist-get rt :role) "commander") (fleet-supervisor-kick fid 'turn-end)))
       ((or 'tool-running 'tool-preparing)
        (fleet-supervisor--observe store rid (append (list :active-tool (fleet-store-json (list :id (plist-get ev :tool-id) :name (plist-get ev :name) :since (plist-get ev :at))))

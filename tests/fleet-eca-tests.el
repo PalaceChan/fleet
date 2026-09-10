@@ -211,6 +211,46 @@ every message of the chunk and the connection must stay usable."
         (should (string-match-p "\"kind\":\"submit\"" t-text))
         (should (string-match-p "\"role\":\"assistant\"" t-text))))))
 
+(ert-deftest fleet-eca-next-prompt-submitted-between-terminal-pair-is-not-misterminated ()
+  "openclaw 2026-09-10: `statusChanged idle' and `progress finished' arrive in
+one chunk.  A prompt submitted from inside the idle handler (the supervisor
+dispatching a queued message) must not receive the `finished' as its own
+terminal; it has seen neither running nor acceptance, so that terminal is
+the previous turn's.  Before the fix the new turn was recorded finished
+after ~4 ms, then cleared under the real turn, whose real terminal was
+dropped, leaving the message stuck and the lane busy forever."
+  (fleet-eca-test-with-conn conn
+    (let* ((second-id (fleet-paths-uuid)) (second-out nil) (submitted nil)
+           (base (fleet-eca-conn-sink conn)))
+      (setf (fleet-eca-conn-sink conn)
+            (lambda (ev)
+              (funcall base ev)
+              (when (and (eq (plist-get ev :kind) 'turn-idle-observed) (not submitted))
+                (setq submitted t)
+                ;; synchronous dispatch from the idle handler, as the supervisor used to do
+                (fleet-eca-submit conn :message-id second-id :text "hello again"
+                                  :callback (lambda (r) (setq second-out r))))))
+      (should (eq (plist-get (fleet-eca-test-submit conn "hello") :outcome) 'accepted))
+      (should (fleet-test-wait-for (lambda () second-out) 10))
+      (should (eq (plist-get second-out :outcome) 'accepted))
+      ;; the second turn really runs and really ends, once, after its own running
+      (should (fleet-test-wait-for (lambda () (= 2 (cl-count 'turn-idle-observed (fleet-eca-test-kinds)))) 10))
+      (let* ((evs (reverse fleet-eca-test--events))
+             (second-evs (cl-remove-if-not (lambda (e) (equal (plist-get e :message-id) second-id)) evs))
+             (kinds (mapcar (lambda (e) (plist-get e :kind)) second-evs)))
+        (should (= 1 (cl-count 'turn-idle-observed kinds)))
+        (should (< (cl-position 'turn-started kinds) (cl-position 'turn-idle-observed kinds)))
+        ;; the previous turn's leftover terminal was recognised as stale, not charged to us
+        (should (cl-some (lambda (e) (and (eq (plist-get e :kind) 'turn-idle-duplicate) (plist-get e :stale)
+                                          (equal (plist-get e :message-id) second-id)))
+                         evs))
+        (let ((idle (cl-find-if (lambda (e) (eq (plist-get e :kind) 'turn-idle-observed)) second-evs)))
+          (should (plist-get idle :accepted))
+          (should (plist-get idle :usage))))
+      (should (null (fleet-eca-conn-turn conn)))
+      ;; and the lane is genuinely free
+      (should (eq (plist-get (fleet-eca-test-submit conn "third") :outcome) 'accepted)))))
+
 (ert-deftest fleet-eca-lane-refuses-second-prompt ()
   (fleet-eca-test-with-conn conn
     (let ((first (fleet-eca-test-submit conn "SLOW"))

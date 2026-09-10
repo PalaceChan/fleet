@@ -33,11 +33,22 @@ _stdout = sys.stdout.buffer
 _state = {"turn": None, "chat": None, "pending_question": None, "pending_approval": None, "stop": threading.Event()}
 
 
-def send(obj):
+def _frame(obj):
     body = json.dumps(obj).encode("utf-8")
+    return b"Content-Length: %d\r\n\r\n" % (len(body) + 1) + body + b"\n"
+
+
+def send(obj):
     with _out_lock:
-        _stdout.write(b"Content-Length: %d\r\n\r\n" % (len(body) + 1))
-        _stdout.write(body + b"\n")
+        _stdout.write(_frame(obj))
+        _stdout.flush()
+
+
+def send_together(*objs):
+    """Write several messages in one flush so the client sees them in one chunk,
+    as the native server does for a turn's `statusChanged idle` + `progress finished`."""
+    with _out_lock:
+        _stdout.write(b"".join(_frame(o) for o in objs))
         _stdout.flush()
 
 
@@ -68,11 +79,13 @@ def tick():
 
 def finish(chat_id, dup=False):
     content(chat_id, "system", {"type": "usage", "sessionTokens": 10, "limit": {"context": 1000, "output": 100}})
-    status(chat_id, "idle")
-    content(chat_id, "system", {"type": "progress", "state": "finished"})
+    # The native server emits both terminals at the same instant (recorded traces); one chunk.
+    idle = {"jsonrpc": "2.0", "method": "chat/statusChanged", "params": {"chatId": chat_id, "status": "idle"}}
+    finished = {"jsonrpc": "2.0", "method": "chat/contentReceived",
+                "params": {"chatId": chat_id, "role": "system", "content": {"type": "progress", "state": "finished"}}}
+    send_together(idle, finished)
     if dup:
-        status(chat_id, "idle")
-        content(chat_id, "system", {"type": "progress", "state": "finished"})
+        send_together(idle, finished)
     tick()
     content(chat_id, "system", {"type": "metadata", "title": "fake title"})
     _state["turn"] = None
