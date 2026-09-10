@@ -147,18 +147,26 @@ returns an operation id (runtime stop first) and later a task-retasked wake."
           ;; a replacement for the same resource is refused with the holder
           (let ((r (fleet-rpc-test-req "fleet_task_create" ctok (list :name "clone-2" :kind "ops" :brief fleet-test-brief :resources ["clone-x"]) "c2")))
             (should (equal "resource-claimed" (fleet-rpc-test-err r))))
-          ;; retask stops the idle runtime as an operation; completion is a wake event
-          (let* ((r (plist-get (fleet-rpc-test-req "fleet_task_retask" ctok (list :task_id tid :brief "Corrected scope: use the real repository root." :note "fix") "r1") :result)))
+          ;; a model outside the catalog is refused before anything is stopped
+          (should (equal "unknown-model" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_task_retask" ctok (list :task_id tid :brief "" :model "nope/model") "r0"))))
+          (should (equal "ready" (plist-get (fleet-store-get store "runtimes" rt) :lifecycle)))
+          ;; retask (with a user-requested model/variant) stops the idle runtime as an operation; completion is a wake event
+          (let* ((r (plist-get (fleet-rpc-test-req "fleet_task_retask" ctok (list :task_id tid :brief "Corrected scope: use the real repository root." :note "fix" :model "fake/other" :variant "low") "r1") :result)))
             (should (plist-get r :operation-id))
             (should (equal "done" (plist-get (fleet-test-wait-op store (plist-get r :operation-id)) :state))))
           (should (equal "stopped" (plist-get (fleet-store-get store "runtimes" rt) :lifecycle)))
           (should (equal "ready" (plist-get (fleet-store-get store "tasks" tid) :lifecycle)))
+          (should (equal "fake/other" (plist-get (fleet-store-get store "tasks" tid) :model)))
+          (should (equal "low" (plist-get (fleet-store-get store "tasks" tid) :variant)))
           (should (cl-some (lambda (e) (equal (plist-get e :kind) "task-retasked"))
                            (append (plist-get (plist-get (fleet-rpc-test-req "fleet_events_pending" ctok) :result) :events) nil)))
-          ;; and the task starts again on a fresh runtime
+          ;; and the task starts again on a fresh runtime, on the requested model/variant
           (let ((s2 (plist-get (fleet-rpc-test-req "fleet_task_start" ctok (list :task_id tid) "s2") :result)))
             (should (equal "done" (plist-get (fleet-test-wait-op store (plist-get s2 :operation-id)) :state))))
-          (should-not (equal rt (fleet-core-test-runtime store tid))))))))
+          (should-not (equal rt (fleet-core-test-runtime store tid)))
+          (let ((rt2 (fleet-store-get store "runtimes" (fleet-core-test-runtime store tid))))
+            (should (equal "fake/other" (plist-get rt2 :model)))
+            (should (equal "low" (plist-get rt2 :variant)))))))))
 
 (provide 'fleet-rpc-tests)
 ;;; fleet-rpc-tests.el ends here

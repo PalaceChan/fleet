@@ -281,9 +281,25 @@ The file must carry the recorded hash."
         (fleet-core-operation-finish store (plist-get op :id) :state "failed" :error "brief file missing or hash mismatch; revision not runnable"))
       'failed)))
 
-(cl-defun fleet-core-retask (store task-id text &key expected-revision note actor callback)
+(defun fleet-core--retask-selection (store model variant)
+  "Task column updates for a retask's MODEL and VARIANT requests.
+Nil leaves a column unchanged; \"default\" returns it to the configured
+default exactly as task creation would; any other model must be in the
+catalog.  Returns a plist for `fleet-store-update' (possibly empty)."
+  (append (when model
+            (list :model (if (equal model "default") fleet-operator-model (fleet-core-assert-model store model))))
+          (when variant
+            (list :variant (if (equal variant "default") fleet-operator-variant variant)))))
+
+(cl-defun fleet-core-retask (store task-id text &key expected-revision note actor model variant callback)
   "Give TASK-ID new durable scope TEXT; the result is a ready task at a new
 revision.  A done task requires non-empty TEXT.
+
+MODEL and VARIANT, when given, change what the next operator of this task
+runs on (see `fleet-core--retask-selection'); the workspace, brief history
+and progress notes carry over, so a struggling operator can be replaced by
+a stronger model or reasoning effort in place.  Blank TEXT with only a
+selection change is allowed unless the task is done.
 
 When the task's current runtime is already stopped the retask is immediate
 and the task row is returned.  When the runtime is still live but idle (the
@@ -295,15 +311,18 @@ that case.  A runtime mid-turn is refused (`runtime-busy'); an unproven
 stop (`stop-unknown', `stopping', `launching') stays refused."
   (let* ((task (fleet-core-task store task-id))
          (rt (and (plist-get task :current-runtime-id) (fleet-store-get store "runtimes" (plist-get task :current-runtime-id))))
-         (live (and rt (not (member (plist-get rt :lifecycle) '("stopped" "never-launched"))))))
+         (live (and rt (not (member (plist-get rt :lifecycle) '("stopped" "never-launched")))))
+         (selection nil))
     (fleet-store-check-revision store "tasks" task-id expected-revision)
     (when (member (plist-get task :lifecycle) '("closing" "archived"))
       (fleet-fail 'task-closed "Task is closing or archived" :lifecycle (plist-get task :lifecycle)))
     (when (and (equal (plist-get task :phase) "done") (string-blank-p (or text "")))
       (fleet-fail 'invalid-task "A done task requires non-empty new scope"))
+    ;; Validate the selection before anything is stopped or written.
+    (setq selection (fleet-core--retask-selection store model variant))
     (cond
      ((not live)
-      (fleet-core--retask-commit store task-id text note actor nil)
+      (fleet-core--retask-commit store task-id text note actor nil selection)
       (fleet-store-get store "tasks" task-id))
      (t
       (unless (member (plist-get rt :lifecycle) '("ready" "lost"))
@@ -317,7 +336,7 @@ stop (`stop-unknown', `stopping', `launching') stays refused."
                       :runtime-id (plist-get rt :id))))
       (let ((op (fleet-core-operation-begin store "task-retask" :fleet-id (plist-get task :fleet-id) :task-id task-id
                                             :runtime-id (plist-get rt :id) :expected-revision (plist-get task :entity-revision)
-                                            :intent (list :note note :text-chars (length (or text ""))))))
+                                            :intent (append (list :note note :text-chars (length (or text ""))) selection))))
         (fleet-core-operation-step store op "stopping-runtime")
         (fleet-core-stop-runtime store (plist-get rt :id) :reason "retask"
                                  :callback
@@ -326,7 +345,7 @@ stop (`stop-unknown', `stopping', `launching') stays refused."
                                        (condition-case err
                                            (progn
                                              (fleet-core-operation-step store op "runtime-stopped")
-                                             (fleet-core--retask-commit store task-id text note actor op)
+                                             (fleet-core--retask-commit store task-id text note actor op selection)
                                              (fleet-core-operation-finish store op :state "done" :evidence (list :brief-revision (plist-get (fleet-store-get store "tasks" task-id) :brief-revision))))
                                          (error (fleet-core-operation-finish store op :state "failed" :error (fleet-error-string err))))
                                      (fleet-core-operation-finish store op :state "failed" :error "runtime stop not proven; task unchanged"
@@ -334,20 +353,25 @@ stop (`stop-unknown', `stopping', `launching') stays refused."
                                    (when callback (funcall callback (fleet-store-get store "operations" op)))))
         (list :operation-id op :task-id task-id))))))
 
-(defun fleet-core--retask-commit (store task-id text note actor op)
+(defun fleet-core--retask-commit (store task-id text note actor op &optional selection)
   "Publish TEXT (unless blank) and commit TASK-ID ready at the new revision.
+SELECTION is the model/variant column update plist (may be empty).
 OP, when non-nil, is the `task-retask' operation; its completion event is
 actionable so the commander learns the task can be started."
   (let ((task (fleet-core-task store task-id)))
     (unless (string-blank-p (or text ""))
       (fleet-core-publish-brief store task-id text :note (or note "retask")))
     (fleet-store-transaction store
-      (fleet-store-update store "tasks" task-id (fleet-store-touch (list :lifecycle "ready" :phase nil :detail (or note "retasked") :detail-at (fleet-paths-now)
-                                                                      :wait-reason nil :wait-deadline nil :wait-job-id nil)))
+      (fleet-store-update store "tasks" task-id (fleet-store-touch (append (list :lifecycle "ready" :phase nil :detail (or note "retasked") :detail-at (fleet-paths-now)
+                                                                              :wait-reason nil :wait-deadline nil :wait-job-id nil)
+                                                                        selection)))
       (fleet-store-exec store "UPDATE artifacts SET verified = 0 WHERE task_id = ?" task-id)
-      (fleet-store-append-event store :fleet-id (plist-get task :fleet-id) :task-id task-id :kind "task-retasked" :actor actor :operation-id op
-                                :payload (list :note note :brief-revision (plist-get (fleet-store-get store "tasks" task-id) :brief-revision))
-                                :actionable (and op t)))))
+      (let ((now (fleet-store-get store "tasks" task-id)))
+        (fleet-store-append-event store :fleet-id (plist-get task :fleet-id) :task-id task-id :kind "task-retasked" :actor actor :operation-id op
+                                  :payload (list :note note :brief-revision (plist-get now :brief-revision)
+                                                 :model (plist-get now :model) :variant (plist-get now :variant)
+                                                 :selection-changed (and selection t))
+                                  :actionable (and op t))))))
 
 ;;;; Operator status, decisions, waits, artifacts, external jobs
 

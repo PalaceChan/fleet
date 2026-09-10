@@ -534,6 +534,54 @@ stays with the task, and a replacement task is refused with the holder."
         (should-not (equal (fleet-core-test-runtime store tid) rt))
         (should (equal (plist-get (fleet-store-get store "tasks" tid) :phase) "working"))))))
 
+(ert-deftest fleet-core-retask-changes-model-and-variant-for-next-operator ()
+  "A struggling operator can be replaced in place by a stronger model/variant:
+retask carries the selection, the next start launches on it, and the
+workspace/brief/progress carry over.  Unknown models are refused before
+anything is stopped; \"default\" returns to the configured default."
+  (fleet-test-with-fakes
+    (let* ((fid (fleet-core-test-fleet store))
+           (tid (plist-get (fleet-core-test-study store fid) :id))
+           (fleet-operator-model nil) (fleet-operator-variant nil))
+      (fleet-store-record-eca-catalog store :models '("fake/model" "fake/other") :default-model "fake/model" :variants '("low" "high"))
+      (fleet-core-test-start store tid)
+      (let ((rt1 (fleet-core-test-runtime store tid)))
+        (should (equal (plist-get (fleet-store-get store "runtimes" rt1) :model) "fake/model"))
+        (fleet-test-wait-for (lambda () (null (fleet-eca-conn-turn (fleet-eca-conn rt1)))) 5)
+        (fleet-core-task-status store :runtime-id rt1 :phase "failed" :detail "cannot make progress")
+        ;; refused up front: nothing stopped, nothing written
+        (fleet-test-should-fail 'unknown-model (fleet-core-retask store tid "" :model "nope/model"))
+        (should (equal (plist-get (fleet-store-get store "runtimes" rt1) :lifecycle) "ready"))
+        (should (= 0 (fleet-store-scalar store "SELECT COUNT(*) FROM operations WHERE task_id = ? AND kind = 'task-retask'" tid)))
+        ;; blank text with only a selection change is fine on a task that is not done
+        (let ((op (fleet-test-wait-op store (plist-get (fleet-core-retask store tid "" :model "fake/other" :variant "high" :note "stronger model") :operation-id))))
+          (should (equal (plist-get op :state) "done")))
+        (let ((task (fleet-store-get store "tasks" tid)))
+          (should (equal (plist-get task :lifecycle) "ready"))
+          (should (equal (plist-get task :model) "fake/other"))
+          (should (equal (plist-get task :variant) "high"))
+          (should (= 1 (plist-get task :brief-revision))))
+        (let ((ev (fleet-store-unjson (plist-get (fleet-store-query1 store "SELECT payload FROM events WHERE task_id = ? AND kind = 'task-retasked' ORDER BY created_at DESC LIMIT 1" tid) :payload))))
+          (should (equal (plist-get ev :model) "fake/other"))
+          (should (equal (plist-get ev :variant) "high"))
+          (should (eq (plist-get ev :selection-changed) t)))
+        ;; the next operator runs on the new selection, same task
+        (should (equal (plist-get (fleet-core-test-start store tid) :state) "done"))
+        (let ((rt2 (fleet-store-get store "runtimes" (fleet-core-test-runtime store tid))))
+          (should-not (equal (plist-get rt2 :id) rt1))
+          (should (equal (plist-get rt2 :model) "fake/other"))
+          (should (equal (plist-get rt2 :variant) "high")))
+        ;; a retask without a selection keeps it; "default" clears it
+        (let ((rt2 (fleet-core-test-runtime store tid)))
+          (fleet-test-wait-for (lambda () (null (fleet-eca-conn-turn (fleet-eca-conn rt2)))) 5)
+          (fleet-core-task-status store :runtime-id rt2 :phase "failed" :detail "still stuck")
+          (fleet-test-wait-op store (plist-get (fleet-core-retask store tid "Narrower scope: only the parser module, please." :note "narrow") :operation-id))
+          (should (equal (plist-get (fleet-store-get store "tasks" tid) :model) "fake/other"))
+          (should (= 2 (plist-get (fleet-store-get store "tasks" tid) :brief-revision)))
+          (let ((task (fleet-core-retask store tid "" :model "default" :variant "default")))
+            (should (null (plist-get task :model)))
+            (should (null (plist-get task :variant)))))))))
+
 (ert-deftest fleet-core-retask-unproven-stop-leaves-task-unchanged ()
   (fleet-test-with-fakes
     (let* ((fid (fleet-core-test-fleet store))

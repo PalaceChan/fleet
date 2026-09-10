@@ -2016,3 +2016,7 @@ Each was driven by evidence from the installed pair (see `docs/eca-compatibility
     the brief and commits `ready`; the actionable `task-retasked` event wakes the commander to start it. A
     runtime mid-turn is refused (`runtime-busy`), unproven stops stay refused, and `fleet_task_create` refuses
     a held resource with `resource-claimed` naming the holder. Teardown remains done+verified only (§10.5).
+    Retask also accepts `model`/`variant` for the next operator (catalog-validated; `"default"` returns to the
+    configured default), so a struggling operator can be replaced in place by a stronger model or reasoning
+    effort while the workspace, brief history and `progress.md` carry over. Doctrine makes this user-driven:
+    the commander may recommend a change but switches only when asked.

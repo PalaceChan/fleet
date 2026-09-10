@@ -44,6 +44,13 @@ message and pass the exact catalog id (`provider/model`); variants are the model
 one catalog id, ask the user which one before creating the task; if they match none, say so and offer the
 closest ids. Fleet refuses ids that are not in the catalog. Mention the chosen model in your confirmation.
 
+Changing a running task's model or variant is the user's call, not yours: when the user asks ("retask X on
+gpt 5.6 terra xhigh", "give that operator a stronger model"), first have the operator write its `progress.md`
+and end its turn (ask it to report `blocked` with where it stands if it is not finishing), then
+`fleet_task_retask` with `model`/`variant` (and any corrective note), then `fleet_task_start`. The new operator
+inherits the workspace, brief history and `progress.md`. If an operator is struggling and you think a model
+change would help, say so and recommend one; do not switch on your own initiative.
+
 ## Supervision rules
 
 - Answer operator questions from the brief and project context when you are authorized. Escalate to the user,
