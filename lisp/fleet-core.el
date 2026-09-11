@@ -93,6 +93,29 @@ MODEL, AGENT and VARIANT select the commander's ECA model."
                                 :payload (list :name name)))
     (fleet-store-get store "fleets" id)))
 
+(cl-defun fleet-core-set-commander-model (store fleet-id &key model variant)
+  "Pin FLEET-ID's commander to MODEL/VARIANT; return the updated fleet row.
+Nil MODEL clears the pin (the next commander uses `fleet-commander-model',
+else the ECA default); nil VARIANT clears the variant.  Takes effect at the
+next commander start: a live commander keeps the model it was launched with."
+  (let ((fleet (fleet-core-fleet store fleet-id)))
+    (fleet-core-assert-model store model)
+    (fleet-store-transaction store
+      (fleet-store-update store "fleets" (plist-get fleet :id)
+                          (fleet-store-touch (list :commander-model model :commander-variant variant)))
+      (fleet-store-append-event store :fleet-id (plist-get fleet :id) :kind "commander-model-changed" :actor fleet-core-actor-human
+                                :payload (list :model model :variant variant
+                                               :previous-model (plist-get fleet :commander-model)
+                                               :previous-variant (plist-get fleet :commander-variant))))
+    (fleet-store-get store "fleets" (plist-get fleet :id))))
+
+(defun fleet-core-commander-model (fleet)
+  "Effective (MODEL . VARIANT) the next commander of FLEET launches with.
+The fleet's pin wins, else `fleet-commander-model'/`fleet-commander-variant';
+nil means the ECA default."
+  (cons (or (plist-get fleet :commander-model) fleet-commander-model)
+        (or (plist-get fleet :commander-variant) fleet-commander-variant)))
+
 (defun fleet-core-fleet (store ref)
   "Fleet row by id or active name REF, or signal `no-such-fleet'."
   (or (fleet-store-get store "fleets" ref)
@@ -1086,8 +1109,9 @@ Return the operation id."
     (fleet-core-owner-epoch)
     (fleet-eca-assert-supported)
     (let* ((op (fleet-core-operation-begin store "commander-start" :fleet-id fleet-id))
-           (rt (fleet-core--new-runtime store :role "commander" :fleet-id fleet-id :model (plist-get fleet :commander-model)
-                                        :agent (plist-get fleet :commander-agent) :variant (plist-get fleet :commander-variant)))
+           (effective (fleet-core-commander-model fleet))
+           (rt (fleet-core--new-runtime store :role "commander" :fleet-id fleet-id :model (car effective)
+                                        :agent (plist-get fleet :commander-agent) :variant (cdr effective)))
            (cwd (fleet-paths-ensure-dir (expand-file-name "commander" (plist-get fleet :artifact-root)))))
       (fleet-store-transaction store
         (fleet-store-update store "fleets" fleet-id (fleet-store-touch (list :commander-runtime-id (plist-get rt :id)))))

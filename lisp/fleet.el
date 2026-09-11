@@ -10,7 +10,8 @@
 
 ;; Public commands: `fleet-new', `fleet-dashboard', `fleet-park',
 ;; `fleet-destroy', `fleet-doctor', `fleet-watch-start', `fleet-watch-stop',
-;; `fleet-commander-stop', `fleet-commander-replace', `fleet-install-mcp'.
+;; `fleet-commander-stop', `fleet-commander-replace', `fleet-commander-set-model',
+;; `fleet-install-mcp'.
 ;; Requiring this file launches nothing.  See quickstart.md.
 
 ;;; Code:
@@ -113,23 +114,38 @@ Then call CALLBACK with the mode plist."
           (fleet-dashboard)
           (message "Commander runtime %s is %s; use fleet-commander-stop / fleet-doctor before starting another" (fleet-paths-short-id (plist-get rt :id)) (plist-get rt :lifecycle)))
          ((yes-or-no-p (format "Fleet %s is active without a live commander; start one? " name))
-          (fleet--start-commander-and-show existing (fleet--recovery-summary store existing)))))))))
+          (fleet--pin-and-start-commander store existing (fleet--recovery-summary store existing)))))))))
 
-(defun fleet--read-model-and-variant (store role)
+(defun fleet--read-model-and-variant (store role &optional fleet)
   "Offer completion over the known ECA catalog for ROLE; return (MODEL . VARIANT).
 Both nil means the configured/ECA default.  Skipped silently (nil . nil) when
-no Fleet runtime has announced the catalog yet, so nothing has to be typed."
+no Fleet runtime has announced the catalog yet, so nothing has to be typed.
+With FLEET (an existing fleet row) the default entry keeps that fleet's current
+pin, and the result is what its next commander should be pinned to."
   (let* ((cat (fleet-store-eca-catalog store))
          (models (plist-get cat :models))
-         (default-label (format "default (%s)" (or fleet-commander-model (plist-get cat :default-model) "ECA default"))))
+         (current (and fleet (fleet-core-commander-model fleet)))
+         (default-label (format "%s (%s)" (if fleet "keep" "default")
+                                (or (car current) fleet-commander-model (plist-get cat :default-model) "ECA default"))))
     (if (null models)
-        (cons nil nil)
+        (or current (cons nil nil))
       (let* ((model (completing-read (format "%s model: " role) (cons default-label models) nil t nil nil default-label))
-             (model (unless (equal model default-label) model))
+             (keep (equal model default-label))
+             (model (if keep (car current) model))
              (variants (plist-get cat :variants))
              (variant (completing-read (format "%s variant (empty = server default): " role)
-                                       (or variants '("low" "medium" "high")) nil nil nil nil "")))
+                                       (or variants '("low" "medium" "high")) nil nil nil nil
+                                       (if keep (or (cdr current) "") ""))))
         (cons model (unless (member variant '("" "-")) variant))))))
+
+(defun fleet--pin-and-start-commander (store fleet recovery-summary)
+  "Ask which model FLEET's next commander runs on, persist it, then start it.
+The prompt is skipped when no catalog is known yet (nothing to choose from)."
+  (let* ((choice (fleet--read-model-and-variant store "Commander" fleet))
+         (fleet (if (equal choice (fleet-core-commander-model fleet))
+                    fleet
+                  (fleet-core-set-commander-model store (plist-get fleet :id) :model (car choice) :variant (cdr choice)))))
+    (fleet--start-commander-and-show fleet recovery-summary)))
 
 (defun fleet--resume-or-visit (fleet)
   "Explicit resume flow for a parked FLEET."
@@ -156,7 +172,7 @@ no Fleet runtime has announced the catalog yet, so nothing has to be typed."
                                  :text (concat "The user resumed this fleet. " (fleet--recovery-summary store fleet)))))
        ((and rt (not (member (plist-get rt :lifecycle) '("stopped" "never-launched"))))
         (message "Retained commander %s is %s; stop it (fleet-commander-stop) before starting a new one" (fleet-paths-short-id (plist-get rt :id)) (plist-get rt :lifecycle)))
-       (t (fleet--start-commander-and-show fleet (fleet--recovery-summary store fleet)))))))
+       (t (fleet--pin-and-start-commander store fleet (fleet--recovery-summary store fleet)))))))
 
 (defun fleet--recovery-summary (store fleet)
   "Deterministic recovery summary text for FLEET."
@@ -260,6 +276,22 @@ Operators are untouched."
       (message "Stopping commander of %s…" name))))
 
 ;;;###autoload
+(defun fleet-commander-set-model (name)
+  "Pin the model/variant fleet NAME's next commander launches with.
+A live commander is untouched; use `fleet-commander-replace' to switch now."
+  (interactive (list (fleet--read-fleet "Set commander model of: ")))
+  (fleet--require-owner)
+  (let* ((store (fleet--store)) (fleet (fleet-core-fleet store name)))
+    (unless (plist-get (fleet-store-eca-catalog store) :models)
+      (user-error "No ECA model catalog known yet; start any Fleet runtime once, then retry"))
+    (let* ((choice (fleet--read-model-and-variant store "Commander" fleet))
+           (fleet (fleet-core-set-commander-model store (plist-get fleet :id) :model (car choice) :variant (cdr choice))))
+      (fleet-supervisor--changed (plist-get fleet :id))
+      (message "Fleet %s: next commander runs on %s%s" name
+               (or (car (fleet-core-commander-model fleet)) "the ECA default")
+               (if (cdr (fleet-core-commander-model fleet)) (format "/%s" (cdr (fleet-core-commander-model fleet))) "")))))
+
+;;;###autoload
 (defun fleet-commander-replace (name)
   "Stop fleet NAME's commander (verified), then start a fresh one.
 The new commander receives the handoff context."
@@ -270,7 +302,7 @@ The new commander receives the handoff context."
          (rt (and old (fleet-store-get store "runtimes" old))))
     (cl-flet ((start ()
                 (when old (fleet-supervisor-on-commander-replaced store fid old))
-                (fleet--start-commander-and-show (fleet-store-get store "fleets" fid) (fleet--recovery-summary store fleet))))
+                (fleet--pin-and-start-commander store (fleet-store-get store "fleets" fid) (fleet--recovery-summary store fleet))))
       (if (and rt (not (member (plist-get rt :lifecycle) '("stopped" "never-launched"))))
           (when (yes-or-no-p (format "Stop commander %s (%s) and start a replacement? " (fleet-paths-short-id old) (or (plist-get rt :turn-state) (plist-get rt :lifecycle))))
             (fleet-core-stop-commander store fid

@@ -1220,7 +1220,9 @@ successful retirement commit.
 - `fleet-commander-stop`: human-only explicit commander stop, with confirmation when active/unknown; uses
   service stop evidence and keeps all operator/task state. In an active fleet, auto-dispatch waits for a
   replacement commander; operators are not implicitly parked. Document parking first for end-of-week use.
-- `fleet-commander-replace`: human-only stop-then-start on the same fleet with context/reconciliation payload.
+- `fleet-commander-replace`: human-only stop-then-start on the same fleet with context/reconciliation payload;
+  offers to change the commander's pinned model/variant first.
+- `fleet-commander-set-model`: pin the model/variant the fleet's next commander launches with; no process change.
   Cannot overlap commander incarnations. Available as a doctor recovery action as well as M-x.
 
 Closing/burying a chat buffer only hides it; intercept destructive native session close/restart on Fleet
@@ -2043,3 +2045,14 @@ Each was driven by evidence from the installed pair (see `docs/eca-compatibility
     deliverable) and `artifact-unreadable` (special files). `fleet-core-task-verified-p` treats a path that
     became unreadable or empty after verification as changed rather than erroring. Teardown's guarantee is
     unchanged: it still refuses while any deliverable is unverified.
+14. **The commander's model is a per-fleet pin the human can change (openclaw, 2026-09-11).** Note 10 only
+    let the model be chosen when a fleet was *created*; a fleet created before that (`fleets.commander_model`
+    NULL) started every later commander on whatever default the ECA server announced, and nothing in Fleet
+    could change it short of recreating the fleet. Now every path that starts a commander for an existing
+    fleet (`fleet-new` on a parked or commander-less fleet, `fleet-commander-replace`) offers the catalog with
+    the fleet's current pin as the default, and `fleet-commander-set-model` changes the pin on its own.
+    `fleet-core-set-commander-model` validates the id against the catalog, updates the fleet row and records a
+    `commander-model-changed` event; `fleet-core-start-commander` resolves the pin, else
+    `fleet-commander-model`/`fleet-commander-variant`, else the ECA default (previously the defcustoms were
+    consulted only at creation). A live commander keeps the model it was launched with — the pin applies to
+    the next start, which is why `fleet-commander-replace` is the way to switch immediately.

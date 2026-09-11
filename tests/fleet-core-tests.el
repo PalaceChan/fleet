@@ -80,6 +80,52 @@
           (should (equal (plist-get rt2 :model) "fake/model"))
           (should-not (plist-get rt2 :variant)))))))
 
+(ert-deftest fleet-core-commander-model-pin-is-changeable-and-governs-the-next-start ()
+  "A fleet created without a model can be pinned later; the pin (else the
+defcustom, else the ECA default) is what each commander start launches with."
+  (fleet-test-with-fakes
+    (let* ((fid (fleet-core-test-fleet store "pin"))
+           (commander-rt (lambda () (fleet-store-get store "runtimes" (plist-get (fleet-store-get store "fleets" fid) :commander-runtime-id))))
+           (start (lambda ()
+                    (fleet-test-wait-op store (fleet-core-start-commander store fid))
+                    (let (done)
+                      (fleet-core-stop-commander store fid :callback (lambda (_) (setq done t)))
+                      (fleet-test-wait-for (lambda () done) 10)))))
+      (should-not (plist-get (fleet-store-get store "fleets" fid) :commander-model))
+      ;; No pin, no defcustom: the runtime records the announced default.
+      (let ((fleet-commander-model nil) (fleet-commander-variant nil))
+        (should (equal (fleet-core-commander-model (fleet-store-get store "fleets" fid)) (cons nil nil)))
+        (funcall start)
+        (should (equal (plist-get (funcall commander-rt) :model) "fake/model")))
+      ;; No pin: the defcustoms now apply to an existing fleet too (previously only at creation).
+      (let ((fleet-commander-model "fake/other") (fleet-commander-variant "low"))
+        (funcall start)
+        (should (equal (plist-get (funcall commander-rt) :model) "fake/other"))
+        (should (equal (plist-get (funcall commander-rt) :variant) "low")))
+      ;; Pin: validated against the known catalog, persisted, evented, and it beats the defcustom.
+      (fleet-store-record-eca-catalog store :models '("fake/model" "fake/other") :default-model "fake/model")
+      (let ((err (fleet-test-should-fail 'unknown-model (fleet-core-set-commander-model store fid :model "the Other one"))))
+        (should (equal (plist-get (fleet-error-evidence err) :suggestions) '("fake/other"))))
+      (should-not (plist-get (fleet-store-get store "fleets" fid) :commander-model))
+      (let ((fleet (fleet-core-set-commander-model store fid :model "fake/model" :variant "high")))
+        (should (equal (plist-get fleet :commander-model) "fake/model"))
+        (should (equal (plist-get fleet :commander-variant) "high"))
+        (let ((fleet-commander-model "fake/other") (fleet-commander-variant "low"))
+          (should (equal (fleet-core-commander-model fleet) (cons "fake/model" "high")))
+          (funcall start)
+          (should (equal (plist-get (funcall commander-rt) :model) "fake/model"))
+          (should (equal (plist-get (funcall commander-rt) :variant) "high"))))
+      (let ((ev (fleet-store-unjson (fleet-store-scalar store "SELECT payload FROM events WHERE fleet_id = ? AND kind = 'commander-model-changed' ORDER BY seq DESC LIMIT 1" fid))))
+        (should (equal (plist-get ev :model) "fake/model"))
+        (should-not (plist-get ev :previous-model)))
+      ;; Clearing the pin falls back again; the live commander is never touched by a pin change.
+      (fleet-core-set-commander-model store fid :model nil :variant nil)
+      (should-not (plist-get (fleet-store-get store "fleets" fid) :commander-model))
+      (fleet-test-wait-op store (fleet-core-start-commander store fid))
+      (fleet-core-set-commander-model store fid :model "fake/other")
+      (should (equal (plist-get (funcall commander-rt) :model) "fake/model"))
+      (should (equal (plist-get (funcall commander-rt) :lifecycle) "ready")))))
+
 (ert-deftest fleet-core-dependencies-reject-cycles-and-cross-fleet ()
   (fleet-test-with-fakes
     (let* ((f1 (fleet-core-test-fleet store "a")) (f2 (fleet-core-test-fleet store "b"))

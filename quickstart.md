@@ -18,7 +18,8 @@ systemd-owned process; **Emacs** owns state, scheduling and the dashboard.
      :after eca
      :commands (fleet-dashboard fleet-new fleet-park fleet-destroy fleet-doctor
                 fleet-watch-start fleet-watch-stop
-                fleet-commander-stop fleet-commander-replace fleet-install-mcp)
+                fleet-commander-stop fleet-commander-replace fleet-commander-set-model
+                fleet-install-mcp)
      :bind (("C-c h f" . fleet-dashboard))
      :custom
      (fleet-development-root "~/development")       ; worktrees go to <root>/.worktrees
@@ -31,7 +32,11 @@ systemd-owned process; **Emacs** owns state, scheduling and the dashboard.
 
    **Models.** Without any of the above, commanders and operators run on the ECA default model. Once one
    Fleet runtime has started, Fleet knows ECA's model catalog: `M-x fleet-new` then offers completion for the
-   commander's model and variant (accept the default with RET), and you can steer operators per task just by
+   commander's model and variant (accept the default with RET) — both when creating a fleet and whenever it
+   starts a commander for an existing one (resume, or a fleet whose commander was stopped), where RET keeps
+   the fleet's current pin. `M-x fleet-commander-replace` asks the same question, so switching a running
+   fleet to another model is: replace, pick the model. `M-x fleet-commander-set-model` changes the pin
+   without starting anything (it applies at the next commander start). You can steer operators per task just by
    telling the commander — "do this on gpt 5.6 terra medium", "study tasks on a cheap model" (put standing
    policy in the fleet's `about.md`). The commander resolves casual names against the catalog and Fleet refuses
    ids that are not in it. The dashboard shows each runtime's model next to the commander status and in the
@@ -65,7 +70,8 @@ systemd-owned process; **Emacs** owns state, scheduling and the dashboard.
 | `fleet-watch-start` / `fleet-watch-stop` | Enable / pause automatic commander wakes for a fleet. Pausing never stops processes or event recording. |
 | `fleet-doctor` | Compatibility, ownership, storage, runtime and unit evidence. Read-only. |
 | `fleet-commander-stop` | Verified stop of the commander only; operators keep running. |
-| `fleet-commander-replace` | Verified stop, then a fresh commander booted with the durable snapshot and `commander/context.md`. |
+| `fleet-commander-replace` | Verified stop, then a fresh commander booted with the durable snapshot and `commander/context.md`. Offers to change the commander's model/variant first. |
+| `fleet-commander-set-model` | Pin the model/variant the fleet's *next* commander launches with (RET keeps the current one). A live commander is untouched. |
 | `fleet-install-mcp` | Optional: merge the single Fleet MCP entry into ECA's global config with backup + diff. |
 | `fleet-timeline` / `fleet-stats` | Retrospective telemetry for a fleet: chronological events with event→wake/ack latencies; counts of tool calls and refusals, turn durations, tokens/cost, operation durations. Read-only; works on archived fleets too. |
 
