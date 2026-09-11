@@ -131,6 +131,38 @@
             (should (= 1 (length (append (plist-get snap :fleets) nil))))
             (should (equal "parser" (plist-get (car (append (plist-get (car (append (plist-get snap :fleets) nil)) :tasks) nil)) :name)))))))))
 
+(ert-deftest fleet-rpc-operator-can-read-its-own-cleanup-evidence ()
+  "openclaw 2026-09-10: teardown refused on two untracked __pycache__ files the
+operator left behind.  The operator can now run the same check before `done'
+(own task only, task_id ignored) and sees the dirty paths; a study task has
+no cleanup evidence."
+  (fleet-rpc-test-with
+    (let* ((repo (fleet-git-test-repo "rpcproj"))
+           (fid (fleet-core-test-fleet store "fl")) (cid (fleet-sup-test-commander store fid))
+           (change (plist-get (fleet-core-create-task store fid :name "feat" :kind "change" :brief fleet-test-brief :repo repo :delivery "local-ready") :id))
+           (study (plist-get (fleet-core-test-study store fid "look") :id)))
+      (fleet-sup-test-settle)
+      (fleet-core-test-start store change) (fleet-core-test-start store study)
+      (let* ((ws (plist-get (fleet-store-get store "tasks" change) :workspace-path))
+             (otok (fleet-rpc-test-token (fleet-core-test-runtime store change)))
+             (stok (fleet-rpc-test-token (fleet-core-test-runtime store study)))
+             (ctok (fleet-rpc-test-token cid)))
+        (should (member "fleet_cleanup_evidence"
+                        (mapcar (lambda (tl) (plist-get tl :name)) (append (plist-get (plist-get (fleet-rpc-test-req "tools_list" otok) :result) :tools) nil))))
+        (fleet-test-write (expand-file-name "pkg/__pycache__/m.cpython-314.pyc" ws) "bytecode")
+        ;; the operator's task_id (even another task's) is ignored: own task only
+        (let ((r (plist-get (fleet-rpc-test-req "fleet_cleanup_evidence" otok (list :task_id study)) :result)))
+          (should (eq t (plist-get r :dirty)))
+          (should (equal ["?? pkg/__pycache__/m.cpython-314.pyc"] (plist-get (plist-get r :status) :paths)))
+          (should (cl-some (lambda (s) (string-match-p "__pycache__" s)) (append (plist-get (plist-get r :decision) :refusals) nil))))
+        ;; a study operator has nothing to inspect; the commander still needs task_id
+        (should (equal "invalid-request" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_cleanup_evidence" stok nil))))
+        (should (equal "invalid-request" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_cleanup_evidence" ctok nil))))
+        (should (eq t (plist-get (plist-get (fleet-rpc-test-req "fleet_cleanup_evidence" ctok (list :task_id change)) :result) :dirty)))
+        ;; cleaned up => clean
+        (delete-directory (expand-file-name "pkg" ws) t)
+        (should-not (plist-get (plist-get (fleet-rpc-test-req "fleet_cleanup_evidence" otok nil) :result) :dirty))))))
+
 (ert-deftest fleet-rpc-retask-failed-task-with-live-runtime-returns-operation ()
   "The commander's fleet_task_retask on a failed task whose operator is idle
 returns an operation id (runtime stop first) and later a task-retasked wake."

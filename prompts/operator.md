@@ -26,6 +26,9 @@ preserve, not a reason to start over. If the brief is missing or contradicts the
   happen if Fleet stops you. Then `fleet_wait` or publish `paused` with that deadline; do not poll in a loop.
 - Report `done` only when the brief's acceptance criteria are met and every deliverable is registered with
   `fleet_artifact_register`. Do not tear yourself down; the commander verifies first.
+- Artifact `rel_path` is relative to your task directory (where `report.md` and `progress.md` live);
+  anything you wrote in your workspace is `workspace/<path>`. Register a deliverable after writing it —
+  a path that does not exist is refused.
 - No merging, discarding, permission weakening, or scope expansion by implication. Ask instead.
 - You have no interactive question tool. To ask anything — of the commander or of the human — update
   `progress.md`, publish `needs-decision` with the precise question, options, and your recommendation, and

@@ -463,24 +463,73 @@ phases cannot revert; done requires registered artifacts.  Returns a plist."
                          :actionable (member phase '("done" "failed" "blocked" "needs-decision")))))
           (list :ok t :task-id tid :phase phase :decision-id decision-id :event-id event-id))))))
 
+;;;; Artifact paths
+;;
+;; An artifact `rel_path' is relative to the task directory
+;; (tasks/<id>/).  The `workspace/' prefix denotes the task's workspace
+;; wherever it lives: tasks/<id>/workspace for study and ops tasks, the
+;; Git worktree for change tasks.  Registration resolves the path, refuses
+;; what does not exist, and stores the canonical form, so verification and
+;; teardown look exactly where the operator wrote (openclaw, 2026-09-10:
+;; seven deliverables registered as bare names while written under
+;; workspace/ were `artifact-missing' at the task root).
+
+(defconst fleet-core-workspace-prefix "workspace/"
+  "Artifact path prefix that denotes the task's workspace directory.")
+
+(defun fleet-core-task-workspace-dir (store task)
+  "Directory the `workspace/' artifact prefix denotes for TASK.
+The recorded workspace when the task has started (a change task's worktree),
+else tasks/<id>/workspace."
+  (or (plist-get task :workspace-path)
+      (expand-file-name "workspace" (fleet-core-task-dir store task))))
+
+(defun fleet-core-artifact-candidates (store task rel-path)
+  "Where REL-PATH may live for TASK, as (CANONICAL-REL . ABSOLUTE) pairs.
+A `workspace/' path has one home.  A bare path is looked for in the task
+directory first, then in the workspace under its canonical `workspace/' name."
+  (let ((dir (fleet-core-task-dir store task)) (ws (fleet-core-task-workspace-dir store task)) (prefix fleet-core-workspace-prefix))
+    (if (string-prefix-p prefix rel-path)
+        (list (cons rel-path (expand-file-name (substring rel-path (length prefix)) ws)))
+      (list (cons rel-path (expand-file-name rel-path dir))
+            (cons (concat prefix rel-path) (expand-file-name rel-path ws))))))
+
+(defun fleet-core-artifact-locate (store task rel-path)
+  "Resolve REL-PATH for TASK to (:rel CANONICAL :file ABSOLUTE), or nil when
+it exists nowhere it may."
+  (cl-loop for (rel . file) in (fleet-core-artifact-candidates store task rel-path)
+           when (file-exists-p file) return (list :rel rel :file file)))
+
+(defun fleet-core-artifact-file (store task rel-path)
+  "Absolute path of TASK's artifact REL-PATH, or nil when it does not exist."
+  (plist-get (fleet-core-artifact-locate store task rel-path) :file))
+
 (defun fleet-core--register-artifact (store task-id a)
   "Insert artifact plist A for TASK-ID (inside a transaction).
-A `:rel-path' may name a file or a directory (verified by tree digest).
-What verification could never process — a special file, an empty
-directory — is refused here, so the operator learns it at registration
-rather than the commander at teardown.  A path that does not exist yet is
-allowed; verification checks existence."
-  (let ((now (fleet-paths-now))
-        (task (and (plist-get a :rel-path) (fleet-store-get store "tasks" task-id))))
+A `:rel-path' may name a file or a directory (verified by tree digest) and
+must exist: it is resolved (see `fleet-core-artifact-locate') and stored in
+canonical form.  What verification could never process — a missing path, a
+special file, an empty directory — is refused here, where the operator can
+still fix it, rather than at teardown."
+  (let* ((now (fleet-paths-now))
+         (rel (plist-get a :rel-path))
+         (task (and rel (fleet-store-get store "tasks" task-id))))
+    (when rel (fleet-paths-assert-safe-relative rel))
     (when task
-      (fleet-paths-sha256-path (expand-file-name (plist-get a :rel-path) (fleet-core-task-dir store task))))
+      (let ((loc (fleet-core-artifact-locate store task rel)))
+        (unless loc
+          (fleet-fail 'artifact-missing "Artifact path does not exist; write the deliverable first, then register it"
+                      :rel-path rel :looked-at (mapcar #'cdr (fleet-core-artifact-candidates store task rel))))
+        (fleet-paths-sha256-path (plist-get loc :file))
+        (setq rel (plist-get loc :rel))
+        (setq a (plist-put (copy-sequence a) :rel-path rel))))
     ;; Operators tend to register the same deliverable twice (once with
     ;; fleet_artifact_register, again in fleet_status :artifacts).  Two rows
     ;; for one file mean two verifications for one fact; keep one row per
     ;; (task, kind, location) and refresh its description instead.
     (let* ((kind (or (plist-get a :kind) "file"))
            (existing (fleet-store-query1 store "SELECT * FROM artifacts WHERE task_id = ? AND kind = ? AND COALESCE(rel_path, '') = ? AND COALESCE(external_ref, '') = ?"
-                                        task-id kind (or (plist-get a :rel-path) "") (or (plist-get a :external-ref) ""))))
+                                        task-id kind (or rel "") (or (plist-get a :external-ref) ""))))
       (if existing
           (progn
             (fleet-store-update store "artifacts" (plist-get existing :id)
@@ -499,14 +548,15 @@ allowed; verification checks existence."
   "Register a named artifact for TASK-ID from RUNTIME-ID (operator: own task only)."
   (let* ((rt (fleet-core-runtime-authorized store runtime-id (and (equal (plist-get (fleet-store-get store "runtimes" runtime-id) :role) "operator") task-id)))
          (tid (or task-id (plist-get rt :task-id))))
-    (when rel-path (fleet-paths-assert-safe-relative rel-path))
     (let (aid)
       (fleet-store-transaction store
         (setq aid (fleet-core--register-artifact store tid (list :kind kind :rel-path rel-path :external-ref external-ref
                                                                  :description description :expected-identity expected-identity)))
         (fleet-store-append-event store :fleet-id (plist-get rt :fleet-id) :task-id tid :runtime-id runtime-id
-                                  :kind "artifact-registered" :payload (list :artifact-id aid :kind kind :rel-path rel-path :external-ref external-ref)))
-      (list :ok t :task-id tid :artifact-id aid))))
+                                  :kind "artifact-registered"
+                                  :payload (list :artifact-id aid :kind kind :rel-path (plist-get (fleet-store-get store "artifacts" aid) :rel-path)
+                                                 :external-ref external-ref)))
+      (list :ok t :task-id tid :artifact-id aid :rel-path (plist-get (fleet-store-get store "artifacts" aid) :rel-path)))))
 
 (cl-defun fleet-core-artifact-verify (store &key artifact-id actor criteria evidence accepted limitations)
   "Record verification of ARTIFACT-ID by ACTOR (commander/human).
@@ -514,10 +564,12 @@ The verification is bound to the current brief and content digest: a file's
 bytes, or the tree digest of a directory (`fleet-paths-sha256-path')."
   (let* ((art (or (fleet-store-get store "artifacts" artifact-id) (fleet-fail 'no-such-artifact "Unknown artifact" :id artifact-id)))
          (task (fleet-store-get store "tasks" (plist-get art :task-id)))
-         (file (and (plist-get art :rel-path) (expand-file-name (plist-get art :rel-path) (fleet-core-task-dir store task))))
+         (rel (plist-get art :rel-path))
+         (file (and rel (fleet-core-artifact-file store task rel)))
          (hash (and file (fleet-paths-sha256-path file))))
-    (when (and file (not hash))
-      (fleet-fail 'artifact-missing "Artifact path does not exist; verification refused" :path file))
+    (when (and rel (not hash))
+      (fleet-fail 'artifact-missing "Artifact path does not exist; verification refused"
+                  :rel-path rel :looked-at (mapcar #'cdr (fleet-core-artifact-candidates store task rel))))
     (fleet-store-transaction store
       (fleet-store-update store "artifacts" artifact-id
                           (fleet-store-touch (list :verified (if accepted 1 0) :verified-brief-revision (plist-get task :brief-revision)
@@ -541,7 +593,8 @@ path that became unreadable or empty since verification counts as changed."
                                (or (null (plist-get a :rel-path))
                                    (equal (plist-get a :verified-hash)
                                           (condition-case nil
-                                              (fleet-paths-sha256-path (expand-file-name (plist-get a :rel-path) (fleet-core-task-dir store task)))
+                                              (when-let* ((file (fleet-core-artifact-file store task (plist-get a :rel-path))))
+                                                (fleet-paths-sha256-path file))
                                             (fleet-error nil))))))
                         arts)))))
 
@@ -1306,7 +1359,9 @@ Non-change tasks archive directly."
   "Serializable subset of Git evidence EV.
 Used for the operation journal and refusal output."
   (list :tip (plist-get ev :tip) :branch (plist-get ev :branch) :dirty (plist-get ev :dirty-p)
-        :status (let ((s (plist-get ev :status))) (and s (list :tracked (plist-get s :tracked) :untracked (plist-get s :untracked) :ignored (plist-get s :ignored))))
+        :status (let ((s (plist-get ev :status)))
+                  (and s (list :tracked (plist-get s :tracked) :untracked (plist-get s :untracked) :ignored (plist-get s :ignored)
+                               :paths (vconcat (fleet-git-dirty-paths s)))))
         :remote-preserved (plist-get ev :remote-preserved) :target-oid (plist-get ev :target-oid)
         :integrated-ancestry (plist-get ev :integrated-ancestry) :integrated-equivalence (plist-get ev :integrated-equivalence)
         :equivalence-detail (plist-get ev :equivalence-detail) :retention-ref (plist-get ev :retention-ref) :retention-oid (plist-get ev :retention-oid)

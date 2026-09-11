@@ -317,7 +317,9 @@ Checks required keys, types and enums."
                             (fleet-supervisor-ack store :fleet-id fid :receipt-ids (fleet-rpc--lst (plist-get params :event_ids))
                                                   :outcome (plist-get params :disposition) :actor logical))))
         ("fleet_cleanup_evidence"
-         (let ((task (fleet-rpc--task-in-fleet store actor (plist-get params :task_id))))
+         (let ((task (fleet-rpc--task-in-fleet store actor (if (equal (plist-get actor :role) "operator")
+                                                                (plist-get actor :task-id)
+                                                              (or (plist-get params :task_id) (fleet-fail 'invalid-request "task_id required"))))))
            (unless (and (equal (plist-get task :kind) "change") (plist-get task :workspace-path))
              (fleet-fail 'invalid-request "Only change tasks with a workspace have cleanup evidence"))
            (fleet-rpc--sync-evidence task)))

@@ -15,9 +15,14 @@
   (fleet-core-create-task store fid :name (or name "study1") :kind "study" :brief fleet-test-brief))
 
 (defun fleet-core-test-start (store tid)
-  "Start TID and wait for the operation; return the op row."
+  "Start TID and wait for the operation; return the op row.
+The fixture operator writes a `report.md' in the task directory at start, so
+tests can register it as a deliverable (registration requires the path to
+exist)."
   (let ((r (fleet-core-start-task store tid)))
-    (fleet-test-wait-op store (plist-get r :operation-id))))
+    (prog1 (fleet-test-wait-op store (plist-get r :operation-id))
+      (let ((task (fleet-store-get store "tasks" tid)))
+        (fleet-test-write (expand-file-name "report.md" (fleet-core-task-dir store task)) "# Report\nfixture\n")))))
 
 (defun fleet-core-test-runtime (store tid)
   "Current runtime id of task TID."
@@ -288,8 +293,10 @@ defcustom, else the ECA default) is what each commander start launches with."
              (report (expand-file-name "report.md" (fleet-core-task-dir store task))))
         (fleet-core-task-status store :runtime-id rt :phase "done" :artifacts '((:kind "report" :rel-path "report.md")))
         (let ((art (fleet-store-query1 store "SELECT * FROM artifacts WHERE task_id = ?" tid)))
-          ;; missing file: verification refused
-          (fleet-test-should-fail 'artifact-missing (fleet-core-artifact-verify store :artifact-id (plist-get art :id) :actor "c" :accepted t))
+          ;; file gone since registration: verification refused, naming where it looked
+          (delete-file report)
+          (let ((err (fleet-test-should-fail 'artifact-missing (fleet-core-artifact-verify store :artifact-id (plist-get art :id) :actor "c" :accepted t))))
+            (should (member report (plist-get (fleet-error-evidence err) :looked-at))))
           (should-not (fleet-core-task-verified-p store (fleet-store-get store "tasks" tid)))
           (fleet-test-write report "# Report\nfindings\n")
           (should (plist-get (fleet-core-artifact-verify store :artifact-id (plist-get art :id) :actor "c" :accepted t :criteria "complete") :verified))
@@ -337,6 +344,77 @@ verified (raw read error), so a fully successful task could not be torn down."
             (delete-directory bundle t)
             (make-directory bundle)
             (should-not (fleet-core-task-verified-p store (fleet-store-get store "tasks" tid)))))))))
+
+(ert-deftest fleet-core-artifact-paths-resolve-against-task-dir-and-workspace ()
+  "openclaw 2026-09-10: an ops operator wrote seven deliverables under
+workspace/ and registered them as bare names; verification looked at the task
+root and refused `artifact-missing' for all of them, so a successful deploy
+could not be torn down.  rel_path is relative to the task directory and the
+`workspace/' prefix is the workspace; registration resolves, requires
+existence and stores the canonical form; verification follows the same rule."
+  (fleet-test-with-fakes
+    (let* ((fid (fleet-core-test-fleet store))
+           (task (fleet-core-test-study store fid)) (tid (plist-get task :id)))
+      (fleet-core-test-start store tid)
+      (let* ((task (fleet-store-get store "tasks" tid)) (rt (fleet-core-test-runtime store tid))
+             (dir (fleet-core-task-dir store task)) (ws (plist-get task :workspace-path))
+             (rel-of (lambda (aid) (plist-get (fleet-store-get store "artifacts" aid) :rel-path))))
+        (should (equal ws (expand-file-name "workspace" dir)))
+        (fleet-test-write (expand-file-name "validation.log" ws) "ok\n")
+        (fleet-test-write (expand-file-name "rollback-pre-deploy/live-SKILL.md" ws) "old\n")
+        ;; bare name found only in the workspace => stored canonically
+        (let ((r (fleet-core-artifact-register store :runtime-id rt :kind "log" :rel-path "validation.log")))
+          (should (equal "workspace/validation.log" (plist-get r :rel-path)))
+          (should (equal "workspace/validation.log" (funcall rel-of (plist-get r :artifact-id))))
+          ;; registering it again under either spelling is the same row
+          (should (equal (plist-get r :artifact-id)
+                         (plist-get (fleet-core-artifact-register store :runtime-id rt :kind "log" :rel-path "workspace/validation.log") :artifact-id)))
+          (should (equal (plist-get r :artifact-id)
+                         (plist-get (fleet-core-artifact-register store :runtime-id rt :kind "log" :rel-path "validation.log") :artifact-id))))
+        ;; nested bare path, same rule; the task-dir report keeps its bare name
+        (should (equal "workspace/rollback-pre-deploy/live-SKILL.md"
+                       (plist-get (fleet-core-artifact-register store :runtime-id rt :kind "rollback" :rel-path "rollback-pre-deploy/live-SKILL.md") :rel-path)))
+        (should (equal "report.md" (plist-get (fleet-core-artifact-register store :runtime-id rt :kind "report" :rel-path "report.md") :rel-path)))
+        ;; a path that exists nowhere is refused at registration, naming both places
+        (let ((err (fleet-test-should-fail 'artifact-missing (fleet-core-artifact-register store :runtime-id rt :kind "log" :rel-path "missing.log"))))
+          (should (equal (list (expand-file-name "missing.log" dir) (expand-file-name "missing.log" ws))
+                         (plist-get (fleet-error-evidence err) :looked-at))))
+        (fleet-test-should-fail 'artifact-missing (fleet-core-task-status store :runtime-id rt :phase "working" :artifacts '((:kind "log" :rel-path "nope.log"))))
+        (fleet-test-should-fail 'invalid-path (fleet-core-artifact-register store :runtime-id rt :kind "log" :rel-path "../escape"))
+        ;; everything registered verifies, and gates the task like before
+        (fleet-core-task-status store :runtime-id rt :phase "done")
+        (dolist (a (fleet-store-query store "SELECT id FROM artifacts WHERE task_id = ?" tid))
+          (should (plist-get (fleet-core-artifact-verify store :artifact-id (plist-get a :id) :actor "c" :accepted t) :verified)))
+        (should (fleet-core-task-verified-p store (fleet-store-get store "tasks" tid)))
+        ;; a row registered by the previous code with a bare name resolves through the same fallback
+        (fleet-test-write (expand-file-name "legacy.txt" ws) "legacy\n")
+        (fleet-store-transaction store
+          (fleet-store-insert store "artifacts" (list :id "legacy-art" :task-id tid :kind "file" :rel-path "legacy.txt"
+                                                      :created-at (fleet-paths-now) :updated-at (fleet-paths-now))))
+        (should (plist-get (fleet-core-artifact-verify store :artifact-id "legacy-art" :actor "c" :accepted t) :verified))
+        (should (fleet-core-task-verified-p store (fleet-store-get store "tasks" tid)))))))
+
+(ert-deftest fleet-core-change-task-artifacts-reach-the-worktree ()
+  "A change task's workspace is a worktree outside the task directory, so no
+bare rel_path could ever name a file in it.  `workspace/<path>' does."
+  (fleet-test-with-fakes
+    (let* ((repo (fleet-git-test-repo "proj3"))
+           (fid (fleet-core-test-fleet store "fl"))
+           (task (fleet-core-create-task store fid :name "feat" :kind "change" :brief fleet-test-brief :repo repo :delivery "local-ready"))
+           (tid (plist-get task :id)))
+      (fleet-core-test-start store tid)
+      (let* ((task (fleet-store-get store "tasks" tid)) (ws (plist-get task :workspace-path))
+             (rt (fleet-core-test-runtime store tid)))
+        (should-not (string-prefix-p (fleet-core-task-dir store task) ws))
+        (fleet-git-test-git ws "config" "user.email" "t@e") (fleet-git-test-git ws "config" "user.name" "T")
+        (fleet-git-test-commit ws "skills/x/SKILL.md" "# x\n" "add skill")
+        (let ((r (fleet-core-artifact-register store :runtime-id rt :kind "skill" :rel-path "workspace/skills/x/SKILL.md")))
+          (should (equal "workspace/skills/x/SKILL.md" (plist-get r :rel-path)))
+          (should (equal (expand-file-name "skills/x/SKILL.md" ws) (fleet-core-artifact-file store task "workspace/skills/x/SKILL.md")))
+          ;; a bare worktree path is found too and canonicalized
+          (should (equal (plist-get r :artifact-id)
+                         (plist-get (fleet-core-artifact-register store :runtime-id rt :kind "skill" :rel-path "skills/x/SKILL.md") :artifact-id)))
+          (should (plist-get (fleet-core-artifact-verify store :artifact-id (plist-get r :artifact-id) :actor "c" :accepted t) :verified)))))))
 
 (ert-deftest fleet-core-artifact-registration-is-idempotent-per-location ()
   "Rehearsal 1 bug I: the operator registered report.md twice (register tool,
@@ -500,7 +578,12 @@ repo, or the change worktree; commander roots must cover the fleet dir."
           (let ((op (fleet-test-wait-op store (plist-get (fleet-core-teardown-task store tid) :operation-id) 30)))
             (should (equal (plist-get op :state) "failed"))
             (should (string-match-p "tracked/untracked/ignored" (plist-get op :error)))
-            (should (plist-get (fleet-store-unjson (plist-get op :evidence)) :evidence)))
+            ;; openclaw 2026-09-10: "(0/2/0)" alone sent the commander into the
+            ;; worktree to find two __pycache__ files; the refusal names them.
+            (should (string-match-p "?? scratch.txt" (plist-get op :error)))
+            (let ((ev (fleet-store-unjson (plist-get op :evidence))))
+              (should (plist-get ev :evidence))
+              (should (equal ["?? scratch.txt"] (plist-get (plist-get (plist-get ev :evidence) :status) :paths)))))
           (should (file-exists-p (expand-file-name "scratch.txt" ws)))
           (should (equal (plist-get (fleet-store-get store "tasks" tid) :lifecycle) "active"))
           ;; clean => retention ref created (local-ready), worktree removed natively, branch kept

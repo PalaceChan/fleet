@@ -56,7 +56,7 @@
     {
       "name": "fleet_status",
       "roles": ["operator"],
-      "description": "Publish your task's semantic phase: working, needs-decision (with decision), blocked, paused (with wait), done (artifacts registered), failed. Terminal phases cannot revert.",
+      "description": "Publish your task's semantic phase: working, needs-decision (with decision), blocked, paused (with wait), done (artifacts registered), failed. Terminal phases cannot revert. Artifact rel_path values follow the fleet_artifact_register rules (relative to your task directory; workspace/... is your workspace; must exist).",
       "inputSchema": {
         "type": "object",
         "required": ["phase"],
@@ -73,8 +73,8 @@
     {
       "name": "fleet_artifact_register",
       "roles": ["commander", "operator"],
-      "description": "Register a named deliverable (task-relative path to a file or a non-empty directory, or an external URL/ref). Directories are verified by a digest over their whole tree. Not automatically verified.",
-      "inputSchema": {"type": "object", "required": ["idempotency_key", "kind"], "properties": {"idempotency_key": {"type": "string"}, "task_id": {"type": "string", "description": "Commander only; operators register on their own task."}, "kind": {"type": "string"}, "rel_path": {"type": "string"}, "external_ref": {"type": "string"}, "description": {"type": "string"}, "expected_identity": {"type": "string", "description": "Commit OID or digest."}}, "additionalProperties": false}
+      "description": "Register a named deliverable: a file or non-empty directory by rel_path, or an external URL/ref. rel_path is relative to your task directory (where report.md and progress.md live); the prefix workspace/ denotes your workspace wherever it is (tasks/<id>/workspace for study and ops tasks, the Git worktree for change tasks). The path must already exist; a bare name found only in the workspace is stored as workspace/<name>. Directories are verified by a digest over their whole tree. Not automatically verified.",
+      "inputSchema": {"type": "object", "required": ["idempotency_key", "kind"], "properties": {"idempotency_key": {"type": "string"}, "task_id": {"type": "string", "description": "Commander only; operators register on their own task."}, "kind": {"type": "string"}, "rel_path": {"type": "string", "description": "Relative to the task directory; workspace/... for files in the workspace. Must exist."}, "external_ref": {"type": "string"}, "description": {"type": "string"}, "expected_identity": {"type": "string", "description": "Commit OID or digest."}}, "additionalProperties": false}
     },
     {
       "name": "fleet_artifact_verify",
@@ -114,9 +114,9 @@
     },
     {
       "name": "fleet_cleanup_evidence",
-      "roles": ["commander"],
-      "description": "Read-only preservation/ownership/quiescence evidence for a change task's workspace (single Git evidence pass).",
-      "inputSchema": {"type": "object", "required": ["task_id"], "properties": {"task_id": {"type": "string"}}, "additionalProperties": false}
+      "roles": ["commander", "operator"],
+      "description": "Read-only preservation/ownership/quiescence evidence for a change task's workspace (single Git evidence pass), including the exact dirty paths. Teardown runs this same check and refuses on any tracked, untracked or ignored leftover; operators run it before reporting done and clean up what it lists.",
+      "inputSchema": {"type": "object", "properties": {"task_id": {"type": "string", "description": "Commander only; operators inspect their own task."}}, "additionalProperties": false}
     },
     {
       "name": "fleet_task_teardown",

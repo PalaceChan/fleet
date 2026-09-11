@@ -16,4 +16,11 @@ Delivery modes:
 
 Before reporting `done`: the worktree is clean (no uncommitted, untracked, or ignored leftovers you created —
 put lasting outputs in the task artifacts directory), tests named in the brief pass, and every deliverable is
-registered. Never run `git clean -fdx`, force-push, or delete branches.
+registered. Teardown refuses on **any** leftover, including generated caches such as `__pycache__/` or
+`.pytest_cache/`: run Python tests with `PYTHONDONTWRITEBYTECODE=1`, and before `done` call
+`fleet_cleanup_evidence` — it runs the exact check teardown will and names each dirty path; delete what you
+created until it is clean. Never run `git clean -fdx`, force-push, or delete branches.
+
+Artifact paths: `rel_path` is relative to your task directory (where `report.md` and `progress.md` live);
+files in the worktree are registered as `workspace/<path-in-worktree>`. Prefer registering the branch tip and
+`report.md`; register individual worktree files only when the brief asks for them.

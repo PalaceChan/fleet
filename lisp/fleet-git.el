@@ -247,6 +247,22 @@ The result has the form (:tracked N :untracked N :ignored N :entries LIST)."
               (t (setq tracked (1+ (or tracked 0)))))))
     (list :tracked (or tracked 0) :untracked (or untracked 0) :ignored (or ignored 0) :entries (nreverse entries))))
 
+(defconst fleet-git-dirty-paths-limit 20
+  "How many dirty paths a refusal or evidence summary names.")
+
+(defun fleet-git-dirty-paths (status &optional limit)
+  "Paths from parsed STATUS as `XY path' strings, at most LIMIT (default
+`fleet-git-dirty-paths-limit'), with a trailing `… +N more' when clipped.
+A refusal that says only `0/2/0' sends the commander into the worktree to find
+out what; naming the two `__pycache__' files makes the fix obvious (openclaw,
+2026-09-10)."
+  (let* ((limit (or limit fleet-git-dirty-paths-limit))
+         (entries (plist-get status :entries))
+         (shown (mapcar (lambda (e) (format "%s %s" (string-trim (car e)) (or (cadr e) "?"))) (seq-take entries limit))))
+    (if (> (length entries) limit)
+        (append shown (list (format "… +%d more" (- (length entries) limit))))
+      shown)))
+
 (defconst fleet-git-status-args
   '("status" "--porcelain=v1" "-z" "--untracked-files=all" "--ignored=matching" "--ignore-submodules=none"))
 
@@ -452,7 +468,12 @@ Returns (:remove-worktree BOOL :delete-branch BOOL :retain-required BOOL
     (unless (plist-get ev :ok) (push (format "workspace uninspectable: %s" (plist-get ev :error)) refusals))
     (when (plist-get ev :dirty-p)
       (push (format "workspace has tracked/untracked/ignored content (%s)"
-                    (let ((s (plist-get ev :status))) (if s (format "%d/%d/%d" (plist-get s :tracked) (plist-get s :untracked) (plist-get s :ignored)) (plist-get ev :status-error))))
+                    (let ((s (plist-get ev :status)))
+                      (if s
+                          (format "%d/%d/%d%s" (plist-get s :tracked) (plist-get s :untracked) (plist-get s :ignored)
+                                  (let ((paths (fleet-git-dirty-paths s)))
+                                    (if paths (concat ": " (string-join paths ", ")) "")))
+                        (plist-get ev :status-error))))
             refusals))
     (unless preserved
       (push (format "delivery contract %s not satisfied by evidence" (or delivery-mode "remote-review")) refusals))

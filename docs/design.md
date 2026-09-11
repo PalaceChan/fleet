@@ -2071,3 +2071,26 @@ Each was driven by evidence from the installed pair (see `docs/eca-compatibility
     Turns that did something and then failed (the same session's OpenRouter 400 after several tool calls)
     are not retried: a retry there is neither safe nor likely to help. And the admission report now follows
     the durable message state the sink returns: sent, queued behind an in-flight turn, or held while parked.
+16. **Artifact paths have one root (openclaw, 2026-09-10).** An ops operator wrote seven deliverables under
+    `tasks/<id>/workspace/` and registered them as bare names (`validation.log`, `rollback-pre-deploy.tar`);
+    Fleet resolved `rel_path` at the task root, registration never checked existence, and the commander
+    got a non-retryable `artifact-missing` for each — a successful live deploy could not be torn down. A
+    change task had the mirror problem: its workspace is a worktree outside the task directory, so no
+    `rel_path` could name a file in it at all. The rule is now explicit and enforced in one place
+    (`fleet-core-artifact-locate`): `rel_path` is relative to the task directory, and the `workspace/` prefix
+    denotes the task's workspace wherever it lives (`tasks/<id>/workspace` for study/ops, the worktree for
+    change). Registration resolves the path — a bare name found only in the workspace is stored as
+    `workspace/<name>` — and refuses a path that exists nowhere, naming both places it looked, in the same
+    spirit as note 13: refuse where the operator can still fix it. Verification and the teardown gate use
+    the same resolver, so rows registered by the previous code with bare names resolve through the same
+    fallback without any store surgery. The tool descriptions state the rule; operators see them live.
+17. **Teardown refusals name the dirt; operators can run the check (openclaw, 2026-09-10).** A verified
+    change task was refused teardown with `(0/2/0)`: two untracked `__pycache__/*.pyc` files the tests had
+    written. The gate stayed as designed — Fleet never deletes anything it cannot prove preserved, and
+    `git worktree remove` would silently destroy even gitignored files — but the refusal was illegible and
+    the only actor who could have prevented it, the operator, had no way to run the check. Two small
+    changes instead of a bytecode allow-list: the refusal and `fleet_cleanup_evidence` list the dirty paths
+    (`?? path`, bounded), and `fleet_cleanup_evidence` is available to operators on their own task, with
+    `change.md` telling them to run it before `done` and to run Python tests with
+    `PYTHONDONTWRITEBYTECODE=1`. An allow-list of "generated" files was rejected: it would be the first hole
+    in the cleanup contract, needs maintaining, and saves one `rm` in the rare case doctrine was ignored.
