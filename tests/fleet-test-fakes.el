@@ -20,11 +20,13 @@ idle until `fleet-test-fake-finish'), `reject', `unknown', or `noack'.")
 (defvar fleet-test-fake-stop-verdict 'stopped "Verdict the fake systemd stop reports.")
 (defvar fleet-test-fake-started nil "Connections started, newest first.")
 
-(defun fleet-test-fake-finish (conn &optional error-text)
-  "Complete the in-flight turn of fake CONN like a server idle would."
+(defun fleet-test-fake-finish (conn &optional error-text empty)
+  "Complete the in-flight turn of fake CONN like a server idle would.
+EMPTY marks the turn as having produced nothing (see `fleet-eca--turn-empty-p')."
   (when-let* ((turn (fleet-eca-conn-turn conn)))
     (setf (fleet-eca-conn-turn conn) nil)
     (fleet-eca--emit conn 'turn-idle-observed :message-id (plist-get turn :message-id) :source "fake" :error-text error-text
+                     :empty (and empty (plist-get turn :accepted) t)
                      :accepted (plist-get turn :accepted) :submitted-at (plist-get turn :submitted-at))))
 
 (defun fleet-test-fake-start (&rest args)

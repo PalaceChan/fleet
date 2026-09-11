@@ -2056,3 +2056,18 @@ Each was driven by evidence from the installed pair (see `docs/eca-compatibility
     `fleet-commander-model`/`fleet-commander-variant`, else the ECA default (previously the defcustoms were
     consulted only at creation). A live commander keeps the model it was launched with — the pin applies to
     the next start, which is why `fleet-commander-replace` is the way to switch immediately.
+15. **Empty turns are resent once (openclaw, 2026-09-11).** A human prompt to the commander was accepted and
+    the turn ended 5.7 s later with nothing: no assistant text, no tool call, no error text, no usage (an
+    empty completion from the provider). Fleet treated it as a normal finish, the message was `finished`, the
+    dashboard showed an idle commander, and the chat showed an unanswered prompt — the human read it as the
+    lane being stuck. The minibuffer had also told them the message was "queued (operator busy)", which it
+    says after every send on a free lane because the turn it consults is the just-dispatched message itself.
+    Two changes. The adapter marks a turn `:empty` when it was accepted, not stopped, and produced no text, tool
+    activity or error text; such a turn provably had no side effects, so the supervisor puts the message back
+    on the lane once (`fleet-supervisor-empty-turn-retries`, counted through `turn-empty` events) and the lane
+    pump resends it ahead of anything queued later. A second empty turn finishes the message with `:empty`
+    evidence, records an actionable `turn-empty` event for an operator (the commander decides) or a
+    non-actionable one for the commander (waking it about its own failure would loop), and tells the human.
+    Turns that did something and then failed (the same session's OpenRouter 400 after several tool calls)
+    are not retried: a retry there is neither safe nor likely to help. And the admission report now follows
+    the durable message state the sink returns: sent, queued behind an in-flight turn, or held while parked.

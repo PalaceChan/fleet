@@ -216,6 +216,62 @@ sent one per turn end, in order; the lane never stays busy without a turn."
                      (mapcar (lambda (m) (plist-get m :state))
                              (fleet-store-query store "SELECT state FROM messages WHERE origin='human' ORDER BY created_at")))))))
 
+(ert-deftest fleet-supervisor-empty-turn-resends-once-then-surfaces ()
+  "openclaw 2026-09-11: the commander's turn on a human prompt ended in 5.7 s
+with no output at all and Fleet marked the message finished; the human saw an
+unanswered prompt and nothing else.  An empty turn had no side effects, so the
+message is resent once; a second empty turn finishes it and is surfaced."
+  (fleet-sup-test-with
+    (let* ((fid (fleet-core-test-fleet store)) (cid (fleet-sup-test-commander store fid))
+           (conn (fleet-eca-conn cid))
+           (sent (lambda (text) (fleet-sup-test-submissions (lambda (s) (equal s text)))))
+           (state (lambda (text) (plist-get (fleet-store-query1 store "SELECT state FROM messages WHERE text = ?" text) :state))))
+      (fleet-sup-test-settle)
+      (setq fleet-test-fake-turn 'busy)
+      ;; the human sink reports the durable state, not a guess from the lane
+      (let ((r (fleet-supervisor--human-sink conn '(:text "please plan"))))
+        (should (plist-get r :message-id))
+        ;; sent right away: the fake acknowledges synchronously, the native server a little later
+        (should (member (plist-get r :state) '("dispatching" "accepted"))))
+      (fleet-sup-test-settle)
+      (should (= 1 (length (funcall sent "please plan"))))
+      ;; a second human message while the first is in flight really is queued
+      (should (equal "queued" (plist-get (fleet-supervisor--human-sink conn '(:text "and then")) :state)))
+      ;; empty turn => resent once, ahead of the later message; nothing is finished yet
+      (fleet-test-fake-finish conn nil t) (fleet-sup-test-settle)
+      (should (= 2 (length (funcall sent "please plan"))))
+      (should (= 0 (length (funcall sent "and then"))))
+      (should (member (funcall state "please plan") '("dispatching" "accepted" "turn-observed")))
+      (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'turn-empty'")))
+      (should (string-match-p "\"retrying\":true" (plist-get (fleet-store-query1 store "SELECT payload FROM events WHERE kind = 'turn-empty'") :payload)))
+      (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'turn-finished' AND payload LIKE '%\"empty\":true%'")))
+      ;; empty again => finished with evidence, surfaced (non-actionable for a commander), not resent
+      (fleet-test-fake-finish conn nil t) (fleet-sup-test-settle)
+      (should (= 2 (length (funcall sent "please plan"))))
+      (should (equal "finished" (funcall state "please plan")))
+      (should (string-match-p "\"empty\":true" (plist-get (fleet-store-query1 store "SELECT evidence FROM messages WHERE text = 'please plan'") :evidence)))
+      (should (= 2 (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'turn-empty'")))
+      (should (= 0 (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'turn-empty' AND actionable = 1")))
+      ;; the lane moved on to the next queued message, which finishes normally
+      (should (= 1 (length (funcall sent "and then"))))
+      (fleet-test-fake-finish conn) (fleet-sup-test-settle)
+      (should (equal "finished" (funcall state "and then")))
+      (should-not (fleet-supervisor--lane-busy-p store cid conn))
+      ;; an operator's exhausted empty turn is actionable: the commander decides
+      (let ((tid (plist-get (fleet-core-test-study store fid) :id)))
+        (setq fleet-test-fake-turn 'finish) ; let the operator's boot turn complete normally
+        (fleet-core-test-start store tid)
+        (fleet-sup-test-settle)
+        (let* ((rid (fleet-core-test-runtime store tid)) (oconn (fleet-eca-conn rid)))
+          (setq fleet-test-fake-turn 'busy)
+          (fleet-supervisor-send store :fleet-id fid :task-id tid :runtime-id rid :text "operator ping" :sender "fleet:x:commander")
+          (fleet-sup-test-settle)
+          (fleet-test-fake-finish oconn nil t) (fleet-sup-test-settle)
+          (should (= 2 (length (funcall sent "operator ping"))))
+          (fleet-test-fake-finish oconn nil t) (fleet-sup-test-settle)
+          (should (equal "finished" (funcall state "operator ping")))
+          (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'turn-empty' AND actionable = 1 AND runtime_id = ?" rid))))))))
+
 (ert-deftest fleet-supervisor-ack-lifecycle-and-reminder-once ()
   (fleet-sup-test-with
     (let* ((fid (fleet-core-test-fleet store)) (cid (fleet-sup-test-commander store fid))

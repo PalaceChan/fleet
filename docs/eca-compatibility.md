@@ -25,6 +25,7 @@ real model turn each): `trace-prompt.json`, `trace-double.json`, `trace-badmodel
 | Running/content before acknowledgment | `chat/opened`, user echo, `progress running`, `chat/statusChanged running` all precede the response by ~50–80 ms | record `turn-started` immediately; acceptance stays unconfirmed; never resend |
 | Definite pre-submission rejection | response `{"status":"error","model":"error"}` after a `system` text `Error: ...`, `idle`, `finished` (no model configured) | `rejected`; lane freed |
 | Accepted but the turn errors | response `prompting`, then `system` text starting `Error:`, then `idle` + `finished` (bad model id) | `accepted`, then `turn-idle-observed` with `:error-text`; lane freed; event surfaces the text |
+| Accepted, then nothing (empty completion) | response `prompting`, `running`, then `idle` + `finished` with **no** assistant text, tool call, error text or `usage` (openrouter/x-ai/grok-4.6 via ECA 0.159.0, 5.7 s, openclaw 2026-09-11) | `turn-idle-observed` with `:empty t`; the supervisor resends the message once (`fleet-supervisor-empty-turn-retries`), then finishes it with `:empty` evidence, records a `turn-empty` event (actionable for operators) and tells the human |
 | Transport error | `eca-api--send!` catches `process-send-string` errors and only `message`s them; the error callback is **not** invoked | Fleet checks `process-live-p` before sending and runs its own acknowledgment watchdog (`fleet-eca-ack-timeout-sec`, 45 s) |
 | No acceptance evidence by deadline | no response and no `running` | `delivery-unknown`; lane frozen; no automatic resend |
 | Running seen but no response by deadline | | `observed-unacknowledged`; lane stays held until the terminal event |
@@ -99,6 +100,18 @@ and on `unload-feature`. Non-Fleet buffers/sessions take the original code path 
   terminal for a turn that has seen neither `running` nor acceptance (a prompt's own terminal is always
   preceded by its `running`; a definite rejection clears the turn via the error response), and the supervisor
   dispatches the next queued message from a zero timer, after the chunk.
+- **Turns that end with nothing (openclaw, 2026-09-11):** a human prompt to the commander was accepted and
+  the chat went `idle` 5.7 s later with no content of any kind — no assistant text, no tool call, no
+  `system` error text, no `usage`. Fleet recorded a normal finish, the message was `finished`, and the only
+  visible trace was an unanswered prompt in the chat. The same session had an earlier commander die on an
+  OpenRouter 400 (context length) that ECA 0.159.0 also did **not** report as a `system` `Error:` text on
+  the wire (it is kept as `prompt-error` in the server's chat record), so `:error-text` was null there too.
+  Fleet now marks a turn `:empty` when it was accepted, not stopped by a human, and produced no text, tool
+  activity or error text; such a turn had no side effects, so the supervisor resends the message once and
+  surfaces the second failure instead of retrying further. Capturing 0.159's error reporting is still open.
+- **Admission feedback:** the chat's minibuffer report after RET used to read the connection's turn, which on
+  a free lane is the just-dispatched message itself, so every send said "queued (operator busy)". The
+  supervisor's sink now returns the durable message state and the report follows it (sent / queued / held).
 - **ECA UI on Fleet sessions:** `eca-chat--handle-init-progress` and `eca-chat--handle-mcp-server-updated`
   call `(with-current-buffer (eca-chat--get-last-buffer session))`; interactively that buffer exists because
   `eca--initialize` calls `eca-chat-open` right after `initialized`, before models. Fleet used to create its

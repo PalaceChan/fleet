@@ -16,6 +16,8 @@ Behaviour is selected by keywords in the prompt text:
   SUBAGENT    child-chat events carrying parentChatId before finishing
   DUPIDLE     idle/finished emitted twice
   CRASH       accepted, then the server process exits abruptly
+  EMPTY       accepted, running, then idle/finished with no content and no usage
+              (an empty provider completion; openclaw 2026-09-11)
 
 Every inbound message is appended as JSON to $FAKE_ECA_LOG when set, so tests
 can assert what the client actually sent.
@@ -77,8 +79,9 @@ def tick():
     time.sleep(0.02)
 
 
-def finish(chat_id, dup=False):
-    content(chat_id, "system", {"type": "usage", "sessionTokens": 10, "limit": {"context": 1000, "output": 100}})
+def finish(chat_id, dup=False, usage=True):
+    if usage:
+        content(chat_id, "system", {"type": "usage", "sessionTokens": 10, "limit": {"context": 1000, "output": 100}})
     # The native server emits both terminals at the same instant (recorded traces); one chunk.
     idle = {"jsonrpc": "2.0", "method": "chat/statusChanged", "params": {"chatId": chat_id, "status": "idle"}}
     finished = {"jsonrpc": "2.0", "method": "chat/contentReceived",
@@ -138,6 +141,9 @@ def run_prompt(msg):
         _state["turn"] = None
         return
     content(chat_id, "system", {"type": "progress", "state": "running", "text": "Generating"})
+    if "EMPTY" in text:
+        finish(chat_id, usage=False)
+        return
     if "QUESTION" in text:
         tid = "call_q1"
         content(chat_id, "assistant", {"type": "toolCallPrepare", "id": tid, "name": "ask_user", "server": "eca", "argumentsText": "{"})

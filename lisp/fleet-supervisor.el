@@ -38,6 +38,11 @@
 
 (defconst fleet-supervisor-wait-tick-sec 30 "Interval for declared-wait deadline checks.")
 (defconst fleet-supervisor-wake-batch-limit 25 "Receipts claimed per wake message.")
+(defconst fleet-supervisor-empty-turn-retries 1
+  "How many times a message whose turn produced nothing is resent.
+An empty turn (accepted, then idle with no text, no tool call and no
+error) had no side effects, so one resend is safe; after that the
+message finishes and the failure is surfaced instead.")
 
 (defun fleet-supervisor-store ()
   "The open store, or signal `not-started'."
@@ -247,20 +252,26 @@ Returns nil when nothing changes so callers can append it unconditionally."
       ('turn-stopping (fleet-supervisor--observe store rid (list :turn-state "stopping")))
       ('turn-idle-observed
        (fleet-supervisor--observe store rid (list :turn-state "idle" :active-tool nil))
-       (let ((mid (plist-get ev :message-id))
-             (m (and (plist-get ev :message-id) (fleet-store-get store "messages" (plist-get ev :message-id)))))
-         (when mid
-           (fleet-supervisor--message-transition store mid "finished"
-                                                 (list :source (plist-get ev :source) :error-text (plist-get ev :error-text)
-                                                       :usage (plist-get ev :usage))))
+       (let* ((mid (plist-get ev :message-id))
+              (m (and mid (fleet-store-get store "messages" mid)))
+              (empty (and m (plist-get ev :empty) t))
+              (retry (and empty (fleet-supervisor--empty-turn-retry-p store m))))
          ;; Telemetry: one non-actionable event per finished turn with usage and duration.
          (fleet-store-transaction store
            (fleet-store-append-event store :fleet-id fid :task-id tid :runtime-id rid :kind "turn-finished" :source "eca"
                                      :payload (list :message-id mid :origin (and m (plist-get m :origin))
                                                     :stopped (plist-get ev :was-stopping) :error (and (plist-get ev :error-text) t)
-                                                    :usage (plist-get ev :usage)
+                                                    :empty empty :usage (plist-get ev :usage)
                                                     :seconds (fleet-supervisor--seconds-between (plist-get ev :submitted-at) (plist-get ev :at)))))
-         (when mid (fleet-supervisor--on-message-finished store rt mid)))
+         (cond
+          (retry (fleet-supervisor--retry-empty-turn store rt m))
+          (t
+           (when mid
+             (fleet-supervisor--message-transition store mid "finished"
+                                                   (list :source (plist-get ev :source) :error-text (plist-get ev :error-text)
+                                                         :usage (plist-get ev :usage) :empty empty)))
+           (when empty (fleet-supervisor--give-up-empty-turn store rt m))
+           (when mid (fleet-supervisor--on-message-finished store rt mid)))))
        ;; Dispatch the next queued message only after the current input chunk
        ;; is fully observed: ECA emits `statusChanged idle' and `progress
        ;; finished' together, and a prompt submitted from inside the first
@@ -357,6 +368,47 @@ Return (:message-id ID :state STATE :replayed BOOL)."
     (fleet-supervisor--dispatch-lane store target-runtime-id)
     (let ((m (fleet-store-get store "messages" id)))
       (list :message-id id :state (plist-get m :state) :replayed nil))))
+
+;;;; Empty turns
+
+(defun fleet-supervisor--empty-turn-attempts (store mid)
+  "Number of empty turns already recorded for message MID."
+  (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'turn-empty' AND payload LIKE ?"
+                      (format "%%\"message-id\":\"%s\"%%" mid)))
+
+(defun fleet-supervisor--empty-turn-retry-p (store m)
+  "Non-nil when message M may be resent after an empty turn."
+  (< (fleet-supervisor--empty-turn-attempts store (plist-get m :id)) fleet-supervisor-empty-turn-retries))
+
+(defun fleet-supervisor--retry-empty-turn (store rt m)
+  "Put message M back on RT's lane after a turn that produced nothing.
+The lane pump resends it from the next zero timer, ahead of anything
+queued later.  Recorded as a non-actionable `turn-empty' event; the
+count of those bounds the retries."
+  (let* ((mid (plist-get m :id)) (attempt (1+ (fleet-supervisor--empty-turn-attempts store mid))))
+    (fleet-store-transaction store
+      (fleet-store-update store "messages" mid
+                          (fleet-store-touch (list :state "queued"
+                                                   :evidence (fleet-store-json (list :reason "empty turn" :attempt attempt)))))
+      (fleet-store-append-event store :fleet-id (plist-get rt :fleet-id) :task-id (plist-get rt :task-id) :runtime-id (plist-get rt :id)
+                                :kind "turn-empty" :source "eca"
+                                :payload (list :message-id mid :origin (plist-get m :origin) :attempt attempt :retrying t)))
+    (message "Fleet: %s turn ended with no output; resending the %s message (attempt %d)"
+             (plist-get rt :role) (plist-get m :origin) (1+ attempt))))
+
+(defun fleet-supervisor--give-up-empty-turn (store rt m)
+  "Record that message M's turn was empty again and will not be resent.
+Actionable for an operator (the commander can retask or escalate); a
+commander's own empty turn is surfaced to the human only, since waking
+the commander about it would loop."
+  (let* ((mid (plist-get m :id)) (attempt (1+ (fleet-supervisor--empty-turn-attempts store mid)))
+         (operator (equal (plist-get rt :role) "operator")))
+    (fleet-store-transaction store
+      (fleet-store-append-event store :fleet-id (plist-get rt :fleet-id) :task-id (plist-get rt :task-id) :runtime-id (plist-get rt :id)
+                                :kind "turn-empty" :source "eca" :actionable operator
+                                :payload (list :message-id mid :origin (plist-get m :origin) :attempt attempt :retrying nil)))
+    (message "Fleet: %s turn ended with no output %d times; the %s message was not resent — resend it yourself or check the ECA stderr buffer"
+             (plist-get rt :role) attempt (plist-get m :origin))))
 
 (defun fleet-supervisor--lane-busy-p (store rid conn)
   "Non-nil when RID's chat lane already has an in-flight prompt."
@@ -594,7 +646,8 @@ Return non-nil on durable admission."
                                        :target-runtime-id (fleet-eca-conn-runtime-id conn) :origin "human" :sender fleet-core-actor-human
                                        :text (plist-get envelope :text))))
       (fleet-supervisor--changed (fleet-eca-conn-fleet-id conn))
-      (plist-get r :message-id))))
+      ;; (:message-id ID :state STATE): the chat reports the real outcome.
+      r)))
 
 (cl-defun fleet-supervisor-send (store &key fleet-id task-id runtime-id text sender idempotency-key)
   "Queue TEXT for RUNTIME-ID from SENDER.

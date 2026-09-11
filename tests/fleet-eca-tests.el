@@ -337,6 +337,62 @@ dropped, leaving the message stuck and the lane busy forever."
       (fleet-eca-request-cancel conn)
       (should (fleet-test-wait-for (lambda () (null (fleet-eca-conn-turn conn))) 10)))))
 
+(ert-deftest fleet-eca-empty-turn-is-flagged-on-its-terminal ()
+  "openclaw 2026-09-11: the provider returned an empty completion (idle 5.7 s
+after acceptance, no text, no tool call, no usage) and Fleet recorded a normal
+finish.  The terminal event must say the turn was empty; ordinary, tool-using
+and human-stopped turns must not."
+  (fleet-eca-test-with-conn conn
+    (let ((terminal (lambda ()
+                      (cl-find-if (lambda (e) (eq (plist-get e :kind) 'turn-idle-observed)) fleet-eca-test--events))))
+      (should (eq (plist-get (fleet-eca-test-submit conn "EMPTY") :outcome) 'accepted))
+      (should (fleet-eca-test-wait-kind 'turn-idle-observed))
+      (should (eq t (plist-get (funcall terminal) :empty)))
+      (should (null (plist-get (funcall terminal) :usage)))
+      ;; the lane is free again: nothing held by an empty turn
+      (should-not (fleet-eca-conn-turn conn))
+      ;; a normal turn (assistant text) is not empty
+      (setq fleet-eca-test--events nil)
+      (fleet-eca-test-submit conn "hello")
+      (should (fleet-eca-test-wait-kind 'turn-idle-observed))
+      (should-not (plist-get (funcall terminal) :empty))
+      ;; a turn that only ran a tool is not empty either (it had effects)
+      (setq fleet-eca-test--events nil)
+      (fleet-eca-test-submit conn "QUESTION")
+      (should (fleet-eca-test-wait-kind 'question-opened))
+      (fleet-eca-answer-question conn (plist-get (fleet-eca-conn-pending-question conn) :request-id) "Red")
+      (should (fleet-eca-test-wait-kind 'turn-idle-observed))
+      (should-not (plist-get (funcall terminal) :empty))
+      ;; a turn the human stopped before any output is not empty: it was cancelled, not dropped
+      (setq fleet-eca-test--events nil)
+      (cl-letf (((symbol-value 'fleet-eca-ack-timeout-sec) 1))
+        (fleet-eca-test-submit conn "NOACK"))
+      (should (fleet-eca-test-wait-kind 'turn-started))
+      (fleet-eca-request-cancel conn)
+      (should (fleet-eca-test-wait-kind 'turn-idle-observed))
+      (should (plist-get (funcall terminal) :was-stopping))
+      (should-not (plist-get (funcall terminal) :empty))
+      ;; an accepted-but-errored turn is not empty: the error is the signal
+      (setq fleet-eca-test--events nil)
+      (fleet-eca-test-submit conn "ERRORMODEL")
+      (should (fleet-eca-test-wait-kind 'turn-idle-observed))
+      (should (plist-get (funcall terminal) :error-text))
+      (should-not (plist-get (funcall terminal) :empty)))))
+
+(ert-deftest fleet-eca-admission-summary-reports-the-durable-state ()
+  "The chat used to say \"queued (operator busy)\" after every send, because a
+free lane dispatches synchronously inside the sink and the turn it then saw in
+flight was the message itself.  The report must come from the enqueue state."
+  (let ((conn (fleet-eca-conn--make :role "commander")))
+    (should (string-match-p "sent to the commander" (fleet-eca--admission-summary conn '(:message-id "m" :state "dispatching"))))
+    (should (string-match-p "sent to the commander" (fleet-eca--admission-summary conn '(:message-id "m" :state "accepted"))))
+    (should (string-match-p "queued; the commander is mid-turn" (fleet-eca--admission-summary conn '(:message-id "m" :state "queued"))))
+    (should (string-match-p "held while the fleet is parked" (fleet-eca--admission-summary conn '(:message-id "m" :state "held"))))
+    (should (string-match-p "not sent (rejected)" (fleet-eca--admission-summary conn '(:message-id "m" :state "rejected"))))
+    ;; a bare non-nil admission (older sinks) still reads as sent
+    (should (string-match-p "sent to the commander" (fleet-eca--admission-summary conn t)))
+    (should-not (string-match-p "busy" (fleet-eca--admission-summary conn t)))))
+
 (ert-deftest fleet-eca-noack-watchdog-observed-unacknowledged ()
   (fleet-eca-test-with-conn conn
     (let ((fleet-eca-ack-timeout-sec 1))

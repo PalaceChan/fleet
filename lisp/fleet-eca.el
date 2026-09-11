@@ -214,7 +214,9 @@ information only.  Never launches a server."
 (defvar fleet-eca-human-sink nil
   "Function (CONN ENVELOPE) called for human sends from a Fleet chat.
 Must durably admit the message and return non-nil; nil or an error leaves
-the draft untouched.  Installed by fleet-supervisor.")
+the draft untouched.  A plist return with `:message-id' and `:state' lets
+the chat report the real outcome (sent, queued, held).  Installed by
+fleet-supervisor.")
 
 (defun fleet-eca-conn (runtime-id) "Connection for RUNTIME-ID or nil." (gethash runtime-id fleet-eca--conns))
 
@@ -692,6 +694,25 @@ Runs before the UI handler."
                                              :submitted-at (fleet-paths-now)))
       (fleet-eca--emit conn 'turn-started :message-id nil :unattributed t)))))
 
+(defun fleet-eca--turn-output (conn)
+  "Note that CONN's in-flight turn produced something observable.
+Assistant text and tool activity count; reasoning alone does not."
+  (when-let* ((turn (fleet-eca-conn-turn conn)))
+    (plist-put turn :output t)))
+
+(defun fleet-eca--turn-empty-p (turn)
+  "Non-nil when TURN was an accepted prompt that produced nothing at all.
+No assistant text, no tool call, no error text, and not stopped by a
+human: the model (or the provider) returned an empty completion.  Such a
+turn had no side effects, so resending its message is safe.  Observed
+on openclaw 2026-09-11: a 5.7 s turn with zero content and no usage that
+Fleet recorded as a normal finish."
+  (and (plist-get turn :accepted)
+       (not (plist-get turn :unattributed))
+       (not (eq (plist-get turn :state) 'stopping))
+       (not (plist-get turn :error-text))
+       (not (plist-get turn :output))))
+
 (defun fleet-eca--turn-terminal (conn source)
   "Consume the terminal activity event from SOURCE exactly once.
 A turn's own terminal is always preceded by its `running' (or, for a
@@ -717,6 +738,7 @@ not be charged to the new turn."
                        :accepted (plist-get turn :accepted)
                        :error-text (plist-get turn :error-text)
                        :usage (plist-get turn :usage)
+                       :empty (fleet-eca--turn-empty-p turn)
                        :submitted-at (plist-get turn :submitted-at))
       ;; A terminal event before the response resolves nothing yet; the
       ;; response (accepted/error) still arrives and is handled normally.
@@ -754,6 +776,7 @@ not be charged to the new turn."
                 (when-let* ((turn (fleet-eca-conn-turn conn))) (plist-put turn :error-text (fleet-eca--clip text 500)))
                 (fleet-eca--emit conn 'turn-error-text :text (fleet-eca--clip text 500))))
              (_ (setf (fleet-eca-conn-assistant-buffer conn) (concat (fleet-eca-conn-assistant-buffer conn) text))
+                (unless (string-blank-p text) (fleet-eca--turn-output conn))
                 (fleet-eca--emit conn 'assistant-text :chars (length text))))))
         ("metadata"
          (setf (fleet-eca-conn-title conn) (plist-get content :title))
@@ -769,6 +792,7 @@ not be charged to the new turn."
                                         :context-limit (plist-get (plist-get content :limit) :context)))))
         ("toolCallPrepare"
          (let ((id (plist-get content :id)))
+           (fleet-eca--turn-output conn)
            (unless (assoc id (fleet-eca-conn-active-tools conn))
              (push (cons id (list :name (plist-get content :name) :server (plist-get content :server) :phase 'preparing :since (fleet-paths-now)))
                    (fleet-eca-conn-active-tools conn))
@@ -788,6 +812,7 @@ not be charged to the new turn."
            (fleet-eca--emit conn 'tool-running :tool-id id :name (plist-get content :name) :server (plist-get content :server))))
         ("toolCalled"
          (let ((id (plist-get content :id)))
+           (fleet-eca--turn-output conn)
            (setf (fleet-eca-conn-pending-approvals conn) (delete id (fleet-eca-conn-pending-approvals conn)))
            (setf (fleet-eca-conn-active-tools conn) (assoc-delete-all id (fleet-eca-conn-active-tools conn)))
            (fleet-eca--transcript conn (list :role "tool" :kind "called" :tool-id id :name (plist-get content :name)
@@ -796,6 +821,7 @@ not be charged to the new turn."
                             :error (eq t (plist-get content :error)) :ms (plist-get content :totalTimeMs))))
         ("toolCallRejected"
          (let ((id (plist-get content :id)))
+           (fleet-eca--turn-output conn)
            (setf (fleet-eca-conn-pending-approvals conn) (delete id (fleet-eca-conn-pending-approvals conn)))
            (setf (fleet-eca-conn-active-tools conn) (assoc-delete-all id (fleet-eca-conn-active-tools conn)))
            (fleet-eca--emit conn 'tool-rejected :tool-id id :name (plist-get content :name))))
@@ -803,6 +829,7 @@ not be charged to the new turn."
 
 (defun fleet-eca--tool-phase (conn id content phase)
   "Record PHASE for tool call ID described by CONTENT."
+  (fleet-eca--turn-output conn)
   (let ((entry (assoc id (fleet-eca-conn-active-tools conn))))
     (if entry
         (setcdr entry (plist-put (cdr entry) :phase phase))
@@ -950,8 +977,22 @@ Clear the draft only on success."
       (when admitted
         (add-to-list 'eca-chat--history prompt)
         (eca-chat--set-prompt "")
-        (message "Fleet: message queued (%s)" (if (fleet-eca-conn-turn conn) "operator busy; will send when idle" "sending")))
+        (message "Fleet: %s" (fleet-eca--admission-summary conn admitted)))
       admitted)))
+
+(defun fleet-eca--admission-summary (conn admitted)
+  "Human-readable outcome of a sink admission ADMITTED on CONN.
+ADMITTED is the sink's return value; when it is a plist carrying the
+durable message `:state' that state is reported.  The connection's turn
+cannot be consulted here: a free lane dispatches synchronously inside the
+sink, so by now the turn in flight is this very message."
+  (let ((role (or (fleet-eca-conn-role conn) "runtime"))
+        (state (and (listp admitted) (plist-get admitted :state))))
+    (pcase state
+      ("queued" (format "message queued; the %s is mid-turn, it is sent when that turn ends" role))
+      ("held" "message held while the fleet is parked; it is sent on resume")
+      ((or "rejected" "cancelled-before-dispatch") (format "message admitted but not sent (%s); see the dashboard" state))
+      (_ (format "message sent to the %s" role)))))
 
 (defun fleet-eca--around-send (orig session prompt)
   "Advice for the native send/steer/queue entry points."
