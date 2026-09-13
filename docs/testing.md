@@ -31,9 +31,20 @@ process kills for cleanup.
 ## Existing disposable server only
 
 First obtain the owner's confirmation that a **specific already-running named server** is disposable,
-is not the editing server, and has no owner fleets or unrelated work. If none exists, stop and ask the
-owner; these instructions neither launch nor shut down a server. The following Bash commands work from
-any directory after setting `TEST_SOCKET` to that confirmed name:
+is not the editing server, and has no owner fleets or unrelated work. The owner's convention is the
+socket name **`fleet-test`**, started by the owner with `emacs -Q --daemon=fleet-test` (the shell prints
+"Done" immediately because the launcher forks the daemon and exits; that is normal). Check with
+`ls "$XDG_RUNTIME_DIR/emacs/"` and the identity query below. If none exists, stop and ask the owner to
+start one; these instructions neither launch nor shut down a server, with one exception: after a full run
+you may `emacsclient --socket-name=fleet-test --eval '(kill-emacs)'` on that exact socket and ask the owner
+for a fresh one.
+
+**Reuse caveat (observed 2026-09-13):** the runner reloads every source and test file, and a second
+full-suite run in the same daemon inherited timers and lease-helper processes from the first: a
+pre-existing supervisor test failed and the following lease test hung until interrupted (`kill -USR2
+<pid>` breaks a wedged eval without killing the server). The same suite passed 137/137 on a fresh daemon.
+Use a **fresh daemon for full-suite runs**; targeted selectors (a handful of tests) can reuse a daemon.
+The following Bash commands work from any directory after setting `TEST_SOCKET` to that confirmed name:
 
 ```bash
 : "${TEST_SOCKET:?Set TEST_SOCKET to the owner-confirmed existing disposable server name}"

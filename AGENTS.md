@@ -14,9 +14,11 @@ instructions. Fleet is single-host, ECA-native orchestration in Emacs with local
   before paid/native probes. Merge, push, and activation are separate steps, never concurrent shortcuts;
   follow the owner's authorization for each.
 - Use **`emacsclient` only** for Emacs operations. Never run tests, unload Fleet, or exit functions in the
-  owner's editing server. ERT needs an already-running, explicitly identified disposable test server; if
-  none is available, report the skipped check. Current Make targets launch/exit Emacs and are not suitable
-  under this rule; see [testing](docs/testing.md). Never kill servers by a broad process-name pattern.
+  owner's editing server. ERT needs an already-running disposable test server: by convention the socket
+  `fleet-test` (check for it; if absent, ask the owner to run `emacs -Q --daemon=fleet-test` — never launch
+  it yourself). Prefer a fresh daemon for a full-suite run; see [testing](docs/testing.md). Current Make
+  targets launch/exit Emacs and are not suitable under this rule. Never kill servers by a broad
+  process-name pattern.
 - Owner trust/model choices belong in owner configuration, not product defaults. Never globally enable
   trust or change ordinary non-Fleet ECA sessions. Never use real user fleets as test fixtures.
 - Keep credentials, private reports, transcripts, database copies, and session checkpoints out of Git.
