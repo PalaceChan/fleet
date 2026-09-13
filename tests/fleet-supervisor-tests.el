@@ -285,6 +285,9 @@ a turn that did work before failing is never resent."
            (state (lambda (text) (plist-get (fleet-store-query1 store "SELECT state FROM messages WHERE text = ?" text) :state)))
            (events (lambda (kind &optional rid) (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = ? AND runtime_id = ?" kind (or rid cid)))))
       (fleet-sup-test-settle)
+      ;; Supervision off: the operator's actionable give-up below must not queue a wake on
+      ;; the commander lane, which this test drives with human messages only.
+      (fleet-core-set-supervision store fid nil)
       (should (equal "fake/model" (plist-get (fleet-store-get store "runtimes" cid) :model)))
       (setq fleet-test-fake-turn 'busy)
       (fleet-supervisor--human-sink conn '(:text "please plan"))

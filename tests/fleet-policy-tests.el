@@ -95,7 +95,8 @@
       (should (string-match-p "use\\[0\\] needs a non-empty model" (invalid "{\"rules\": [{\"when\": \"x\", \"use\": [{\"variant\": \"high\"}]}]}")))
       (should (string-match-p "unknown key modle in default" (invalid "{\"default\": {\"modle\": \"a/b\"}}")))
       (should (string-match-p "fallback must be an object" (invalid "{\"fallback\": [\"a/b\"]}")))
-      (should (string-match-p "rules must be an array" (invalid "{\"rules\": {}}")))
+      ;; ({} parses to nil, so an empty object is indistinguishable from an absent key and passes.)
+      (should (string-match-p "rules must be an array" (invalid "{\"rules\": \"a/b\"}")))
       (should (string-match-p "ask_first must be a list" (invalid "{\"ask_first\": [1]}"))))))
 
 (ert-deftest fleet-policy-describe-lists-everything-the-commander-needs ()

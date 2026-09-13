@@ -130,7 +130,8 @@ Signals `invalid-model-policy' on any structural problem."
   (let ((raw (condition-case err
                  (json-parse-string text :object-type 'plist :array-type 'array :null-object nil :false-object :false)
                (error (fleet-policy--fail file (format "not valid JSON (%s)" (error-message-string err)))))))
-    (unless (and (consp raw) (keywordp (car raw))) (fleet-policy--fail file "top level must be an object"))
+    ;; An empty object parses to nil in plist mode; that is a valid, empty policy.
+    (unless (or (null raw) (and (consp raw) (keywordp (car raw)))) (fleet-policy--fail file "top level must be an object"))
     (fleet-policy--check-keys file "the top level" raw fleet-policy--top-keys)
     (when (and (plist-get raw :version) (not (eql (plist-get raw :version) 1)))
       (fleet-policy--fail file "unsupported version" :version (plist-get raw :version)))
