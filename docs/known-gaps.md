@@ -120,6 +120,16 @@ Source: [`fleet-core.el`](../lisp/fleet-core.el), [`fleet-rpc.el`](../lisp/fleet
   `system` text beginning `Error:` that sets turn `error-text`; `$/showMessage` currently emits a separate
   `server-message`. Capture redacted error wire evidence before designing correlation to the in-flight
   turn. No undocumented chat-cache dependency. Explicit permission is required for a paid error probe.
+  Consequence for the policy fallback (`fleet-supervisor--fall-back-model`): it keys on a *barren* turn (no
+  text, no tool call), so a provider failure that surfaces as an empty completion still reaches the fallback
+  after the same-model resend, but one that surfaces only as a `server-message` while the turn shows work,
+  or that never terminates the turn, does not. A turn that did work and then errored is finished with its
+  error text and is **not** actionable for the commander (unchanged from before); whether such a failure
+  should wake the commander is an F11 question, not a fallback one.
+- **Fallback and approval have no native acceptance:** `model-fallback`, `turn-failed`, and the
+  `model-needs-approval` round trip are covered by fake-backed core/supervisor/RPC tests only. Wire-level
+  confirmation that a re-pinned chat's next `chat/prompt` carries the fallback model and keeps history is
+  listed under [pending native acceptance](testing.md#pending-native-acceptance).
 - **Prompt-specific empty completions:** earlier native observation: some wordings returned no output and
   rephrasing worked. Cause is unproven; do not encode a provider/model/wording blacklist. After Fleet's
   bounded retry gives up, rephrase or investigate with an authorized probe. Lack of observed tool output

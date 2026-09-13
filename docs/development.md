@@ -28,6 +28,7 @@ All Lisp is under [`lisp/`](../lisp/); tests under [`tests/`](../tests/).
 | XDG roots, identities, containment, artifact hashes | `fleet-paths.el` | `fleet-paths-tests.el`; design §3 |
 | SQLite transactions, migrations, projections, idempotency | `fleet-store.el` | `fleet-store-tests.el`; [`schema/`](../schema/), design §7 |
 | Task create/start/retask, park/teardown/retire, recovery | `fleet-core.el` | `fleet-core-tests.el`; [recovery](recovery.md), design §10 |
+| Owner model policy file: parse, natural-language rules for the commander, default, ask-first gate, fallback | `fleet-policy.el` (pure; applied by core and supervisor) | `fleet-policy-tests.el`, policy cases in core/supervisor suites; [quickstart](../quickstart.md) |
 | Ownership, delivery lanes, wake batches, receipts | `fleet-supervisor.el` | `fleet-supervisor-tests.el`; design §6/§8/§9 |
 | ECA wire events, frontend advice, model/variant pinning | `fleet-eca.el` | `fleet-eca-tests.el`, `tests/fake_eca.py`, redacted fixtures; [integration](eca-compatibility.md) |
 | systemd launch/stop and cgroup proof | `fleet-runtime.el` | `fleet-runtime-tests.el`; design §6 |

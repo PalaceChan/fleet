@@ -85,6 +85,92 @@ exist)."
           (should (equal (plist-get rt2 :model) "fake/model"))
           (should-not (plist-get rt2 :variant)))))))
 
+(defconst fleet-core-test-policy-json
+  "{\"default\": {\"model\": \"fake/model\"},
+    \"ask_first\": [\"fake/pricey\"],
+    \"fallback\": {\"fake/model\": \"fake/other\"},
+    \"rules\": [
+      {\"when\": \"ambiguous feature work\", \"use\": [{\"model\": \"fake/pricey\", \"variant\": \"high\"}, \"fake/other\"], \"why\": \"standing rule\"},
+      {\"when\": \"simple chore\", \"use\": \"fake/other\"}]}")
+
+(ert-deftest fleet-core-operator-model-follows-owner-policy-and-ask-first-gate ()
+  "The commander routes under the owner's rules and states a reason; Fleet
+supplies the default, validates against the catalog, records the choice, and
+refuses ask-first models (or everything, under the wildcard) until the
+commander asserts the user's approval, however they were chosen."
+  (fleet-test-with-fakes
+    (let* ((fid (fleet-core-test-fleet store "pol"))
+           (fleet-operator-model nil) (fleet-operator-variant nil)
+           (mk (lambda (name &rest more)
+                 (apply #'fleet-core-create-task store fid :name name :kind "study" :brief fleet-test-brief more)))
+           (created (lambda (task) (fleet-store-unjson (plist-get (fleet-store-query1 store "SELECT payload FROM events WHERE task_id = ? AND kind = 'task-created'" (plist-get task :id)) :payload)))))
+      ;; No policy file: the ECA default as before, and the audit trail says so.
+      (let ((task (funcall mk "plain" :model-reason "no policy, default")))
+        (should-not (plist-get task :model))
+        (should (equal (plist-get task :model-source) "eca-default"))
+        (should (equal (plist-get (funcall created task) :model-source) "eca-default"))
+        (should (equal (plist-get (funcall created task) :model-reason) "no policy, default")))
+      (let ((fleet-operator-model "fake/other"))
+        (should (equal (plist-get (funcall mk "cfg") :model-source) "config")))
+      ;; A malformed policy refuses creation rather than silently using defaults.
+      (fleet-test-write (fleet-policy-file) "{\"rules\": 3}")
+      (fleet-test-should-fail 'invalid-model-policy (funcall mk "broken"))
+      (should (string-match-p "could not be loaded" (fleet-core--models-section store '(:id "none"))))
+      (fleet-test-write (fleet-policy-file) fleet-core-test-policy-json)
+      ;; The commander applied rule 1: the model is ask-first, so creation is refused with the reason echoed.
+      (let ((err (fleet-test-should-fail 'model-needs-approval
+                   (funcall mk "ask" :model "fake/pricey" :variant "high" :model-reason "rule 1: ambiguous feature work"))))
+        (should (equal (plist-get (fleet-error-evidence err) :model) "fake/pricey"))
+        (should (equal (plist-get (fleet-error-evidence err) :variant) "high"))
+        (should (equal (plist-get (fleet-error-evidence err) :source) "explicit"))
+        (should (equal (plist-get (fleet-error-evidence err) :reason) "rule 1: ambiguous feature work")))
+      (should-not (fleet-store-task-by-name store fid "ask"))
+      (let ((task (funcall mk "ask" :model "fake/pricey" :variant "high" :model-reason "rule 1" :owner-approved t)))
+        (should (equal (plist-get task :model) "fake/pricey"))
+        (should (equal (plist-get task :variant) "high"))
+        (should (equal (plist-get task :model-source) "explicit"))
+        (should (eq t (plist-get (funcall created task) :owner-approved)))
+        (should (equal (plist-get (funcall created task) :model-reason) "rule 1")))
+      ;; No rule applies: omit model, get the policy default, no approval, no variant unless asked.
+      (let ((task (funcall mk "easy" :model-reason "no rule applies")))
+        (should (equal (plist-get task :model) "fake/model"))
+        (should-not (plist-get task :variant))
+        (should (equal (plist-get task :model-source) "policy-default")))
+      (should (equal (plist-get (funcall mk "easy-low" :variant "low") :variant) "low"))
+      ;; A non-ask-first rule model needs no approval.
+      (should (equal (plist-get (funcall mk "chore" :model "fake/other" :model-reason "rule 2") :model) "fake/other"))
+      ;; Catalog known: models the catalog lacks are refused even when approved; the default falls through when absent.
+      (fleet-store-record-eca-catalog store :models '("fake/model" "fake/other") :default-model "fake/model")
+      (fleet-test-should-fail 'unknown-model (funcall mk "gone" :model "fake/pricey" :owner-approved t))
+      (fleet-store-record-eca-catalog store :models '("fake/other" "fake/pricey"))
+      (let ((fleet-operator-model "fake/other"))
+        (should (equal (plist-get (funcall mk "nodefault") :model-source) "config")))
+      (fleet-store-record-eca-catalog store :models '("fake/model" "fake/other" "fake/pricey"))
+      ;; Retask: "default" returns to the policy default; an explicit ask-first model needs approval too.
+      (let* ((tid (plist-get (fleet-store-task-by-name store fid "chore") :id)))
+        (should (equal (plist-get (fleet-core-retask store tid "" :model "default" :variant "default") :model) "fake/model"))
+        (fleet-test-should-fail 'model-needs-approval (fleet-core-retask store tid "" :model "fake/pricey"))
+        (should (equal (plist-get (fleet-core-retask store tid "" :model "fake/pricey" :owner-approved t) :model) "fake/pricey")))
+      ;; The commander's boot message explains the policy it works under.
+      (let ((boot (fleet-core--models-section store '(:id "none"))))
+        (should (string-match-p "Operator default: `fake/model`" boot))
+        (should (string-match-p "### Operator model policy" boot))
+        (should (string-match-p "1\\. when ambiguous feature work → `fake/pricey` (variant `high`), then `fake/other` (why: standing rule)" boot))
+        (should (string-match-p "2\\. when simple chore → `fake/other`" boot))
+        (should (string-match-p "Ask first.*`fake/pricey`" boot))
+        (should (string-match-p "fallback.*`fake/model` → `fake/other`" boot))
+        (should-not (string-match-p "does not offer" boot)))
+      (fleet-store-record-eca-catalog store :models '("fake/model" "fake/other"))
+      (should (string-match-p "does not offer.*`fake/pricey`" (fleet-core--models-section store '(:id "none"))))
+      ;; Wildcard: while the owner is shaping the rules, everything asks first — the default included.
+      (fleet-test-write (fleet-policy-file) "{\"default\": \"fake/model\", \"ask_first\": [\"*\"]}")
+      (fleet-test-should-fail 'model-needs-approval (funcall mk "wild" :model-reason "default"))
+      (fleet-test-should-fail 'model-needs-approval (funcall mk "wild" :model "fake/other" :model-reason "user named it"))
+      (should (equal (plist-get (funcall mk "wild" :model-reason "default, user agreed" :owner-approved t) :model) "fake/model"))
+      (should (string-match-p "Ask first: \\*\\*every task\\*\\*" (fleet-core--models-section store '(:id "none"))))
+      (delete-file (fleet-policy-file))
+      (should (string-match-p "No owner policy file" (fleet-core--models-section store '(:id "none")))))))
+
 (ert-deftest fleet-core-commander-model-pin-is-changeable-and-governs-the-next-start ()
   "A fleet created without a model can be pinned later; the pin (else the
 defcustom, else the ECA default) is what each commander start launches with."

@@ -93,14 +93,14 @@
     (let* ((fid (fleet-core-test-fleet store)) (cid (fleet-sup-test-commander store fid))
            (ctok (fleet-rpc-test-token cid)))
       (fleet-sup-test-settle)
-      (let* ((r (fleet-rpc-test-req "fleet_task_create" ctok (list :name "parser" :kind "study" :brief fleet-test-brief) "c1"))
+      (let* ((r (fleet-rpc-test-req "fleet_task_create" ctok (list :name "parser" :kind "study" :model_reason "test default" :brief fleet-test-brief) "c1"))
              (tid (plist-get (plist-get r :result) :task-id)))
         (should tid)
         ;; replay with same key and payload returns the same task without creating another
-        (should (plist-get (plist-get (fleet-rpc-test-req "fleet_task_create" ctok (list :name "parser" :kind "study" :brief fleet-test-brief) "c1") :result) :replayed))
+        (should (plist-get (plist-get (fleet-rpc-test-req "fleet_task_create" ctok (list :name "parser" :kind "study" :model_reason "test default" :brief fleet-test-brief) "c1") :result) :replayed))
         (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM tasks WHERE fleet_id = ?" fid)))
         ;; same key, different payload refused
-        (should (equal "action-payload-mismatch" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_task_create" ctok (list :name "other" :kind "study" :brief fleet-test-brief) "c1"))))
+        (should (equal "action-payload-mismatch" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_task_create" ctok (list :name "other" :kind "study" :model_reason "test default" :brief fleet-test-brief) "c1"))))
         ;; start requires idempotency key; returns an operation id; replay returns the same
         (should (equal "invalid-request" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_task_start" ctok (list :task_id tid)))))
         (let* ((s1 (plist-get (fleet-rpc-test-req "fleet_task_start" ctok (list :task_id tid) "s1") :result))
@@ -170,14 +170,14 @@ returns an operation id (runtime stop first) and later a task-retasked wake."
     (let* ((fid (fleet-core-test-fleet store)) (cid (fleet-sup-test-commander store fid))
            (ctok (fleet-rpc-test-token cid)))
       (fleet-sup-test-settle)
-      (let* ((tid (plist-get (plist-get (fleet-rpc-test-req "fleet_task_create" ctok (list :name "clone" :kind "ops" :brief fleet-test-brief :resources ["clone-x"]) "c1") :result) :task-id))
+      (let* ((tid (plist-get (plist-get (fleet-rpc-test-req "fleet_task_create" ctok (list :name "clone" :kind "ops" :model_reason "test default" :brief fleet-test-brief :resources ["clone-x"]) "c1") :result) :task-id))
              (s1 (plist-get (fleet-rpc-test-req "fleet_task_start" ctok (list :task_id tid) "s1") :result)))
         (fleet-test-wait-op store (plist-get s1 :operation-id))
         (let* ((rt (fleet-core-test-runtime store tid)) (otok (fleet-rpc-test-token rt)))
           (fleet-test-wait-for (lambda () (null (fleet-eca-conn-turn (fleet-eca-conn rt)))) 5)
           (fleet-rpc-test-req "fleet_status" otok '(:phase "failed" :detail "source is not a git root"))
           ;; a replacement for the same resource is refused with the holder
-          (let ((r (fleet-rpc-test-req "fleet_task_create" ctok (list :name "clone-2" :kind "ops" :brief fleet-test-brief :resources ["clone-x"]) "c2")))
+          (let ((r (fleet-rpc-test-req "fleet_task_create" ctok (list :name "clone-2" :kind "ops" :model_reason "test default" :brief fleet-test-brief :resources ["clone-x"]) "c2")))
             (should (equal "resource-claimed" (fleet-rpc-test-err r))))
           ;; a model outside the catalog is refused before anything is stopped
           (should (equal "unknown-model" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_task_retask" ctok (list :task_id tid :brief "" :model "nope/model") "r0"))))

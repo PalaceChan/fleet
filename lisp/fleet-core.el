@@ -16,6 +16,7 @@
 (require 'cl-lib)
 (require 'subr-x)
 (require 'fleet-paths)
+(require 'fleet-policy)
 (require 'fleet-store)
 (require 'fleet-git)
 (require 'fleet-runtime)
@@ -140,6 +141,58 @@ nil means the ECA default."
 (defconst fleet-core-operator-phases '("working" "needs-decision" "blocked" "paused" "done" "failed"))
 (defconst fleet-core-terminal-phases '("done" "failed"))
 
+;;;; Operator model selection (owner policy, see fleet-policy.el)
+
+(defun fleet-core-model-policy ()
+  "The owner's model policy, or nil when there is no policy file."
+  (fleet-policy-load))
+
+(defun fleet-core-operator-default (store policy)
+  "(MODEL . VARIANT) an operator gets when nothing chooses otherwise.
+POLICY's `default' when it is in the known catalog, else
+`fleet-operator-model'/`fleet-operator-variant'; nil means the ECA default."
+  (let ((d (fleet-policy-default policy (plist-get (fleet-store-eca-catalog store) :models))))
+    (if d (cons (plist-get d :model) (plist-get d :variant))
+      (cons fleet-operator-model fleet-operator-variant))))
+
+(defun fleet-core-assert-approved (policy model owner-approved &rest evidence)
+  "Refuse MODEL when POLICY wants the owner asked first and OWNER-APPROVED is nil.
+That is a listed ask-first model, or any model while `ask_first' holds the
+wildcard.  The refusal carries EVIDENCE (the selection and its reason) so
+the commander can put a concrete proposal to the user.  The gate applies
+however the model was chosen: an explicit request needs the flag too, which
+makes the commander state that the user agreed.  Returns MODEL."
+  (when (and (fleet-policy-ask-first-p policy model) (not owner-approved))
+    (apply #'fleet-fail 'model-needs-approval
+           "The owner wants to be asked before this runs. Propose the model, variant and your reason to the user; then retry with owner_approved true, or pass the model the user chose instead"
+           :model model evidence))
+  model)
+
+(cl-defun fleet-core-select-operator-model (store &key model variant model-reason owner-approved)
+  "Settle what an operator runs on from the commander's MODEL/VARIANT request.
+Routing is the commander's judgement under the owner's policy rules (see
+`fleet-policy-describe'); MODEL-REASON is its stated ground (the rule it
+applied, or the user's words) and is recorded, not interpreted.  An explicit
+MODEL wins; otherwise the policy default; otherwise the defcustoms; nil
+means the ECA default.  VARIANT alone overrides only the variant.  The
+model must be in the catalog when one is known, and an ask-first model —
+or any model while the policy asks for everything — is refused with
+`model-needs-approval' unless OWNER-APPROVED (`fleet-core-assert-approved').
+Returns (:model M :variant V :source SOURCE :reason R) where SOURCE is
+explicit, policy-default, config or eca-default."
+  (let* ((policy (fleet-core-model-policy))
+         (pd (fleet-policy-default policy (plist-get (fleet-store-eca-catalog store) :models)))
+         (sel (cond
+               (model (list :model model :variant variant :source "explicit"))
+               (pd (list :model (plist-get pd :model) :variant (or variant (plist-get pd :variant)) :source "policy-default"))
+               (fleet-operator-model (list :model fleet-operator-model :variant (or variant fleet-operator-variant) :source "config"))
+               (t (list :model nil :variant (or variant fleet-operator-variant) :source "eca-default")))))
+    (fleet-core-assert-model store (plist-get sel :model))
+    (fleet-core-assert-approved policy (plist-get sel :model) owner-approved
+                                :variant (plist-get sel :variant) :source (plist-get sel :source)
+                                :reason model-reason)
+    (append sel (list :reason model-reason))))
+
 (defun fleet-core-task (store ref &optional fleet-id)
   "Task row by id, or by name within FLEET-ID; signal `no-such-task'."
   (or (fleet-store-get store "tasks" ref)
@@ -163,19 +216,24 @@ nil means the ECA default."
 
 (cl-defun fleet-core-create-task (store fleet-id &key name kind brief repo base-ref branch delivery
                                         workspace-mode adopt-path dependencies resources model variant context-paths
-                                        actor)
+                                        model-reason owner-approved actor)
   "Create a ready task in FLEET-ID from a complete BRIEF; return its row.
 KIND is change/study/ops.  For change tasks REPO is the primary clone,
 WORKSPACE-MODE is `new' (default), `adopt-branch' or `adopt-worktree' with
 ADOPT-PATH naming the branch or worktree; BASE-REF/BRANCH/DELIVERY describe
 the Git contract.  DEPENDENCIES are task ids in the same fleet; RESOURCES are
-named exclusive resources; CONTEXT-PATHS list extra read context.  MODEL and
-VARIANT override the operator's ECA model (default: `fleet-operator-model' /
-`fleet-operator-variant', else the server default)."
-  (let ((fleet (fleet-core-fleet store fleet-id)))
+named exclusive resources; CONTEXT-PATHS list extra read context.
+
+The operator's model is settled by `fleet-core-select-operator-model': the
+commander's MODEL/VARIANT (chosen under the owner's policy rules, with
+MODEL-REASON saying why) wins, else the policy default, else the
+defcustoms.  OWNER-APPROVED asserts the user agreed where the policy asks
+first.  The returned row carries an extra `:model-source' key."
+  (let ((fleet (fleet-core-fleet store fleet-id)) (selection nil))
     (fleet-paths-assert-name name "task")
-    (fleet-core-assert-model store (or model fleet-operator-model))
     (unless (member kind fleet-core-task-kinds) (fleet-fail 'invalid-task "Unknown task kind" :kind kind))
+    (setq selection (fleet-core-select-operator-model store :model model :variant variant :model-reason model-reason
+                                                      :owner-approved owner-approved))
     (unless (and (stringp brief) (>= (length (string-trim brief)) 40))
       (fleet-fail 'invalid-task "Brief is missing or too short to be complete" :length (length (or brief ""))))
     (when (member (plist-get fleet :lifecycle) '("parking" "parked" "retiring" "archived"))
@@ -224,8 +282,8 @@ VARIANT override the operator's ECA model (default: `fleet-operator-model' /
                                   :branch-ownership (pcase workspace-mode ((or 'adopt-branch 'adopt-worktree) "adopted") (_ (and (equal kind "change") "fleet")))
                                   :base-ref base-ref
                                   :delivery-mode (and (equal kind "change") (or delivery "remote-review"))
-                                  :model (or model fleet-operator-model)
-                                  :variant (or variant fleet-operator-variant)
+                                  :model (plist-get selection :model)
+                                  :variant (plist-get selection :variant)
                                   :created-at now :updated-at now))
         (dolist (d dependencies)
           (fleet-store-insert store "task_dependencies" (list :task-id id :depends-on-id d)))
@@ -233,11 +291,17 @@ VARIANT override the operator's ECA model (default: `fleet-operator-model' /
           (fleet-store-insert store "resource_claims"
                               (list :id (fleet-paths-uuid) :fleet-id fleet-id :kind "resource" :key r :task-id id :created-at now)))
         (fleet-store-append-event store :fleet-id fleet-id :task-id id :kind "task-created" :actor actor
-                                  :payload (list :name name :kind kind :context-paths (vconcat context-paths))))
+                                  :payload (list :name name :kind kind :context-paths (vconcat context-paths)
+                                                 ;; The routing judgement is not a column: the choice and
+                                                 ;; the commander's stated reason are what stay auditable.
+                                                 :model (plist-get selection :model) :variant (plist-get selection :variant)
+                                                 :model-source (plist-get selection :source)
+                                                 :model-reason (plist-get selection :reason)
+                                                 :owner-approved (and owner-approved t))))
       (fleet-core-publish-brief store id brief :note "initial brief")
       (fleet-store-transaction store
         (fleet-store-update store "tasks" id (fleet-store-touch (list :lifecycle "ready"))))
-      (fleet-store-get store "tasks" id))))
+      (append (fleet-store-get store "tasks" id) (list :model-source (plist-get selection :source))))))
 
 ;;;; Brief revisions (design §7.3)
 
@@ -304,25 +368,32 @@ The file must carry the recorded hash."
         (fleet-core-operation-finish store (plist-get op :id) :state "failed" :error "brief file missing or hash mismatch; revision not runnable"))
       'failed)))
 
-(defun fleet-core--retask-selection (store model variant)
+(defun fleet-core--retask-selection (store model variant &optional owner-approved)
   "Task column updates for a retask's MODEL and VARIANT requests.
-Nil leaves a column unchanged; \"default\" returns it to the configured
-default exactly as task creation would; any other model must be in the
-catalog.  Returns a plist for `fleet-store-update' (possibly empty)."
-  (append (when model
-            (list :model (if (equal model "default") fleet-operator-model (fleet-core-assert-model store model))))
-          (when variant
-            (list :variant (if (equal variant "default") fleet-operator-variant variant)))))
+Nil leaves a column unchanged; \"default\" returns it to the operator
+default (`fleet-core-operator-default': the policy default, else the
+defcustoms); any other model must be in the catalog and, when the owner's
+policy lists it under ask_first, needs OWNER-APPROVED.  Returns a plist for
+`fleet-store-update' (possibly empty)."
+  (let* ((policy (fleet-core-model-policy))
+         (default (fleet-core-operator-default store policy)))
+    (append (when model
+              (list :model (if (equal model "default") (car default)
+                             (fleet-core-assert-approved policy (fleet-core-assert-model store model) owner-approved
+                                                         :variant variant :source "explicit"))))
+            (when variant
+              (list :variant (if (equal variant "default") (cdr default) variant))))))
 
-(cl-defun fleet-core-retask (store task-id text &key expected-revision note actor model variant callback)
+(cl-defun fleet-core-retask (store task-id text &key expected-revision note actor model variant owner-approved callback)
   "Give TASK-ID new durable scope TEXT; the result is a ready task at a new
 revision.  A done task requires non-empty TEXT.
 
 MODEL and VARIANT, when given, change what the next operator of this task
-runs on (see `fleet-core--retask-selection'); the workspace, brief history
-and progress notes carry over, so a struggling operator can be replaced by
-a stronger model or reasoning effort in place.  Blank TEXT with only a
-selection change is allowed unless the task is done.
+runs on (see `fleet-core--retask-selection'; OWNER-APPROVED as for task
+creation); the workspace, brief history and progress notes carry over, so
+a struggling operator can be replaced by a stronger model or reasoning
+effort in place.  Blank TEXT with only a selection change is allowed unless
+the task is done.
 
 When the task's current runtime is already stopped the retask is immediate
 and the task row is returned.  When the runtime is still live but idle (the
@@ -342,7 +413,7 @@ stop (`stop-unknown', `stopping', `launching') stays refused."
     (when (and (equal (plist-get task :phase) "done") (string-blank-p (or text "")))
       (fleet-fail 'invalid-task "A done task requires non-empty new scope"))
     ;; Validate the selection before anything is stopped or written.
-    (setq selection (fleet-core--retask-selection store model variant))
+    (setq selection (fleet-core--retask-selection store model variant owner-approved))
     (cond
      ((not live)
       (fleet-core--retask-commit store task-id text note actor nil selection)
@@ -870,19 +941,36 @@ commander needs it to turn casual model names into exact ids."
   (let* ((cat (fleet-store-eca-catalog store))
          (models (plist-get cat :models))
          ;; Re-read: the row carries the effective model once the connection is ready.
-         (rt (or (fleet-store-get store "runtimes" (plist-get rt :id)) rt)))
+         (rt (or (fleet-store-get store "runtimes" (plist-get rt :id)) rt))
+         ;; A broken policy file must not stop the commander from booting; it
+         ;; is reported here and refuses task creation until fixed.
+         (policy-error nil)
+         (policy (condition-case err (fleet-core-model-policy)
+                   (fleet-error (setq policy-error (fleet-error-string err)) nil)))
+         (default (if policy-error (cons fleet-operator-model fleet-operator-variant)
+                    (fleet-core-operator-default store policy))))
     (concat "\n## Models\n"
             (format "- You run on `%s`%s.\n" (or (plist-get rt :model) "the ECA default")
                     (if (plist-get rt :variant) (format " (variant `%s`)" (plist-get rt :variant)) ""))
-            (format "- Operator default: `%s`%s (used when a task sets no `model`).\n"
-                    (or fleet-operator-model (plist-get cat :default-model) "the ECA default")
-                    (if fleet-operator-variant (format " variant `%s`" fleet-operator-variant) ""))
+            (format "- Operator default: `%s`%s (used when neither the user nor a policy rule chooses).\n"
+                    (or (car default) (plist-get cat :default-model) "the ECA default")
+                    (if (cdr default) (format " variant `%s`" (cdr default)) ""))
             (when (plist-get cat :variants)
               (format "- Variants announced for the default model: %s.\n" (string-join (plist-get cat :variants) ", ")))
             (if models
                 (format "- Catalog (%d exact ids; `fleet_task_create` accepts only these):\n  %s\n"
                         (length models) (string-join models ", "))
-              "- Catalog not announced yet; `model` overrides are passed to ECA unchecked.\n"))))
+              "- Catalog not announced yet; `model` overrides are passed to ECA unchecked.\n")
+            "\n### Operator model policy\n"
+            (cond
+             (policy-error (format "- The owner's policy file could not be loaded; task creation is refused until it is fixed: %s\n" policy-error))
+             (policy
+              (concat (fleet-policy-describe policy)
+                      (when-let* ((missing (and models (cl-set-difference (fleet-policy-models policy) models :test #'equal))))
+                        (format "- Policy ids the catalog does not offer (Fleet will refuse them; use the next in the chain and tell the user, they may be typos): %s.\n"
+                                (mapconcat (lambda (m) (format "`%s`" m)) missing ", ")))))
+             (t (format "- No owner policy file (`%s`); every task without an explicit `model` gets the operator default.\n"
+                        (fleet-policy-file)))))))
 
 (defun fleet-core--compact-snapshot (snap)
   "Reduce SNAP to the fields a model needs."

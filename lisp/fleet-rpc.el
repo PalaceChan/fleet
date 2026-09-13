@@ -200,6 +200,8 @@ Checks required keys, types and enums."
                   (fleet-fail 'invalid-request (format "parameter %s must be a string" k)))
                  ((and (equal (plist-get prop :type) "integer") v (not (integerp v)))
                   (fleet-fail 'invalid-request (format "parameter %s must be an integer" k)))
+                 ((and (equal (plist-get prop :type) "boolean") v (not (memq v '(t :false))))
+                  (fleet-fail 'invalid-request (format "parameter %s must be a boolean" k)))
                  ((and (equal (plist-get prop :type) "array") v (not (vectorp v)))
                   (fleet-fail 'invalid-request (format "parameter %s must be an array" k)))))))
 
@@ -243,10 +245,15 @@ Checks required keys, types and enums."
                                                          :dependencies (fleet-rpc--lst (plist-get params :dependencies))
                                                          :resources (fleet-rpc--lst (plist-get params :resources))
                                                          :context-paths (fleet-rpc--lst (plist-get params :context_paths))
-                                                         :model (plist-get params :model) :variant (plist-get params :variant) :actor logical)))
+                                                         :model (plist-get params :model) :variant (plist-get params :variant)
+                                                         :model-reason (plist-get params :model_reason)
+                                                         ;; JSON false parses as :false, which is non-nil.
+                                                         :owner-approved (eq (plist-get params :owner_approved) t)
+                                                         :actor logical)))
                        (fleet-supervisor--changed fid)
                        (list :task-id (plist-get task :id) :name (plist-get task :name) :lifecycle (plist-get task :lifecycle)
-                             :brief-revision (plist-get task :brief-revision) :entity-revision (plist-get task :entity-revision))))))
+                             :brief-revision (plist-get task :brief-revision) :entity-revision (plist-get task :entity-revision)
+                             :model (plist-get task :model) :variant (plist-get task :variant) :model-source (plist-get task :model-source))))))
         ("fleet_task_start"
          (fleet-rpc--task-in-fleet store actor (plist-get params :task_id))
          (unless key (fleet-fail 'invalid-request "idempotency_key required"))
@@ -258,6 +265,7 @@ Checks required keys, types and enums."
                             (let ((r (fleet-core-retask store (plist-get params :task_id) (plist-get params :brief) :expected-revision (plist-get params :expected_revision)
                                                         :note (plist-get params :note) :actor logical
                                                         :model (plist-get params :model) :variant (plist-get params :variant)
+                                                        :owner-approved (eq (plist-get params :owner_approved) t)
                                                         :callback (lambda (_op) (fleet-supervisor--changed fid)))))
                               (fleet-supervisor--changed fid)
                               (if (plist-get r :operation-id)

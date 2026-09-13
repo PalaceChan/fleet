@@ -11,7 +11,7 @@
            (ctok (fleet-rpc-test-token cid)))
       (fleet-sup-test-settle)
       ;; a successful call, a refusal, and an operator status through the socket
-      (let* ((tid (plist-get (plist-get (fleet-rpc-test-req "fleet_task_create" ctok (list :name "t" :kind "study" :brief fleet-test-brief) "c1") :result) :task-id)))
+      (let* ((tid (plist-get (plist-get (fleet-rpc-test-req "fleet_task_create" ctok (list :name "t" :kind "study" :model_reason "test default" :brief fleet-test-brief) "c1") :result) :task-id)))
         (fleet-rpc-test-req "fleet_task_start" ctok (list :task_id "nope") "bad")   ; forbidden
         (fleet-test-wait-op store (plist-get (plist-get (fleet-rpc-test-req "fleet_task_start" ctok (list :task_id tid) "s1") :result) :operation-id))
         (let ((otok (fleet-rpc-test-token (fleet-core-test-runtime store tid))))

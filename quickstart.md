@@ -38,10 +38,48 @@ systemd-owned process; **Emacs** owns state, scheduling and the dashboard.
    the fleet's current pin. `M-x fleet-commander-replace` asks the same question, so switching a running
    fleet to another model is: replace, pick the model. `M-x fleet-commander-set-model` changes the pin
    without starting anything (it applies at the next commander start). You can steer operators per task just by
-   telling the commander — "do this on gpt 5.6 terra medium", "study tasks on a cheap model" (put standing
-   policy in the fleet's `about.md`). The commander resolves casual names against the catalog and Fleet refuses
-   ids that are not in it. The dashboard shows each runtime's model next to the commander status and in the
-   task rows (provider prefix dropped; `v` peek shows the full id).
+   telling the commander — "do this on gpt 5.6 terra medium". The commander resolves casual names against
+   the catalog and Fleet refuses ids that are not in it. The dashboard shows each runtime's model next to the
+   commander status and in the task rows (provider prefix dropped; `v` peek shows the full id).
+
+   **Operator model policy.** To stop naming models by hand, write your standing preferences in
+   `~/.config/fleet/models.json` (or `fleet-model-policy-file`) as rules in your own words: `when` a
+   description of the work applies, `use` this model (a single selection or a best-first chain), optionally
+   with a `why`. The commander judges which rule a task falls under, passes that model and a one-line
+   `model_reason`, and Fleet records both on the `task-created` event; with no applicable rule it omits
+   `model` and gets `default`. Fleet keeps the mechanical parts: catalog validation, the ask-first gate and
+   the fallback. Models under `ask_first` are refused until the commander has proposed model and reason to
+   you and passes `owner_approved` — however they were chosen, so even "run it on astra" gets confirmed once.
+   Put `"*"` in `ask_first` to be asked for **every** task while you shape the rules; narrow it to the
+   expensive models once the proposals look right. `fallback` names the model a runtime moves to when its
+   turn does nothing at all (typically a provider timeout or outage); Fleet applies that by itself and
+   records a `model-fallback` event. All keys are optional; a missing file means no policy; a malformed one
+   refuses task creation and is reported in the commander's boot message. Selections are
+   `{"model": ..., "variant": ...}` or a bare id.
+
+   ```json
+   {
+     "version": 1,
+     "default": {"model": "openrouter/x-ai/grok-4.6"},
+     "ask_first": ["*"],
+     "fallback": {"openrouter/x-ai/grok-4.6": {"model": "openai/gpt-5.6-terra", "variant": "medium"}},
+     "rules": [
+       {"when": "non-simple technical or architecture design, planning, research, review, or an involved browser workflow",
+        "use": [{"model": "openai/gpt-6-astra", "variant": "medium"},
+                {"model": "anthropic/claude-fable-5-1", "variant": "high"}, "openrouter/moonshotai/kimi-k3"]},
+       {"when": "major or ambiguous feature implementation",
+        "use": [{"model": "anthropic/claude-fable-5-1", "variant": "high"},
+                {"model": "openai/gpt-6-astra", "variant": "medium"}, "openrouter/moonshotai/kimi-k3"],
+        "why": "coding-heavy work goes to fable first"},
+       {"when": "simple bug fix whose root cause is understood, a documentation update, or a simple chore",
+        "use": ["openrouter/deepseek/deepseek-v4.1-flash", "openrouter/x-ai/grok-4.6"]}
+     ]
+   }
+   ```
+
+   The policy `default` takes precedence over `fleet-operator-model`; the commander's own model is still the
+   fleet pin / `fleet-commander-model`. `model_source` on the event is `explicit`, `policy-default`, `config`
+   or `eca-default`; `model_reason` is the commander's stated ground, recorded verbatim.
 
 3. (Optional) Fleet runtimes receive the Fleet MCP bridge automatically through a per-runtime `ECA_CONFIG` overlay;
    your `~/.config/eca/config.json` is not modified. `M-x fleet-install-mcp` can additionally merge the one
@@ -177,9 +215,11 @@ Tear down every task (or `M-x fleet-task-close` the ones teardown will never adm
   pending native question but cannot approve a tool. A Fleet `needs-decision` record is separate; chat text
   does not resolve it. Human-authority decision resolution has no public command yet; see
   [interface limitations](docs/known-gaps.md#authority-and-interface).
-- **empty reply**: Fleet retries an observed empty turn once, then records `turn-empty` and reports give-up
-  in the minibuffer. Rephrase or investigate rather than repeatedly resending. Missing output or usage does
-  not establish zero external effects or zero cost.
+- **empty reply / provider error with nothing done**: Fleet resends an observed empty turn once as is, then
+  once on your policy's `fallback` model (the runtime stays on it; `model-fallback` event), then records
+  `turn-empty` (no error) or `turn-failed` (error text) and reports give-up in the minibuffer. Rephrase,
+  retask on another model, or investigate rather than repeatedly resending. A turn that did work before
+  failing is never resent. Missing output or usage does not establish zero external effects or zero cost.
 - **stale owner**: another Emacs (or a crashed one) holds `owner.json`. If that Emacs is truly gone, Fleet
   takes over automatically (pid + start time are checked); if it is alive, act there.
 - **external jobs**: park lists them; Fleet cannot stop what it did not start.

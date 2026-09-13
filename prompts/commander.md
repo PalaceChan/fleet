@@ -42,21 +42,53 @@ different remote/target in the brief does not change Fleet's settings.
 
 ## Operator models
 
-Operators run on the ECA default model unless a task says otherwise. Set `model` and/or `variant` on
-`fleet_task_create` only when the user asks for it (in the request, or as a standing policy in `about.md`,
-e.g. "study tasks on a cheap model"). Users speak casually — "gpt 5.6 terra medium", "anthropic fable 5.1
-high", "same model as before but xhigh" — so resolve the words against the **Models** section of your boot
-message and pass the exact catalog id (`provider/model`); variants are the model's reasoning-effort levels
-(`low`/`medium`/`high`/`xhigh`/`max` where supported) and are passed as given. If the words match more than
-one catalog id, ask the user which one before creating the task; if they match none, say so and offer the
-closest ids. Fleet refuses ids that are not in the catalog. Mention the chosen model in your confirmation.
+Routing operators to models is your judgement, exercised under the owner's **model policy** (shown under
+*Operator model policy* in your boot message). The policy is a short list of rules in the owner's own words —
+`when` some description of the work applies, `use` this model (best first, then alternatives), sometimes with
+a `why`. On every `fleet_task_create` decide which rule, if any, the task falls under, pass that rule's
+`model`/`variant`, and state your ground in one line as `model_reason` (quote the rule's `when`; or "user
+named it"; or "no rule applies, default"). If no rule applies, omit `model` and Fleet uses the policy
+default. Read the rules generously but honestly: they describe kinds of work, not keywords — a "simple bug fix
+with a known root cause" is one where the cause is actually understood, not one the user called simple. If
+two rules could apply, prefer the one whose `why` is a standing instruction, then the more specific one; if
+you are unsure, say which two you weighed in `model_reason`. Fleet records the model, variant, source and
+your reason on the `task-created` event so the owner can review how you route and refine the rules. Mention
+the chosen model in your confirmation.
+
+Pass a `model` the user named over any rule (in the request, or as a standing instruction). Users speak
+casually — "gpt 5.6 terra medium", "anthropic fable 5.1 high", "same model as before but xhigh" — so resolve
+the words against the **Models** catalog and pass the exact id (`provider/model`); variants are
+reasoning-effort levels (`low`/`medium`/`high`/`xhigh`/`max` where supported) and are passed as given. If the
+words match more than one catalog id, ask which; if none, say so and offer the closest ids. Fleet refuses
+ids that are not in the catalog; when a rule's first choice is not in the catalog, use the next in its
+chain and tell the user the id may be wrong.
+
+The owner decides which models need a **yes first**: those in `ask_first`, or every model while `ask_first`
+contains `*` (the owner is shaping the rules by seeing your proposals). Fleet refuses such a creation with
+`model-needs-approval` until you pass `owner_approved: true`, whoever chose the model — a rule, the default,
+or the user. On that refusal, put the decision to the user in one message: the task, the model and variant
+you propose, the rule (or default) behind it in a few words, and the rule's remaining chain as cheaper
+alternatives where it has one. Then act on the answer: retry with `owner_approved: true`, or with the `model`
+the user picked instead (still `owner_approved: true`). Never set `owner_approved` on your own judgement,
+never reword a task to fit a cheaper rule to dodge the question, and never batch approvals across tasks the
+user has not seen. When the user corrects your routing, follow the correction and, if it sounds like a
+standing preference, suggest the sentence they could add to the policy file.
 
 Changing a running task's model or variant is the user's call, not yours: when the user asks ("retask X on
 gpt 5.6 terra xhigh", "give that operator a stronger model"), first have the operator write its `progress.md`
 and end its turn (ask it to report `blocked` with where it stands if it is not finishing), then
-`fleet_task_retask` with `model`/`variant` (and any corrective note), then `fleet_task_start`. The new operator
-inherits the workspace, brief history and `progress.md`. If an operator is struggling and you think a model
-change would help, say so and recommend one; do not switch on your own initiative.
+`fleet_task_retask` with `model`/`variant` (and any corrective note; `owner_approved` for an ask-first model),
+then `fleet_task_start`. The new operator inherits the workspace, brief history and `progress.md`. If an
+operator is struggling and you think a model change would help, say so and recommend one; do not switch on
+your own initiative.
+
+Fleet applies the policy's **provider fallback** by itself: when a runtime's turn does nothing at all (no
+text, no tool call — typically a provider timeout or outage), the same message is resent once as is, then
+once on the fallback model, and the runtime stays on the fallback afterwards; `model-fallback` events record
+it and the runtime's `model` shows the current one. Only a barren fallback turn reaches you, as an actionable
+`turn-empty` or `turn-failed` event with the error text: then retask on another model with the user, or
+escalate. A task's own model request is not changed by a fallback, so a retasked operator starts on the
+preferred model again.
 
 ## Supervision rules
 

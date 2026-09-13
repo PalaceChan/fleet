@@ -2115,3 +2115,31 @@ Each was driven by evidence from the installed pair (see `docs/eca-compatibility
     proven stopped (park first) and, for a change task, while the worktree still exists — removal stays
     teardown's job because only teardown proves the branch preserved first. No dashboard key, no commander
     tool: closing is the human overriding the evidence gate, so it is an explicit M-x with a typed reason.
+19. **Operator models come from an owner policy file, not from repeating oneself (2026-09-13).** Every
+    task that wanted something other than the ECA default needed the user to name a model to the commander,
+    and the expensive models had no guard beyond doctrine. The owner's preferences now live in
+    `~/.config/fleet/models.json` (`fleet-policy.el`, pure: parse, describe, mechanical answers): a
+    `default`, `rules` written as natural language — `when` a description of the work applies, `use` this
+    selection or best-first chain, optionally `why` — an `ask_first` list and a `fallback` map. The split
+    is deliberate: routing is judgement, so the *commander* does it (the boot message shows the rules; it
+    passes the applicable rule's `model`/`variant` and a one-line `model_reason`, required on
+    `fleet_task_create`), while everything mechanical stays in *Fleet* (`fleet-core-select-operator-model`:
+    explicit model, else policy default, else defcustoms; catalog validation; the approval gate; the
+    fallback). A first cut had Fleet resolve the model from a commander-rated `difficulty` enum; it was
+    dropped because the enum forced a rich judgement into three subjective buckets and then re-expanded
+    them, where a rule in the owner's words ("simple bug fix whose root cause is understood") lets the
+    commander apply the actual criterion and is what the owner would write anyway. Determinism is traded
+    for auditability: the `task-created` event records model, `model-source` and the commander's stated
+    reason verbatim. A model the policy asks about — a listed one, or every model while `ask_first`
+    contains `*`, which is how an owner shapes the rules by seeing each proposal — is refused with
+    `model-needs-approval` until the commander passes `owner_approved`, for rule picks, the default and
+    user-named models alike, so the flag is always a statement about what the user said, never the
+    commander's judgement. The fallback extends note 15: a *barren* turn (no text, no tool call; an error is now
+    allowed) is resent once as is when it reported no error, then once on the policy fallback for the
+    runtime's current model — `fleet-eca-select-model` re-pins the live chat (ECA takes the model per
+    `chat/prompt`, so history is kept), the runtime row takes the new effective model, a `model-fallback`
+    event records it, and the task's own request is untouched so the next operator starts on the preferred
+    model. A barren fallback turn finishes the message and surfaces `turn-empty` or, with error text,
+    `turn-failed` (actionable for operators). Turns that did work before failing are still never resent.
+    Owner model choices stay in owner configuration: no policy file means no policy, and a malformed one
+    refuses task creation and is reported in the commander's boot message rather than silently ignored.

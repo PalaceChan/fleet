@@ -116,6 +116,20 @@ existing-server procedure. Source work, native acceptance, and live activation a
     cancellation and retry eligibility. No undocumented chat-cache dependency or assumed absence of effects.
   - **Start:** `lisp/fleet-eca.el`, supervisor feedback; [provider observations](docs/known-gaps.md#verification-and-diagnostics).
   - **Gate:** new native/error probes require opt-in; investigate this before wording-specific D07.
+  - **Note:** the owner model-policy fallback (design note 19) already turns a *barren* errored turn into a
+    `model-fallback` then `turn-failed`; F11 is about errors on turns that did work, and about errors that
+    reach Fleet only as `server-message`.
+
+- [x] **F12 — Owner model policy: natural-language routing rules for the commander, ask-first gate, provider fallback** · **medium**
+  - **Payoff:** the user stops naming models per task; expensive models (or, while shaping the rules with
+    `"*"`, every task) need one explicit yes; an OpenRouter outage moves a runtime to the configured
+    fallback instead of stalling.
+  - **Done:** `lisp/fleet-policy.el` + `~/.config/fleet/models.json`; `fleet_task_create` requires
+    `model_reason` and accepts `owner_approved`; `model-needs-approval` refusal echoing the proposal;
+    `model-fallback`/`turn-failed` events; boot-message policy section; commander doctrine. Tests:
+    `fleet-policy-tests.el`, `fleet-core-operator-model-follows-owner-policy-and-ask-first-gate`,
+    `fleet-supervisor-barren-turn-falls-back-to-the-policy-model-once`. Native acceptance pending (V02).
+  - **Evidence:** [design note 19](docs/design.md), [fallback limits](docs/known-gaps.md#verification-and-diagnostics).
 
 ## 3. Native verification — early, explicit, bounded
 
@@ -132,7 +146,8 @@ Use [the native checklist](docs/testing.md#pending-native-acceptance) and retain
 - [ ] **V02 — Record native acceptance for user-visible contracts** · **medium**
   - **Payoff:** establish that fake-backed improvements work through the installed frontend/server.
   - **Done:** record scoped results for sent/queued/held feedback; bounded empty-turn retry/give-up;
-    requested/wire/runtime/chat/dashboard model/variant agreement; artifact-name canonicalization; and
+    requested/wire/runtime/chat/dashboard model/variant agreement; policy-chosen model, ask-first refusal
+    and fallback re-pin in the same chat (F12); artifact-name canonicalization; and
     dirty/untracked/ignored-path cleanup refusal. Separate observed, failed and skipped coverage.
   - **Start:** [pending native acceptance](docs/testing.md#pending-native-acceptance).
   - **Coordinate:** test affected contracts after their relevant fixes; partial coverage does not close V02.
@@ -246,5 +261,7 @@ reprioritizes it. An easy label is not a reason to implement unsolicited UI or p
   empty-fleet retirement; do not infer authorization to discard work.
 - Suspended-but-done tasks are verified/finalized, not rerun to clear suspension. The workflow is already
   documented in [commander doctrine](prompts/commander.md); it is not a request to weaken teardown.
-- Do not introduce a sandbox/backend redesign, global trust changes, model selection automation, version
-  gates, undocumented cache parsing, or private session-log migration as incidental "cleanup."
+- Do not introduce a sandbox/backend redesign, global trust changes, version gates, undocumented cache
+  parsing, or private session-log migration as incidental "cleanup." Model selection is owner policy
+  (F12): extend it through `~/.config/fleet/models.json`, never through product defaults or commander
+  discretion.

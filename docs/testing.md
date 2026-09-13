@@ -148,6 +148,11 @@ next real owner fleet as a test fixture. The following remain unverified as nati
 - **Empty turns:** an accepted turn with no observed output/tool/error gets at most one automatic resend;
   a second empty result records `turn-empty` and surfaces give-up. Stopped, unknown, or observed-work turns
   are not retried by this path. Missing notifications still limit what this proves about side effects.
+- **Model policy and fallback:** with a policy file present, a task created without `model` runs on the
+  rule's model and the boot message shows the policy; an ask-first model is refused until `owner_approved`;
+  after a barren turn on a model with a configured fallback, the runtime's next `chat/prompt` carries the
+  fallback model in the same chat (history kept), the runtime row and dashboard agree, and a `model-fallback`
+  event exists. Use wire evidence, not undocumented ECA chat-cache parsing.
 - **Artifact roots:** a bare name that exists under the task's `workspace/` is stored as `workspace/<name>`
   and verifies using the same root. Existing deterministic tests are not native operator acceptance.
 - **Cleanup refusal:** a change task with dirty/untracked/ignored paths is refused with the affected paths

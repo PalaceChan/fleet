@@ -505,6 +505,17 @@ chat would get, and that is what the dashboard shows."
                                           (fleet-eca-conn-default-variant conn)))
   (fleet-eca--sync-selection conn))
 
+(defun fleet-eca-select-model (conn model variant)
+  "Move CONN's later prompts to MODEL/VARIANT (nil VARIANT: the server default).
+ECA takes the model per `chat/prompt', so a live chat can change model
+between turns and keep its history; the supervisor uses this for the
+owner's provider-failure fallback.  Never called mid-turn.  Returns the
+pinned (MODEL . VARIANT)."
+  (fleet-eca--pin-selection conn model variant)
+  (fleet-eca--transcript conn (list :role "fleet" :kind "select-model"
+                                    :model (fleet-eca-conn-model conn) :variant (fleet-eca-conn-variant conn)))
+  (cons (fleet-eca-conn-model conn) (fleet-eca-conn-variant conn)))
+
 (defun fleet-eca--sync-selection (conn)
   "Make CONN's chat buffer show the pinned model/variant in its mode-line."
   (when-let* ((buf (fleet-eca-conn-buffer conn)) ((buffer-live-p buf)))
@@ -700,18 +711,24 @@ Assistant text and tool activity count; reasoning alone does not."
   (when-let* ((turn (fleet-eca-conn-turn conn)))
     (plist-put turn :output t)))
 
-(defun fleet-eca--turn-empty-p (turn)
-  "Non-nil when TURN was an accepted prompt that produced nothing at all.
-No assistant text, no tool call, no error text, and not stopped by a
-human: the model (or the provider) returned an empty completion.  Such a
-turn had no side effects, so resending its message is safe.  Observed
-on openclaw 2026-09-11: a 5.7 s turn with zero content and no usage that
-Fleet recorded as a normal finish."
+(defun fleet-eca--turn-barren-p (turn)
+  "Non-nil when TURN was an accepted prompt that did no observable work.
+No assistant text and no tool call, not stopped by a human: whether the
+provider answered with nothing or with an error, the turn had no side
+effects, so its message can be resent, on this model or the owner's
+fallback, without repeating anything."
   (and (plist-get turn :accepted)
        (not (plist-get turn :unattributed))
        (not (eq (plist-get turn :state) 'stopping))
-       (not (plist-get turn :error-text))
        (not (plist-get turn :output))))
+
+(defun fleet-eca--turn-empty-p (turn)
+  "Non-nil when TURN was barren and reported no error either.
+The model (or the provider) returned an empty completion; a same-model
+resend is worth one try.  Observed on openclaw 2026-09-11: a 5.7 s turn
+with zero content and no usage that Fleet recorded as a normal finish."
+  (and (fleet-eca--turn-barren-p turn)
+       (not (plist-get turn :error-text))))
 
 (defun fleet-eca--turn-terminal (conn source)
   "Consume the terminal activity event from SOURCE exactly once.
@@ -739,6 +756,7 @@ not be charged to the new turn."
                        :error-text (plist-get turn :error-text)
                        :usage (plist-get turn :usage)
                        :empty (fleet-eca--turn-empty-p turn)
+                       :barren (fleet-eca--turn-barren-p turn)
                        :submitted-at (plist-get turn :submitted-at))
       ;; A terminal event before the response resolves nothing yet; the
       ;; response (accepted/error) still arrives and is handled normally.
