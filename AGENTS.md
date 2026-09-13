@@ -1,50 +1,74 @@
-# AGENTS.md — contributor instructions for Fleet
+# AGENTS.md — working on Fleet
 
-These are instructions for people and agents *working on Fleet itself*. Runtime commander/operator doctrine
-lives in `prompts/` and is deliberately separate.
+Read this file first; follow the task links below rather than loading every document. These instructions
+are for contributors. `prompts/` contains **runtime payloads** for commanders/operators, not contributor
+instructions. Fleet is single-host, ECA-native orchestration in Emacs with local, unsandboxed execution.
 
-**Fleet's scope:** Single-host, ECA-native orchestration in Emacs with local, unsandboxed execution.
+## Workflow and authority
 
-**Architecture:** Emacs is the sole state writer and scheduler. `fleet-store.el` owns transactional facts and
-projections; `fleet-eca.el` alone knows ECA internals; `fleet-runtime.el` alone owns service lifetime;
-`fleet-git.el` alone authorizes workspace cleanup. The dashboard and Python bridge call these owners rather
-than duplicating policy.
+- Keep the primary clone on clean `master`. Prefer a short-lived worktree for concurrent or substantial
+  work: `~/development/.worktrees/fleet--<context>`. Check status and existing worktrees first; never
+  branch from a dirty tree or touch another task's worktree. Remove your worktree once merged or abandoned.
+- A review is read-only unless changes are requested. Source work does not authorize live fleet operations,
+  installation/reload, owner configuration changes, credential access, or external actions. Confirm scope
+  before paid/native probes. Merge, push, and activation are separate steps, never concurrent shortcuts;
+  follow the owner's authorization for each.
+- Use **`emacsclient` only** for Emacs operations. Never run tests, unload Fleet, or exit functions in the
+  owner's editing server. ERT needs an already-running, explicitly identified disposable test server; if
+  none is available, report the skipped check. Current Make targets launch/exit Emacs and are not suitable
+  under this rule; see [testing](docs/testing.md). Never kill servers by a broad process-name pattern.
+- Owner trust/model choices belong in owner configuration, not product defaults. Never globally enable
+  trust or change ordinary non-Fleet ECA sessions. Never use real user fleets as test fixtures.
+- Keep credentials, private reports, transcripts, database copies, and session checkpoints out of Git.
+  Engineering knowledge belongs here; history belongs in Git; private owner follow-ups stay with the owner.
+  Runtime handoff belongs in `commander/context.md`, never the owner's Org checkpoint.
 
-**Safety invariants:** Never infer execution death from a missing chat buffer, model completion from an idle
-spinner, successful delivery from a write to a pipe, or preservation from a status string. Never respawn until
-the predecessor's owned local execution is proven stopped. Never remove an adopted worktree or adopted branch.
-Never delete uncommitted work through normal teardown. Never merge or discard by inference.
+## Non-negotiable design constraints
 
-**Durability:** Events are durable before delivery is attempted. Reading is not acknowledgment. Mutation
-requests have idempotency keys. Long operations persist intent and advance through retryable steps; no database
-transaction spans a subprocess or network wait. Unknown results remain unknown and are not retried blindly.
+These are constraints to preserve, **not a certification that every path implements them**. Consult
+[known gaps](docs/known-gaps.md) before relying on recovery, authority, or unattended execution.
 
-**Concurrency:** Exactly one supervisor owns a state root. Normal Emacs daemons are supported. Every
-asynchronous callback carries owner, fleet, task, runtime, and operation identity as applicable. State
-callbacks cannot mutate a replacement. UI actions and agent tools use the same admission checks.
+- **Owners:** Emacs alone writes state and schedules. `fleet-store.el` owns transactional facts/projections;
+  `fleet-eca.el` alone knows ECA internals; `fleet-runtime.el` owns service lifetime; `fleet-git.el` authorizes
+  workspace cleanup. Dashboard and bridge call the owners rather than copying their policy.
+- **Evidence:** A missing buffer is not execution death; an idle spinner is not completion; a pipe write is
+  not delivery; a status string is not preservation. Never respawn without predecessor stop proof. Never
+  remove adopted worktrees/branches, delete uncommitted work through normal teardown, or infer merge/discard
+  authority. Human task close and empty-fleet retirement remain distinct, explicit operations.
+- **Durability:** Persist events before delivery; reading is not acknowledgment. Key mutations for
+  idempotency; preserve intent across retryable long operations. No transaction spans a subprocess/network
+  wait. Unknown results stay unknown, not blindly retried. Existing status/wait exceptions are documented.
+- **Concurrency:** One supervisor per state root, including ordinary Emacs daemons. Async callbacks carry
+  owner/fleet/task/runtime/operation identities as applicable and cannot mutate replacements. UI and tools
+  share admission checks. Keep filters/timers short; prefer async waits (the current RPC evidence wait is a
+  tracked exception, not a pattern to copy).
+- **ECA:** Record private assumptions and redacted wire evidence in
+  [integration notes](docs/eca-compatibility.md). Add private symbols to
+  `fleet-eca-required-functions`/`-variables` and regression tests. Do not pin/gate ECA version numbers or
+  read undocumented ECA caches as a recovery/API contract.
+- **Code:** Lexical binding, explicit identities, stable `fleet-error` codes, argv rather than shell strings,
+  display-width-aware UI. Prefer deleting special cases to adding knobs. Comments explain constraints.
 
-**Emacs:** Use `emacsclient` for development operations against an existing server; never run tests or exit
-functions in the user's working Emacs. A dedicated test server is allowed and required for integration tests
-(`make test` starts one). Keep process filters, timers, and interactive callbacks short; all Git, systemd, and
-RPC waits are asynchronous.
+## Read next by task
 
-**ECA:** Keep private API assumptions listed in `docs/eca-compatibility.md` and covered by recorded/fake-server
-tests; any new private symbol goes into `fleet-eca-required-functions`/`-variables` so `fleet-doctor` names
-it if a frontend upgrade removes it. Never pin or gate on ECA version numbers — upgrades must be
-friction-free; troubleshoot breakage when it actually happens. Do not read undocumented ECA caches. Do not
-change ordinary non-Fleet ECA sessions or globally enable trust.
+| Work | Start here |
+|---|---|
+| First contribution, module/test ownership, change impact | [Development](docs/development.md) |
+| Install, commands, keys, normal park/resume | [Quickstart](quickstart.md) |
+| State inspection, delivery/stop trouble, backup/restore | [Recovery](docs/recovery.md) |
+| Bug selection, implementation limitations, deferred work | [Known gaps](docs/known-gaps.md) |
+| Verification commands and native acceptance boundaries | [Testing](docs/testing.md) |
+| ECA protocol/frontend drift | [Integration notes](docs/eca-compatibility.md) |
+| Architecture, invariants, rationale | [Design](docs/design.md) — reference, not a greenfield task list |
+| Runtime doctrine or MCP interface | [Prompts](prompts/), [tool schema](schema/tools-v1.json), [bridge](bridge/README.md) |
 
-**Code quality:** Prefer deleting special cases to adding knobs. Comments explain constraints, not code history
-or the next line. Use lexical binding, explicit identities, structured errors (`fleet-error` with a stable
-code), argument vectors rather than shell command strings, and display-width-aware formatting. No generated
-state, credentials, or transcripts in Git.
+## Finish a change
 
-**Verification:** Add regression tests at the owning layer for every bug. Run ERT and Python tests using an
-isolated temporary data/runtime/worktree root (`fleet-test-with-roots`); real model/provider calls are opt-in
-(`FLEET_TEST_NATIVE=1`). Test crash boundaries and refusal paths, not only success. Verify dashboard keymaps in
-a live test buffer after reload. Never operate on real user fleets as a test fixture.
-
-**Docs:** Keep `quickstart.md` accurate for user-facing commands, keys, failure meanings, and restart/park
-workflows. `prompts/` is the single canonical source of agent doctrine. Do not duplicate the same doctrine in
-generated skills and several unrelated files. `docs/design.md` is the maintained design; update it when
-behavior deliberately diverges from it and say why.
+Add regression tests at the owning layer, including refusal/crash boundaries. Use isolated roots and report
+exact checks, skips, and unresolved risks; a Make exit status alone is not ERT evidence. Verify dashboard
+keys in a disposable live test buffer when changing UI behavior. Update the relevant guide/schema/doctrine
+with behavior changes; do not append landing narratives or duplicate runtime doctrine in generated skills.
+Source/tests establish implemented behavior; design expresses intent; neither overrides authorization or
+safety constraints. When they disagree, fix or record the discrepancy in `docs/known-gaps.md` rather than
+silently treating the design as implemented. Keep this root entry small; add local instructions only for a
+real subtree-specific rule, not to duplicate this file.

@@ -9,13 +9,14 @@ systemd-owned process; **Emacs** owns state, scheduling and the dashboard.
 1. An ordinary native ECA chat already works in your Emacs (`M-x eca`), `systemctl --user` works, and Emacs
    was built with SQLite (`(sqlite-available-p)` → `t`). Python 3.11+ at `/usr/bin/python3`, Git.
 2. Fleet lives at `~/development/fleet`. Load it from the source tree with `use-package` (no copy or
-   symlink under `~/.emacs.d/lisp`; edits are live after a reload). `C-c h f` is your binding, Fleet never
-   installs one itself:
+   symlink under `~/.emacs.d/lisp`). Source edits do not replace loaded definitions; stale `.elc` files and
+   cached schemas need attention. See [change loading](docs/development.md#source-changes-are-not-live-changes)
+   before an owner-approved reload/restart. `C-c h f` is your binding, Fleet never installs one itself:
 
    ```elisp
    (use-package fleet
+     :if (file-directory-p (expand-file-name "~/development/fleet/lisp"))
      :load-path "~/development/fleet/lisp"
-     :after eca
      :commands (fleet-dashboard fleet-new fleet-park fleet-task-close fleet-destroy fleet-doctor
                 fleet-watch-start fleet-watch-stop
                 fleet-commander-stop fleet-commander-replace fleet-commander-set-model
@@ -57,7 +58,11 @@ systemd-owned process; **Emacs** owns state, scheduling and the dashboard.
    `"chat": {"defaultTrust": true}` in `~/.config/eca/config.json` makes every new chat trusted. The
    commander is not woken for approvals; the dashboard shows them as attention.
 4. `M-x fleet-doctor`. Fix anything marked `✗` (ECA not loadable/found, missing SQLite/systemd, unsafe
-   runtime dir, stale owner) before unattended work.
+   runtime dir, stale owner). It is a partial dependency check, not a full compatibility/safety preflight;
+   store diagnostics require an already-open store. Read [known gaps](docs/known-gaps.md) before unattended
+   use. `fleet-dashboard` is **not passive inspection**: it starts Fleet, may acquire ownership/migrate the
+   store, and reconciles recorded runtimes. Use [offline inspection](docs/recovery.md) when startup is not
+   authorized. The lazy command declaration above intentionally does not wait for ECA to be opened first.
 
 ## M-x reference
 
@@ -69,12 +74,12 @@ systemd-owned process; **Emacs** owns state, scheduling and the dashboard.
 | `fleet-task-close` | Archive one task on your authority, without the teardown evidence gate: failed or abandoned work, or done work that can no longer be verified. Needs a reason, a stopped operator (park first) and, for change tasks, an already-removed worktree. Nothing is deleted. |
 | `fleet-destroy` | Retire an **empty** fleet (all tasks archived): archive-move its artifact tree and release the name. No dashboard key, no commander tool. |
 | `fleet-watch-start` / `fleet-watch-stop` | Enable / pause automatic commander wakes for a fleet. Pausing never stops processes or event recording. |
-| `fleet-doctor` | Compatibility, ownership, storage, runtime and unit evidence. Read-only. |
+| `fleet-doctor` | Partial dependency probe; ownership/storage/runtime diagnostics when the store is already open. Does not start the supervisor. |
 | `fleet-commander-stop` | Verified stop of the commander only; operators keep running. |
 | `fleet-commander-replace` | Verified stop, then a fresh commander booted with the durable snapshot and `commander/context.md`. Offers to change the commander's model/variant first. |
 | `fleet-commander-set-model` | Pin the model/variant the fleet's *next* commander launches with (RET keeps the current one). A live commander is untouched. |
 | `fleet-install-mcp` | Optional: merge the single Fleet MCP entry into ECA's global config with backup + diff. |
-| `fleet-timeline` / `fleet-stats` | Retrospective telemetry for a fleet: chronological events with event→wake/ack latencies; counts of tool calls and refusals, turn durations, tokens/cost, operation durations. Read-only; works on archived fleets too. |
+| `fleet-timeline` / `fleet-stats` | Read-only telemetry from an already-open store, including archived fleets: event→wake/ack latencies, tools/refusals, turns, tokens/cost, operations. Refuses if Fleet is not started; use offline SQL when startup is not authorized. |
 
 ## Dashboard keys
 
@@ -142,8 +147,10 @@ briefs, reports, transcripts and events remain under `~/.local/share/fleet/`.
 `M-x fleet-dashboard` reconciles every recorded runtime against its exact systemd unit first (stopping
 survivors, suspending their tasks). `M-x fleet-new` → existing name → *resume*. A fresh commander boots with
 a deterministic recovery summary and your handoff note and may start unfinished tasks under their existing
-scope. Done tasks are verified/finalized, not rerun. Held messages are re-queued; attempted/unknown ones are
-reconciled, never resent.
+scope. Done tasks are verified/finalized, not rerun. Held messages change back to queued, but operator
+messages can still target the stopped predecessor; do not assume delivery to a replacement. Attempted/unknown
+messages must not be blindly resent. Startup journal recovery also has known gaps when no runtimes need
+reconciliation or a retask was interrupted. Review [recovery](docs/recovery.md) before relying on either path.
 
 ## Commander context exhausted
 
@@ -166,7 +173,13 @@ Tear down every task (or `M-x fleet-task-close` the ones teardown will never adm
 - **adopted workspace retained**: by design; dirty content is reported as left in place.
 - **`ECA` marked ✗ in fleet-doctor**: the frontend lost a symbol Fleet uses (or eca is not installed); see
   `docs/eca-compatibility.md`; read-only inspection still works.
-- **outstanding permission/question**: shown as `decision`; answer it in the chat (`RET`) or with `s`.
+- **native permission/question**: permissions need the native chat approval controls; `s` can answer a
+  pending native question but cannot approve a tool. A Fleet `needs-decision` record is separate; chat text
+  does not resolve it. Human-authority decision resolution has no public command yet; see
+  [interface limitations](docs/known-gaps.md#authority-and-interface).
+- **empty reply**: Fleet retries an observed empty turn once, then records `turn-empty` and reports give-up
+  in the minibuffer. Rephrase or investigate rather than repeatedly resending. Missing output or usage does
+  not establish zero external effects or zero cost.
 - **stale owner**: another Emacs (or a crashed one) holds `owner.json`. If that Emacs is truly gone, Fleet
   takes over automatically (pid + start time are checked); if it is alive, act there.
 - **external jobs**: park lists them; Fleet cannot stop what it did not start.
@@ -175,4 +188,5 @@ Evidence lives in `~/.local/share/fleet/fleets/<uuid>/…/runs/<runtime>/{launch
 the `operations` table (`fleet-doctor`), and `journalctl --user -u fleet-eca-<uuid>.service`. For a
 retrospective, `M-x fleet-timeline` and `M-x fleet-stats` read the durable record: every tool call (with
 outcome/refusal code and duration), every finished turn (duration, tokens, cost), and wake/ack latencies per
-actionable event. The raw tables are plain SQLite (`sqlite3 ~/.local/share/fleet/fleet.sqlite3`).
+actionable event (missing provider usage can undercount cost). For nonactivating reads use SQLite read-only
+mode on the configured data root; see [recovery](docs/recovery.md), including archived artifact locations.

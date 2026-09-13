@@ -1,13 +1,21 @@
 # Fleet at home — native ECA technical design
 
-**Status:** Final design specification. The implementation must verify its installed ECA frontend/server pair
-as its first milestone.
+**Status:** Maintained design intent and rationale, originating in the initial build specification.
+Fleet is implemented; this is not a greenfield assignment or a certification that every required contract
+is satisfied. The numbered milestones/checklists below retain design acceptance criteria, not current TODOs.
 
 **Target:** `/home/avelazqu/development/fleet`; Arch Linux; native ECA within Emacs; local, unsandboxed
 execution; GitHub for normal pull-request workflows.
 
-**Deliverable:** Build a new Fleet repository from this standalone specification, including its Emacs package,
-agent interface, tests, `AGENTS.md`, and `quickstart.md`.
+**How to use this reference:** Start with [AGENTS.md](../AGENTS.md) and [development](development.md).
+Implementation/tests establish current behavior; [known gaps](known-gaps.md) records unresolved divergences
+and verification work. [Quickstart](../quickstart.md), [recovery](recovery.md), and [testing](testing.md)
+own current procedures. The embedded contributor/doctrine/quickstart sections below are design requirements;
+the shipped root instructions and `prompts/` are canonical. No external Org checkpoint is needed.
+
+**Navigate by concern:** §3 paths; §5 ECA; §6 service/owner lifetime; §7 state/transactions; §8 tools;
+§9 delivery; §10 lifecycle; §11 Git cleanup; §12 dashboard; §13 doctrine; §15 acceptance; §17 maintenance.
+Implementation notes at the end explain subsequent deliberate changes; consult known gaps for unclosed ones.
 
 ## 1. Product contract
 
@@ -130,7 +138,8 @@ Emacs daemon can own Fleet; ownership is explicit and exclusive.
 
 - Arch Linux with a working user systemd manager and cgroup v2.
 - Emacs 29.1 or later, built with SQLite support; test Emacs 30 as the initial reference.
-- Installed native ECA Emacs package and executable; pin the tested pair in a compatibility manifest.
+- Installed native ECA Emacs package and executable; record reference versions with protocol evidence,
+  but never pin or gate on version numbers. Check dependencies/symbols and investigate actual breakage.
 - Git; Python 3.11+ for a small stdio MCP/socket bridge and test support.
 - ECA credentials and provider configuration already working in an ordinary manual native ECA chat.
 
@@ -1875,9 +1884,10 @@ runtime operations terminate. Credential files are ephemeral and removed/revoked
 
 ### Upgrade/uninstall
 
-On frontend/server version change, doctor invalidates the prior compatibility result and reruns non-model
-checks; real acceptance is an explicit action. No auto-updating the native executable during worker startup. A
-known absolute custom native command avoids asynchronous package-download behavior during launch.
+Doctor performs operational dependency checks, not version-pair certification or a version allowlist.
+Native acceptance is an explicit, authorized action when investigating behavioral drift; routine version
+upgrades do not require a new compatibility gate. No auto-updating the native executable during worker
+startup. A known absolute custom native command avoids package-download behavior during launch.
 
 Uninstall first parks all fleets and settles their launch barriers, then explicitly stops every retained
 commander with `fleet-commander-stop`. Prove all owned runtimes stopped before closing the owner RPC/releasing
@@ -1932,8 +1942,9 @@ answering it.
 
 ## 20. Implementation handoff and evidence record
 
-Start with milestone 0, then follow section 16. Use this document as the repository's initial `docs/design.md`
-and implement the specified behavior in the new repository.
+The initial build followed milestone 0 and section 16. For ongoing work use the
+[development guide](development.md), the owning regression suite, and the
+[open verification register](known-gaps.md); do not repeat the initial build sequence or paid probes by default.
 
 Resolve installed ECA source with `locate-library` through `emacsclient`. Useful API-discovery anchors
 include:

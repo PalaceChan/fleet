@@ -27,10 +27,15 @@ unlinked.
 
 ## `rpc OPERATION [JSON]`
 
-One request to the socket with the credential from the environment; prints the result or error. Diagnostic
-only.
+One request to the socket with the credential from the environment; prints the result or error.
+**Mutation-capable:** this forwards any operation permitted by the credential, not just diagnostics.
+Do not use it for passive monitoring unless the selected operation is read-only; never acknowledge events
+or send health-check messages as an inspection side effect. See [recovery](../docs/recovery.md).
 
 ## Socket protocol
 
-See `schema/rpc-v1.json`: one JSON object per line, `protocolVersion: 1`, `id`, `operation`, optional
-`credential`, optional `idempotencyKey`, `params`. Requests over 1 MiB are refused explicitly.
+See [`schema/rpc-v1.json`](../schema/rpc-v1.json): one JSON object per line, `protocolVersion: 1`, `id`,
+`operation`, `credential`, optional `idempotencyKey`, `params`. The implementation authenticates
+`tools_list` too, despite the schema's credential exception. The MCP reader enforces the 1 MiB bound on
+complete lines, not incrementally on unterminated input. Interface/role/bounds discrepancies are tracked
+in [known gaps](../docs/known-gaps.md#authority-and-interface); do not treat schema prose as enforcement.

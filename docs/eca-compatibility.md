@@ -3,10 +3,17 @@
 Fleet's adapter (`lisp/fleet-eca.el`) is the only module that knows ECA internals. This document records the
 wire behavior and private frontend symbols it relies on, so that a future ECA change that breaks Fleet can be
 diagnosed quickly. ECA versions are **not** pinned: `fleet-eca-probe` (surfaced by `M-x fleet-doctor`) only
-checks that the eca-emacs package loads, a native executable is found, and every symbol listed below is still
-defined. If one of those fails, autonomous dispatch is refused with `unsupported-eca-contract`; read-only
-dashboard, artifact viewing, doctor, and `systemctl --user stop` of Fleet units keep working. Routine ECA
-upgrades need no change here; if an upgrade misbehaves, compare against the facts below and the traces.
+checks that the eca-emacs package loads, executable discovery succeeds, and the symbols in
+`fleet-eca-required-functions`/`-variables` are defined. This is a partial probe: the required lists do not
+cover every private symbol used, and an explicit unusable executable is not reliably rejected. See
+[diagnostic gaps](known-gaps.md#verification-and-diagnostics). An explicit unsupported result refuses
+launch with `unsupported-eca-contract`. Artifact inspection and independent systemd stopping do not require
+a working ECA adapter. Dashboard startup itself can acquire ownership and reconcile runtimes; it is not an
+offline read. Routine ECA upgrades need no version gate; investigate actual breakage against source/traces.
+
+**Before unattended use:** operator `disabledTools` enforcement and several native acceptance checks remain
+unverified. Read [testing](testing.md#pending-native-acceptance) and [known gaps](known-gaps.md), including
+tool-level authority limitations; a role-filtered tool list is not proof that every handler enforces scope.
 
 ## Reference environment for the recorded facts
 
@@ -107,8 +114,10 @@ and on `unload-feature`. Non-Fleet buffers/sessions take the original code path 
   OpenRouter 400 (context length) that ECA 0.159.0 also did **not** report as a `system` `Error:` text on
   the wire (it is kept as `prompt-error` in the server's chat record), so `:error-text` was null there too.
   Fleet now marks a turn `:empty` when it was accepted, not stopped by a human, and produced no text, tool
-  activity or error text; such a turn had no side effects, so the supervisor resends the message once and
-  surfaces the second failure instead of retrying further. Capturing 0.159's error reporting is still open.
+  activity or error text; the supervisor interprets this observed-empty signal as eligible for one resend
+  and surfaces the second failure instead of retrying further. It is not general proof of zero external
+  side effects when error/tool reporting itself may be incomplete. Capturing 0.159's error reporting is
+  still open; do not add an undocumented cache dependency to compensate.
 - **Admission feedback:** the chat's minibuffer report after RET used to read the connection's turn, which on
   a free lane is the just-dispatched message itself, so every send said "queued (operator busy)". The
   supervisor's sink now returns the durable message state and the report follows it (sent / queued / held).
@@ -122,9 +131,10 @@ and on `unload-feature`. Non-Fleet buffers/sessions take the original code path 
   must never cost the observer the rest of the chunk.
 - **Unverified:** whether `disabledTools` fully prevents `eca__spawn_agent` (and, for operators,
   `eca__ask_user`) on this server version. Until a trace confirms it, treat native subagent spawning inside
-  Fleet runtimes as possible; the bridge still binds authority to the runtime credential, so a child would
-  share its parent's scope (never more). Cheap check on the next operator: its `tool/serverUpdated` for the
-  `eca` server should not list `ask_user`, and the transcript should show no `ask_user` `toolCallRun`.
+  Fleet runtimes as possible; a child would inherit the parent's credential, not gain a separate authority
+  grant. Handler scope checks have [known gaps](known-gaps.md#authority-and-interface). On an authorized
+  operator run, inspect `tool/serverUpdated` for the `eca` server: neither `ask_user` nor `spawn_agent`
+  should be advertised. Mere absence of a call in one transcript does not prove exclusion.
 
 ## Stop evidence (systemd 260)
 
@@ -142,6 +152,9 @@ and on `unload-feature`. Non-Fleet buffers/sessions take the original code path 
 ## If an ECA upgrade breaks something
 
 1. `M-x fleet-doctor`: a missing private symbol is named on the `ECA` line (refusal is deliberate there).
-2. For behavioral drift with all symbols present, run `tests/fixtures/eca/probe.py
-   prompt|double|badmodel|stop|question` against the new server and diff against the recorded traces, then
-   `make test-native`.
+2. For behavioral drift with symbols present, inspect the adapter, installed frontend source and existing
+   redacted traces first. Only after explicit authorization, capture the relevant native shape with
+   `tests/fixtures/eca/probe.py` (`prompt|double|badmodel|stop|question`) and compare it with fixtures.
+   The script launches a server at top level: even importing it or trying an unsupported help invocation
+   is not passive. Paid/native acceptance must follow [testing](testing.md), not an automatic
+   `make test-native` invocation or a probe inside an active owner fleet.
