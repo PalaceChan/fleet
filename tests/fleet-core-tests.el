@@ -599,6 +599,76 @@ repo, or the change worktree; commander roots must cover the fleet dir."
           (should (equal (plist-get (fleet-store-get store "tasks" tid) :lifecycle) "archived"))
           (should (= 0 (fleet-store-scalar store "SELECT COUNT(*) FROM resource_claims WHERE task_id = ?" tid))))))))
 
+(ert-deftest fleet-core-close-archives-what-teardown-never-admits ()
+  "openclaw 2026-09-13: a failed task and unverifiable done tasks left a parked
+fleet unretirable.  A human close archives them; it never stops or deletes."
+  (fleet-test-with-fakes
+    (let* ((fid (fleet-core-test-fleet store "stale"))
+           (failed (plist-get (fleet-core-test-study store fid "failed1") :id))
+           (done (plist-get (fleet-core-test-study store fid "done1") :id))
+           (never (plist-get (fleet-core-test-study store fid "never-started") :id)))
+      (fleet-core-test-start store failed)
+      (fleet-core-test-start store done)
+      (fleet-core-task-status store :runtime-id (fleet-core-test-runtime store failed) :phase "failed" :detail "gave up")
+      ;; done, artifact registered but never verified => teardown refuses forever
+      (fleet-core-task-status store :runtime-id (fleet-core-test-runtime store done) :phase "done" :artifacts '((:kind "report" :rel-path "report.md")))
+      (fleet-test-should-fail 'deliverable-unverified (fleet-core-teardown-task store done))
+      ;; a reason is mandatory; a live operator is refused
+      (fleet-test-should-fail 'invalid-request (fleet-core-close-task store failed :reason " "))
+      (fleet-test-should-fail 'runtime-not-stopped (fleet-core-close-task store failed :reason "abandon"))
+      (should (equal (plist-get (fleet-store-get store "tasks" failed) :lifecycle) "active"))
+      ;; parked => operators stopped, tasks suspended => closable
+      (should (equal (plist-get (fleet-test-wait-op store (fleet-core-park-fleet store fid)) :state) "done"))
+      (fleet-test-should-fail 'fleet-not-empty (fleet-core-retire-fleet store fid))
+      (dolist (tid (list failed done never))
+        (let* ((task (fleet-store-get store "tasks" tid))
+               (r (fleet-core-close-task store tid :reason "project migrated; history stale" :expected-revision (plist-get task :entity-revision)))
+               (op (fleet-store-get store "operations" (plist-get r :operation-id)))
+               (after (fleet-store-get store "tasks" tid)))
+          (should (equal (plist-get op :state) "done"))
+          (should (equal (plist-get op :kind) "task-close"))
+          (should (equal (plist-get after :lifecycle) "archived"))
+          (should (string-match-p "closed: project migrated" (plist-get after :detail)))
+          (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE task_id = ? AND kind = 'task-closed'" tid)))
+          (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE task_id = ? AND kind = 'task-archived'" tid)))
+          (should (= 0 (fleet-store-scalar store "SELECT COUNT(*) FROM resource_claims WHERE task_id = ?" tid)))
+          ;; closing twice is refused; the archived row is untouched
+          (fleet-test-should-fail 'task-closed (fleet-core-close-task store tid :reason "again"))))
+      (let ((ev (fleet-store-unjson (plist-get (fleet-store-query1 store "SELECT payload FROM events WHERE task_id = ? AND kind = 'task-closed'" failed) :payload))))
+        (should (equal (plist-get ev :phase) "failed"))
+        (should (equal (plist-get ev :reason) "project migrated; history stale"))
+        (should-not (plist-get ev :verified)))
+      ;; files and runtimes retained; credentials revoked
+      (should (file-exists-p (expand-file-name "report.md" (fleet-core-task-dir store (fleet-store-get store "tasks" done)))))
+      (should (eql 1 (plist-get (fleet-store-get store "runtimes" (fleet-core-test-runtime store done)) :credential-revoked)))
+      ;; and the fleet is now retirable
+      (should (equal (plist-get (fleet-test-wait-op store (fleet-core-retire-fleet store fid)) :state) "done")))))
+
+(ert-deftest fleet-core-close-change-task-requires-the-worktree-gone ()
+  "Close never removes a worktree: present => refused (teardown's job); gone => archived, branch named."
+  (fleet-test-with-fakes
+    (let* ((repo (fleet-git-test-repo "proj3"))
+           (fid (fleet-core-test-fleet store "fl3"))
+           (tid (plist-get (fleet-core-create-task store fid :name "feat" :kind "change" :brief fleet-test-brief :repo repo :delivery "local-ready") :id)))
+      (fleet-core-test-start store tid)
+      (let* ((ws (plist-get (fleet-store-get store "tasks" tid) :workspace-path)))
+        (fleet-core-task-status store :runtime-id (fleet-core-test-runtime store tid) :phase "failed" :detail "could not finish")
+        (should (equal (plist-get (fleet-test-wait-op store (fleet-core-park-fleet store fid)) :state) "done"))
+        (let ((err (fleet-test-should-fail 'worktree-present (fleet-core-close-task store tid :reason "abandon"))))
+          (should (equal (plist-get (fleet-error-evidence err) :workspace) ws)))
+        (should (file-directory-p ws))
+        (should (equal (plist-get (fleet-store-get store "tasks" tid) :lifecycle) "suspended"))
+        ;; the human removed it by hand (as happened on openclaw): now closable
+        (fleet-git-test-git repo "worktree" "remove" "--force" ws)
+        (should-not (file-directory-p ws))
+        (fleet-core-close-task store tid :reason "abandoned; worktree removed by hand")
+        (let ((ev (fleet-store-unjson (plist-get (fleet-store-query1 store "SELECT payload FROM events WHERE task_id = ? AND kind = 'task-closed'" tid) :payload))))
+          (should (eq (plist-get ev :workspace-missing) t))
+          (should (equal (plist-get ev :branch-retained) "fleet/fl3/feat")))
+        (should (equal (plist-get (fleet-store-get store "tasks" tid) :lifecycle) "archived"))
+        ;; the branch is still there: close deleted nothing
+        (should (fleet-git-test-git repo "rev-parse" "--verify" "fleet/fl3/feat"))))))
+
 (ert-deftest fleet-core-retire-refuses-nonempty-then-archives ()
   (fleet-test-with-fakes
     (let* ((fid (fleet-core-test-fleet store "gone"))

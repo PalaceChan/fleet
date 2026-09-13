@@ -9,7 +9,7 @@
 ;;; Commentary:
 
 ;; Public commands: `fleet-new', `fleet-dashboard', `fleet-park',
-;; `fleet-destroy', `fleet-doctor', `fleet-watch-start', `fleet-watch-stop',
+;; `fleet-task-close', `fleet-destroy', `fleet-doctor', `fleet-watch-start', `fleet-watch-stop',
 ;; `fleet-commander-stop', `fleet-commander-replace', `fleet-commander-set-model',
 ;; `fleet-install-mcp'.
 ;; Requiring this file launches nothing.  See quickstart.md.
@@ -236,6 +236,45 @@ The prompt is skipped when no catalog is known yet (nothing to choose from)."
                                                (fleet-supervisor--changed)
                                                (message "Fleet %s: %s%s" name (plist-get op :state) (if (plist-get op :error) (format " — %s" (plist-get op :error)) ""))))
         (fleet-error (user-error "Destroy refused — %s" (fleet-error-string err)))))))
+
+(defun fleet--read-closable-task (store fleet)
+  "Read one of FLEET's tasks that `fleet-core-close-task' could admit."
+  (let* ((tasks (cl-remove-if
+                 (lambda (task)
+                   (let* ((rt-id (plist-get task :current-runtime-id))
+                          (rt (and rt-id (fleet-store-get store "runtimes" rt-id))))
+                     (or (member (plist-get task :lifecycle) '("draft" "closing"))
+                         (and rt (not (member (plist-get rt :lifecycle) '("stopped" "never-launched")))))))
+                 (fleet-store-tasks store (plist-get fleet :id))))
+         (labels (mapcar (lambda (task)
+                           (cons (format "%s  (%s, %s/%s)" (plist-get task :name) (plist-get task :kind)
+                                         (plist-get task :lifecycle) (or (plist-get task :phase) "none"))
+                                 task))
+                         tasks)))
+    (unless labels (user-error "Fleet %s has no task with a stopped operator to close" (plist-get fleet :name)))
+    (cdr (assoc (completing-read "Close task: " labels nil t) labels))))
+
+;;;###autoload
+(defun fleet-task-close (name)
+  "Close a task of fleet NAME on your authority: archive it without teardown.
+For failed or abandoned work, or done work whose deliverables can no longer be
+verified.  Nothing is stopped or deleted: the operator must already be
+stopped and a change task's worktree must already be gone."
+  (interactive (list (fleet--read-fleet "Close a task in fleet: ")))
+  (fleet--require-owner)
+  (let* ((store (fleet--store))
+         (fleet (fleet-core-fleet store name))
+         (task (fleet--read-closable-task store fleet))
+         (reason (string-trim (read-string (format "Reason for closing %s: " (plist-get task :name))))))
+    (when (string-empty-p reason) (user-error "A reason is required"))
+    (when (yes-or-no-p (format "Close %s (%s/%s) without teardown? Files, branch and history stay; the task is archived. "
+                               (plist-get task :name) (plist-get task :lifecycle) (or (plist-get task :phase) "none")))
+      (condition-case err
+          (progn
+            (fleet-core-close-task store (plist-get task :id) :reason reason :expected-revision (plist-get task :entity-revision))
+            (fleet-supervisor--changed (plist-get fleet :id))
+            (message "Fleet %s: task %s closed and archived" name (plist-get task :name)))
+        (fleet-error (user-error "Close refused — %s" (fleet-error-string err)))))))
 
 ;;;###autoload
 (defun fleet-watch-start (name)

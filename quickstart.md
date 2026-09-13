@@ -16,7 +16,7 @@ systemd-owned process; **Emacs** owns state, scheduling and the dashboard.
    (use-package fleet
      :load-path "~/development/fleet/lisp"
      :after eca
-     :commands (fleet-dashboard fleet-new fleet-park fleet-destroy fleet-doctor
+     :commands (fleet-dashboard fleet-new fleet-park fleet-task-close fleet-destroy fleet-doctor
                 fleet-watch-start fleet-watch-stop
                 fleet-commander-stop fleet-commander-replace fleet-commander-set-model
                 fleet-install-mcp)
@@ -66,6 +66,7 @@ systemd-owned process; **Emacs** owns state, scheduling and the dashboard.
 | `fleet-dashboard` | Show the live grouped view; starts Fleet in this Emacs (owner, or read-only if another Emacs owns the data root). `C-c h f` if you bound it. |
 | `fleet-new` | Create a named fleet and its commander, or resume/visit an existing one. A live commander is visited, never duplicated. A parked fleet asks *resume* vs *visit only*. |
 | `fleet-park` | Stop every operator with verified service evidence; keep the commander and all durable work. Confirms with live-operator/tool/external-job counts. |
+| `fleet-task-close` | Archive one task on your authority, without the teardown evidence gate: failed or abandoned work, or done work that can no longer be verified. Needs a reason, a stopped operator (park first) and, for change tasks, an already-removed worktree. Nothing is deleted. |
 | `fleet-destroy` | Retire an **empty** fleet (all tasks archived): archive-move its artifact tree and release the name. No dashboard key, no commander tool. |
 | `fleet-watch-start` / `fleet-watch-stop` | Enable / pause automatic commander wakes for a fleet. Pausing never stops processes or event recording. |
 | `fleet-doctor` | Compatibility, ownership, storage, runtime and unit evidence. Read-only. |
@@ -151,7 +152,8 @@ commander by renaming a buffer.
 
 ## Mistyped name / finished fleet
 
-Tear down or close every task, then `M-x fleet-destroy`. The name is reusable after the archive commits.
+Tear down every task (or `M-x fleet-task-close` the ones teardown will never admit), then
+`M-x fleet-destroy`. The name is reusable after the archive commits.
 
 ## Troubleshooting
 

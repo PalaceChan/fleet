@@ -38,7 +38,7 @@ Load straight from the source tree with `use-package` (no copy into `~/.emacs.d/
 (use-package fleet
   :load-path "~/development/fleet/lisp"
   :after eca
-  :commands (fleet-dashboard fleet-new fleet-park fleet-destroy fleet-doctor
+  :commands (fleet-dashboard fleet-new fleet-park fleet-task-close fleet-destroy fleet-doctor
              fleet-watch-start fleet-watch-stop
              fleet-commander-stop fleet-commander-replace fleet-commander-set-model
              fleet-install-mcp fleet-timeline fleet-stats)

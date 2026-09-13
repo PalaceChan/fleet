@@ -2094,3 +2094,13 @@ Each was driven by evidence from the installed pair (see `docs/eca-compatibility
     `change.md` telling them to run it before `done` and to run Python tests with
     `PYTHONDONTWRITEBYTECODE=1`. An allow-list of "generated" files was rejected: it would be the first hole
     in the cleanup contract, needs maintaining, and saves one `rm` in the rare case doctrine was ignored.
+18. **Humans can close a task without teardown (openclaw, 2026-09-13).** §10.5 always said failed or
+    abandoned work needs "a human close decision", but only teardown existed, and teardown admits done +
+    verified only. A fleet with one failed task and four done tasks whose artifacts could no longer be
+    verified (old path rule, a worktree removed by hand) was therefore unretirable and sat red on the
+    dashboard forever. `M-x fleet-task-close` (`fleet-core-close-task`) archives a task on human authority
+    with a required reason: it releases claims, revokes credentials and records `task-closed` +
+    `task-archived` like teardown's last step, and nothing else. It refuses while the operator is not
+    proven stopped (park first) and, for a change task, while the worktree still exists — removal stays
+    teardown's job because only teardown proves the branch preserved first. No dashboard key, no commander
+    tool: closing is the human overriding the evidence gate, so it is an explicit M-x with a typed reason.

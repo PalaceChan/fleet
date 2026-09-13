@@ -1404,6 +1404,50 @@ Used for the operation journal and refusal output."
       (fleet-core-operation-finish store op :state "done" :evidence summary))
     (when callback (funcall callback (fleet-store-get store "operations" op)))))
 
+;;;; Operation: human close (design §10.5, implementation note 18)
+
+(cl-defun fleet-core-close-task (store task-id &key reason expected-revision action-id)
+  "Archive TASK-ID on human authority without the teardown evidence gate.
+For work that teardown will never admit: failed or abandoned tasks, and done
+tasks whose deliverables can no longer be verified.  Nothing is deleted or
+stopped: the task's runtime must already be stopped and, for a change task,
+its worktree must already be gone (a present worktree goes through teardown,
+which is the only path that proves the branch preserved before removal).
+REASON is required and recorded.  Returns (:operation-id ... :task-id ...)."
+  (unless (and (stringp reason) (not (string-blank-p reason)))
+    (fleet-fail 'invalid-request "A close reason is required"))
+  (fleet-store-with-action store fleet-core-actor-human action-id (list :op "task-close" :task-id task-id :reason reason :expected-revision expected-revision)
+    (let* ((task (fleet-core-task store task-id))
+           (rt-id (plist-get task :current-runtime-id))
+           (rt (and rt-id (fleet-store-get store "runtimes" rt-id)))
+           (ws (plist-get task :workspace-path)))
+      (fleet-store-check-revision store "tasks" task-id expected-revision)
+      (when (member (plist-get task :lifecycle) '("archived" "draft" "closing"))
+        (fleet-fail 'task-closed "Task cannot be closed" :lifecycle (plist-get task :lifecycle)))
+      (when (fleet-core-task-operation-running-p store task-id)
+        (fleet-fail 'operation-in-progress "Another lifecycle operation is running"))
+      (when (and rt (not (member (plist-get rt :lifecycle) '("stopped" "never-launched"))))
+        (fleet-fail 'runtime-not-stopped "Close needs a stopped operator; park the fleet or tear the task down"
+                    :runtime-id rt-id :lifecycle (plist-get rt :lifecycle)))
+      (when (and (equal (plist-get task :kind) "change") ws (file-directory-p ws))
+        (fleet-fail 'worktree-present "Close never removes a worktree; use teardown, or remove it yourself once its work is preserved"
+                    :workspace ws))
+      (let* ((summary (list :closed-by fleet-core-actor-human :reason reason
+                            :lifecycle (plist-get task :lifecycle) :phase (plist-get task :phase)
+                            :verified (and (fleet-core-task-verified-p store task) t)
+                            :workspace-missing (and ws (not (file-directory-p ws)) t)
+                            :branch-retained (and (equal (plist-get task :kind) "change") (plist-get task :branch))))
+             (op (fleet-core-operation-begin store "task-close" :fleet-id (plist-get task :fleet-id) :task-id task-id
+                                             :expected-revision (plist-get task :entity-revision) :intent summary)))
+        (fleet-store-transaction store
+          (fleet-store-append-event store :fleet-id (plist-get task :fleet-id) :task-id task-id :kind "task-closed" :operation-id op :payload summary)
+          (fleet-store-update store "tasks" task-id (fleet-store-touch (list :lifecycle "archived" :detail (format "closed: %s" reason) :detail-at (fleet-paths-now))))
+          (fleet-store-exec store "DELETE FROM resource_claims WHERE task_id = ?" task-id)
+          (fleet-store-exec store "UPDATE runtimes SET credential_revoked = 1 WHERE task_id = ?" task-id)
+          (fleet-store-append-event store :fleet-id (plist-get task :fleet-id) :task-id task-id :kind "task-archived" :operation-id op :payload summary)
+          (fleet-core-operation-finish store op :state "done" :evidence summary))
+        (list :operation-id op :task-id task-id)))))
+
 ;;;; Operation: fleet retire (design §10.6)
 
 (cl-defun fleet-core-retire-fleet (store fleet-id &key callback)
