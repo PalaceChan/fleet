@@ -1,12 +1,15 @@
-# Known gaps and verification work
+# Known gaps — source evidence
 
-[Contributor rules](../AGENTS.md) · [Development](development.md) · [Testing](testing.md) · [Recovery](recovery.md)
+[TODO backlog](../TODO.md) · [Contributor rules](../AGENTS.md) · [Development](development.md) ·
+[Testing](testing.md) · [Recovery](recovery.md)
 
-This is the maintained register of unresolved engineering work, not a session log or a claim about live
-fleets. Initial source review: `7ad225b` (September 13, 2026). **Source-review findings below were not
-reproduced in a runtime during the documentation audit.** Earlier native observations are separately labeled.
-No implementation fixes are implied by documenting them. Recheck the named functions/tests before acting;
-close entries with a regression/acceptance result, remove obsolete details, and keep history in Git.
+This is supporting source evidence and technical closure detail, not a second task queue, session log or
+claim about live fleets. [TODO.md](../TODO.md) owns priorities, difficulty, task status, dependencies and
+acceptance; its items link to the findings below. Initial source review: `7ad225b` (September 13, 2026).
+**Source-review findings below were not reproduced in a runtime during the documentation audit.** Earlier
+native observations are separately labeled. No implementation fixes are implied by documenting them.
+Recheck the named functions/tests before acting; after verified completion, update the corresponding TODO
+item and qualify/remove obsolete findings here in the same change. Keep history in Git.
 
 Safety-sensitive work comes first, but this list is not authorization to change scope, run paid probes,
 operate owner fleets, or alter credentials. Preserve design invariants when fixing gaps; do not weaken the

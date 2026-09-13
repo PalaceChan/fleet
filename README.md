@@ -8,7 +8,8 @@ state, scheduling and the dashboard. Zero-token supervision — no model is ever
 
 - **Operate Fleet:** [`quickstart.md`](quickstart.md) (install, commands, normal workflows)
 - **Work on Fleet:** [`AGENTS.md`](AGENTS.md), then [`docs/development.md`](docs/development.md) as needed
-- **Before unattended/recovery work:** [`docs/known-gaps.md`](docs/known-gaps.md) (limitations and closure criteria)
+- **Choose work:** [`TODO.md`](TODO.md) (priorities, difficulty, task status and acceptance criteria)
+- **Before unattended/recovery work:** [`docs/known-gaps.md`](docs/known-gaps.md) (source evidence and technical limitations)
 - Architecture and rationale: [`docs/design.md`](docs/design.md) — intended contracts, not proof of implementation
 - ECA wire evidence and private integration: [`docs/eca-compatibility.md`](docs/eca-compatibility.md)
 - Recovery: [`docs/recovery.md`](docs/recovery.md) · Verification: [`docs/testing.md`](docs/testing.md)

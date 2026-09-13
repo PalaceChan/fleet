@@ -1,11 +1,12 @@
 # Development
 
-[Contributor rules](../AGENTS.md) · [Testing](testing.md) · [Known gaps](known-gaps.md)
+[Contributor rules](../AGENTS.md) · [TODO backlog](../TODO.md) · [Testing](testing.md) · [Source evidence](known-gaps.md)
 
 ## Start a session
 
-1. Read root `AGENTS.md`; inspect Git status, branch, diff, and worktrees. Check relevant open items in
-   `known-gaps.md`. Do not infer running Fleet state or loaded Lisp from the checkout's HEAD.
+1. Read root `AGENTS.md`; inspect Git status, branch, diff, and worktrees. Choose a bounded authorized set
+   of IDs from [TODO.md](../TODO.md), then read the linked evidence in `known-gaps.md`. The backlog is not
+   blanket execution permission. Do not infer running Fleet state or loaded Lisp from the checkout's HEAD.
 2. Use a short-lived worktree from clean `master` for substantial work; keep unrelated worktrees intact.
    Repo-relative commands assume that worktree is the working directory. Nothing requires an Org checkpoint,
    old chat transcript, specific model, or remembered process ID to start contributing.
@@ -13,8 +14,9 @@
    for rationale, not as an instruction to reimplement the project. Inspect actual schema fields before SQL.
 4. Make the smallest change and an owning-layer regression test. Follow the approved verification route in
    `testing.md`; report omitted checks honestly. Review the diff for unrelated edits and private state.
-5. Update current guidance in place. Close a known gap only with evidence against its closure criteria.
-   Keep session chronology in commits, not in another checkpoint document. Merging source does not load it.
+5. Update current guidance in place. `TODO.md` owns task status, priority and difficulty; check off an item
+   only with acceptance evidence and qualify/remove the obsolete finding in `known-gaps.md` in the same
+   change. Keep session chronology in commits, not a checkpoint document. Merging source does not load it.
 
 ## Module and change-impact map
 

@@ -56,7 +56,8 @@ These are constraints to preserve, **not a certification that every path impleme
 | First contribution, module/test ownership, change impact | [Development](docs/development.md) |
 | Install, commands, keys, normal park/resume | [Quickstart](quickstart.md) |
 | State inspection, delivery/stop trouble, backup/restore | [Recovery](docs/recovery.md) |
-| Bug selection, implementation limitations, deferred work | [Known gaps](docs/known-gaps.md) |
+| Priorities, difficulty, task status, deferred work | [TODO backlog](TODO.md) — choose a bounded authorized scope |
+| Source evidence and technical limitations behind tasks | [Known gaps](docs/known-gaps.md) |
 | Verification commands and native acceptance boundaries | [Testing](docs/testing.md) |
 | ECA protocol/frontend drift | [Integration notes](docs/eca-compatibility.md) |
 | Architecture, invariants, rationale | [Design](docs/design.md) — reference, not a greenfield task list |
@@ -69,6 +70,8 @@ exact checks, skips, and unresolved risks; a Make exit status alone is not ERT e
 keys in a disposable live test buffer when changing UI behavior. Update the relevant guide/schema/doctrine
 with behavior changes; do not append landing narratives or duplicate runtime doctrine in generated skills.
 Source/tests establish implemented behavior; design expresses intent; neither overrides authorization or
-safety constraints. When they disagree, fix or record the discrepancy in `docs/known-gaps.md` rather than
-silently treating the design as implemented. Keep this root entry small; add local instructions only for a
+safety constraints. When they disagree, record source evidence in `docs/known-gaps.md` and actionable work
+in `TODO.md` rather than silently treating the design as implemented. `TODO.md` owns priority/status; close
+items only with acceptance evidence and update obsolete gap descriptions in the same change.
+Keep this root entry small; add local instructions only for a
 real subtree-specific rule, not to duplicate this file.

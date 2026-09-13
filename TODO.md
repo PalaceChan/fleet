@@ -1,0 +1,250 @@
+# Fleet TODO
+
+[Contributor rules](AGENTS.md) · [Module/test map](docs/development.md) ·
+[Source evidence](docs/known-gaps.md) · [Verification procedures](docs/testing.md)
+
+This is the **canonical prioritized backlog**: task IDs, status, difficulty, dependencies and acceptance.
+`docs/known-gaps.md` holds supporting source findings and technical closure details, not a second task queue.
+Initial triage is based on the source review at `7ad225b`; findings were not all reproduced at runtime.
+Recheck current code before implementing. Unverified native behavior is not automatically a broken feature.
+
+## How to use this backlog
+
+- **easy:** localized change with focused regression tests and little design uncertainty.
+- **medium:** bounded work across several functions/interfaces, with integration or protocol tests.
+- **hard:** crash recovery, asynchronous identities, uncertain outcomes, or substantial design/investigation.
+- Difficulty includes tests/docs, is not a time estimate, and is independent of priority. Revise it when
+  investigation changes the scope. Stable IDs are for task briefs; do not renumber existing items.
+- An unchecked box means **not completed**, not permission to execute. Deferred items need an owner decision.
+  Agree on a bounded set of IDs before dispatching; this file does not authorize the whole backlog, live
+  operations, merges, pushes, provider spending, credential access, or changes to owner preferences.
+- Follow `AGENTS.md`: isolated worktrees, existing disposable test server via `emacsclient`, never tests in
+  the editing server or real owner fleets. Native/systemd/provider probes need explicit opt-in and no active
+  owner fleets. Do not weaken evidence gates or silently resend unknown work to make a test pass.
+- Check a box only after the stated acceptance and linked technical criteria are met. Record a concise
+  completion commit/test reference, update the relevant guides and remove or qualify the obsolete finding
+  in `docs/known-gaps.md`. Keep session narratives and private incident data out of this file.
+
+**Suggested sequence:** F01 → small foundation fixes F02–F05 → messaging/recovery F06–F10, with F11 for
+error clarity. Human decisions (F08) can proceed independently of message reconciliation, subject to file
+ownership. V01 is an early authorized verification task; run relevant V02 checks alongside behavior changes,
+not only after everything else. F14 should accompany any expansion of automatic mutation retries.
+
+Parallelize only genuinely independent ownership areas. Several IDs touch `fleet-core.el`,
+`fleet-supervisor.el` or `fleet-rpc.el`; give those files one owner or sequence the patches. F01 is the
+recommended verification foundation, not a reason to skip tests: until fixed, use the documented safe
+existing-server procedure. Source work, native acceptance, and live activation are separate stages.
+
+## 1. Correctness foundation — do first
+
+- [ ] **F01 — Make verification reliable and isolated** · **medium**
+  - **Payoff:** trust test results and avoid reusing or terminating another worktree's test server.
+  - **Done:** client/ERT failures and empty test selections fail the command; existing disposable-server
+    selection is explicit; no implicit Emacs launch/shutdown or socket collision; native opt-in is set in
+    the actual server environment. Test failure propagation and concurrent invocation/refusal paths.
+  - **Start:** `Makefile`, `tests/fleet-test-runner.el`; [harness evidence](docs/known-gaps.md#verification-and-diagnostics).
+
+- [ ] **F02 — Fail closed on unreadable cgroup evidence** · **easy**
+  - **Payoff:** ambiguous process evidence cannot authorize replacement or workspace removal.
+  - **Done:** distinguish verified absence/empty from unreadable, malformed and failed reads; the latter
+    stay unknown. Cover stop verdicts and downstream refusal, including permission/read failures.
+  - **Start:** `lisp/fleet-runtime.el`; [evidence gaps](docs/known-gaps.md#fail-closed-evidence).
+
+- [ ] **F03 — Refuse ambiguous or corrupt owner metadata** · **medium**
+  - **Payoff:** a damaged descriptor is not silently treated as permission to acquire ownership.
+  - **Done:** malformed/partial descriptors fail closed; valid live/dead/released-owner behavior is covered;
+    document an explicit owner-authorized recovery path without guessed identity or lock deletion.
+  - **Start:** `lisp/fleet-supervisor.el`; [evidence gaps](docs/known-gaps.md#fail-closed-evidence).
+
+- [ ] **F04 — Enforce external-job ownership on updates** · **easy**
+  - **Payoff:** one operator cannot corrupt another task's external-job record by supplying its ID.
+  - **Done:** check existing job ownership at the core mutation boundary; test allowed same-task updates
+    and forbidden cross-task/cross-fleet updates with no partial mutation or misleading success event.
+  - **Start:** `lisp/fleet-core.el`, RPC tests; [authority gap](docs/known-gaps.md#authority-and-interface).
+
+- [ ] **F05 — Complete actionable doctor preflight checks** · **medium**
+  - **Payoff:** broken dependencies produce useful diagnostics instead of mysterious launch failures.
+  - **Done:** required private symbols cover actual use; invalid executable and unavailable user manager
+    are detected; cold-store versus already-open-store coverage is explicit and inspection does not
+    secretly start/acquire Fleet. Test each refusal; retain no-version-pinning policy.
+  - **Start:** `lisp/fleet-eca.el`, `lisp/fleet.el`; [doctor evidence](docs/known-gaps.md#verification-and-diagnostics).
+
+## 2. Highest daily workflow payoff
+
+- [ ] **F06 — Detect and safely reconcile stuck message lanes** · **hard**
+  - **Payoff:** eliminate unexplained "sent something, nothing happens, lane stays busy" situations.
+  - **Done:** detect persisted in-flight messages with no matching adapter turn; surface the exact reason
+    and next action; define identity-safe reconciliation for each evidence class. Test crashes, late
+    callbacks and replacement runtimes. Unknown delivery stays uncertain, never blindly resent.
+  - **Start:** `lisp/fleet-supervisor.el`, adapter seams, doctor; [delivery evidence](docs/known-gaps.md#recovery-and-delivery).
+  - **Coordinate:** F07 shares message/identity policy; F05 owns generic doctor changes.
+
+- [ ] **F07 — Reconcile held messages across operator replacement** · **hard**
+  - **Payoff:** park/resume no longer leaves retained text silently addressed to a stopped predecessor.
+  - **Done:** define handling for never-attempted, attempted, unknown and obsolete-brief messages; rebind
+    only when justified, otherwise surface reconciliation. Test replacement/runtime/brief identities,
+    delivery feedback and crash boundaries without replaying uncertain actions.
+  - **Start:** `lisp/fleet-core.el`, `lisp/fleet-supervisor.el`; [held-message evidence](docs/known-gaps.md#recovery-and-delivery).
+  - **Coordinate:** settle shared reconciliation rules with F06 before parallel implementation.
+
+- [ ] **F08 — Complete human-authority decision resolution** · **medium**
+  - **Payoff:** operator asks → human answers → durable resolution → operator receives answer → attention clears.
+  - **Done:** provide an explicit human-authorized command/UI; retain commander refusal for human-only
+    decisions; record resolution separately from delivery and truthfully expose a delivery failure.
+    Test duplicate/stale answers, permissions and end-to-end attention state. Chat text alone is not resolution.
+  - **Start:** `lisp/fleet-core.el`, `lisp/fleet.el`, dashboard/RPC; [decision gap](docs/known-gaps.md#authority-and-interface).
+
+- [ ] **F09 — Recover operation journals even with no live runtimes** · **medium**
+  - **Payoff:** startup cannot leave interrupted operations "running" merely because nothing needs stopping.
+  - **Done:** reach operation recovery independently of runtime count; cover the actual startup path with
+    zero nonterminal runtimes and interrupted brief publication/retirement, including repeated recovery.
+    Existing direct-helper tests alone are insufficient.
+  - **Start:** `lisp/fleet-core.el`, core startup tests; [recovery gap](docs/known-gaps.md#recovery-and-delivery).
+
+- [ ] **F10 — Make interrupted retask intent recoverable** · **hard**
+  - **Payoff:** changing direction and restarting Emacs do not strand a task between old and new briefs.
+  - **Done:** persist enough replacement intent before stopping; implement explicit recovery or actionable
+    refusal across stop, brief publication and restart boundaries. Preserve claims/workspace, revisions
+    and predecessor stop proof; test repeated recovery and late callbacks.
+  - **Start:** `lisp/fleet-core.el`, operation persistence; [retask gap](docs/known-gaps.md#recovery-and-delivery).
+  - **Depends on:** F09's startup recovery integration; coordinate operation dispatch changes.
+
+- [ ] **F11 — Surface the actual cause of failed or apparently empty turns** · **medium**
+  - **Payoff:** show an actionable provider/turn error instead of silence or misleading success.
+  - **Done:** obtain redacted supported wire evidence, correlate relevant errors with the right in-flight
+    turn, and distinguish errors from observed-empty completion. Test notification ordering, late errors,
+    cancellation and retry eligibility. No undocumented chat-cache dependency or assumed absence of effects.
+  - **Start:** `lisp/fleet-eca.el`, supervisor feedback; [provider observations](docs/known-gaps.md#verification-and-diagnostics).
+  - **Gate:** new native/error probes require opt-in; investigate this before wording-specific D07.
+
+## 3. Native verification — early, explicit, bounded
+
+These are acceptance tasks, not pre-approved paid probes or an instruction to use owner fleets as fixtures.
+Use [the native checklist](docs/testing.md#pending-native-acceptance) and retain redacted evidence with scope.
+
+- [ ] **V01 — Verify native operator tool exclusion** · **medium**
+  - **Payoff:** operators cannot accidentally bypass commander-mediated questions or spawn hidden subagents.
+  - **Done:** an authorized disposable operator's advertised native tool list excludes both `ask_user` and
+    `spawn_agent`; the commander's human question channel remains available. Overlay construction and
+    absence of calls are not proof. If enforcement fails, record a blocker/follow-up, not a passing check.
+  - **Start:** `docs/eca-compatibility.md`, native fixtures/tests; [exclusion evidence](docs/known-gaps.md#verification-and-diagnostics).
+
+- [ ] **V02 — Record native acceptance for user-visible contracts** · **medium**
+  - **Payoff:** establish that fake-backed improvements work through the installed frontend/server.
+  - **Done:** record scoped results for sent/queued/held feedback; bounded empty-turn retry/give-up;
+    requested/wire/runtime/chat/dashboard model/variant agreement; artifact-name canonicalization; and
+    dirty/untracked/ignored-path cleanup refusal. Separate observed, failed and skipped coverage.
+  - **Start:** [pending native acceptance](docs/testing.md#pending-native-acceptance).
+  - **Coordinate:** test affected contracts after their relevant fixes; partial coverage does not close V02.
+
+## 4. Situational correctness and robustness
+
+Prioritize when the affected workflow is used; these are not merely cosmetic. F14 is especially relevant
+before adding automatic retries, and F12 before migration/restore or frequent live-code maintenance.
+
+- [ ] **F12 — Provide a verified shutdown/backup/restore maintenance path** · **hard**
+  - **Payoff:** maintenance has one reviewed procedure rather than ad hoc store/lease/RPC surgery.
+  - **Done:** account for all fleets/runtimes, pending operations, callbacks, external artifact writers,
+    RPC connections, lease and DB handles; protect backup destinations and capture matching DB/artifacts
+    with WAL awareness. Rehearse failures and restore only in isolated roots; document separate activation.
+  - **Start:** supervisor/core/store/RPC; [maintenance evidence](docs/known-gaps.md#recovery-and-delivery), [recovery](docs/recovery.md).
+  - **Depends on:** F09/F10 for interrupted-operation handling; review F02/F03 before relying on stop/owner proof.
+
+- [ ] **F13 — Make context inputs effective and brief validation truthful** · **medium**
+  - **Payoff:** an operator does not silently miss context that task creation appeared to supply.
+  - **Done:** either wire supported `context_paths` into boot context/authorized roots with containment
+    tests, or explicitly reject/remove unsupported inputs through a reviewed contract change. Distinguish
+    enforceable field checks from semantic brief guidance; do not silently broaden permissions.
+  - **Start:** core task creation/boot, tool schema/doctrine; [scope evidence](docs/known-gaps.md#authority-and-interface).
+
+- [ ] **F14 — Make status and wait submissions safely idempotent** · **medium**
+  - **Payoff:** uncertain tool results do not produce duplicate decisions/events on retries.
+  - **Done:** align status/wait schema, handlers and doctrine on a replay-safe contract; test repeated
+    identical submissions, conflicting reuse and uncertain results. Plan compatibility for existing callers;
+    do not simply tell an agent to send keys rejected by the current schema.
+  - **Start:** core/RPC/store, `schema/tools-v1.json`; [idempotency evidence](docs/known-gaps.md#authority-and-interface).
+
+- [ ] **F15 — Align the advertised tool interface with actual behavior** · **medium**
+  - **Payoff:** agents can rely on supported inputs, outputs and authority rather than discovering silent gaps.
+  - **Done:** resolve ignored `completion_report`, overpromised snapshot fields, validation depth/bounds and
+    authenticated `tools_list` documentation. Decide/test operator visibility of same-fleet operations.
+    Prefer narrowing unsupported promises over gratuitous features; add request/result/refusal contract tests.
+  - **Start:** `lisp/fleet-rpc.el`, schemas, bridge and doctrine; [interface evidence](docs/known-gaps.md#authority-and-interface).
+  - **Coordinate:** F04 owns job mutation checks; F13/F14 own their inputs; split this item into bounded
+    sub-tasks before dispatch if needed, retaining this ID as the parent rather than mixing unrelated changes.
+
+- [ ] **F16 — Remove the re-entrant synchronous cleanup-evidence wait** · **hard**
+  - **Payoff:** slow Git evidence does not create surprising RPC/event-loop behavior as concurrency grows.
+  - **Done:** implement deferred responses, or obtain an explicit reviewed bounded design; cover concurrent
+    requests, timeout, cancellation, disconnect and stale owner/runtime callbacks without blocking policy
+    in a process filter. Preserve single-pass cleanup evidence semantics.
+  - **Start:** `fleet-rpc--sync-evidence` and Git callbacks; [wait evidence](docs/known-gaps.md#authority-and-interface).
+
+- [ ] **F17 — Bound unterminated bridge input incrementally** · **easy**
+  - **Payoff:** malformed input cannot grow buffers without reaching the advertised line-size check.
+  - **Done:** enforce the bound as chunks arrive, before a newline; test split frames, oversized
+    unterminated input and normal framed requests with explicit error/termination behavior.
+  - **Start:** `bridge/fleet_bridge.py`, `tests/test_bridge.py`; [framing evidence](docs/known-gaps.md#authority-and-interface).
+
+## 5. Deferred or optional — owner selection required
+
+These are remembered possibilities, not assignments. Preserve the existing deferral unless the owner
+reprioritizes it. An easy label is not a reason to implement unsolicited UI or policy changes.
+
+- [ ] **D01 — Add native-approval notification/salience** · **medium**
+  - Existing dashboard attention is present; additional notification was explicitly deferred.
+  - **Done if selected:** agree on the attention/message behavior, test transitions and deduplication,
+    and avoid notification noise or commander/automatic approval authority.
+  - **Evidence:** [deferred UI](docs/known-gaps.md#optional-or-deferred-work).
+
+- [ ] **D02 — Give empty-turn give-up durable dashboard attention** · **easy**
+  - Add visibility beyond the current event/minibuffer message only if desired.
+  - **Done if selected:** attention appears and clears from truthful state, without a self-waking failure
+    loop; cover rendering and action semantics. Coordinate with F11, not an independent error model.
+  - **Evidence:** [deferred UI](docs/known-gaps.md#optional-or-deferred-work).
+
+- [ ] **D03 — Add a human retask command** · **medium**
+  - Convenience: core/RPC retask already exists. Prefer finishing F08's missing decision path first.
+  - **Done if selected:** reuse normal admission, corrective brief/new-scope rules and async results;
+    test command/UI refusal and success. Do not add a force-restart shortcut; finish F10 recovery first.
+  - **Evidence:** [retask option](docs/known-gaps.md#optional-or-deferred-work).
+
+- [ ] **D04 — Support explicit remote and integration-target selection** · **medium**
+  - Useful when actual repositories need more than the existing selection rules; not a default expansion.
+  - **Done if selected:** agree on create/retask/adopt/reuse semantics, persist and validate selections,
+    and test multi-remote/default-branch cases plus preservation gates. A brief alone cannot override settings.
+  - **Evidence:** [delivery parameter limits](docs/known-gaps.md#authority-and-interface).
+
+- [ ] **D05 — Display unknown usage separately from zero** · **easy**
+  - A small optional clarity improvement; missing usage does not prove a free turn.
+  - **Done if selected:** retain missing-versus-zero semantics in projections/display; test absent, explicit
+    zero and reported usage without fabricating costs. Escalate scope if persistence needs a migration.
+  - **Evidence:** [usage observation](docs/known-gaps.md#verification-and-diagnostics).
+
+- [ ] **D06 — Improve provider usage accounting** · **medium**
+  - Lower priority unless accurate per-turn accounting is needed; D05 can stand alone.
+  - **Done if selected:** capture authorized/redacted usage shapes, test cumulative-to-delta behavior and
+    missing/out-of-order notifications, and document remaining undercount rather than claiming full accuracy.
+  - **Evidence:** [usage observation](docs/known-gaps.md#verification-and-diagnostics).
+
+- [ ] **D07 — Investigate prompt-specific empty completions** · **hard**
+  - Cause remains unproven and could be upstream; prioritize F11 error evidence first.
+  - **Done if selected:** agree on a bounded investigation/budget, preserve a minimal redacted reproducer,
+    and report supported findings, inconclusive limits and any upstream follow-up. Do not promise a Fleet
+    fix, invent a wording blacklist, or retry paid probes indefinitely.
+  - **Evidence:** [empty-completion observation](docs/known-gaps.md#verification-and-diagnostics).
+
+- [ ] **D08 — Evaluate study-task deny rules** · **hard**
+  - An unapproved design idea, not an existing filesystem sandbox or a commitment to build one.
+  - **Done if selected:** first produce a bounded design/decision on desired enforcement and limitations;
+    any implementation needs separate scope and must not misrepresent same-UID execution as isolation.
+  - **Evidence:** [study policy option](docs/known-gaps.md#optional-or-deferred-work).
+
+## Not TODOs — preserve these decisions
+
+- Automatic task-close inside `fleet-destroy` was rejected. Keep explicit human close separate from
+  empty-fleet retirement; do not infer authorization to discard work.
+- Suspended-but-done tasks are verified/finalized, not rerun to clear suspension. The workflow is already
+  documented in [commander doctrine](prompts/commander.md); it is not a request to weaken teardown.
+- Do not introduce a sandbox/backend redesign, global trust changes, model selection automation, version
+  gates, undocumented cache parsing, or private session-log migration as incidental "cleanup."
