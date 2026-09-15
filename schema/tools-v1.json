@@ -1,16 +1,16 @@
 {
   "version": 1,
-  "notes": "Fleet MCP tools. `roles` lists which runtime roles see the tool. Every mutation takes idempotency_key (a fresh UUID per logical action; reuse it with identical arguments to retry).",
+  "notes": "Fleet MCP tools. `roles` lists which effective runtime roles see the tool: `commander` (root fleet), `lieutenant` (a fleet with a parent; docs/lieutenants.md), `operator`. Every mutation takes idempotency_key (a fresh UUID per logical action; reuse it with identical arguments to retry).",
   "tools": [
     {
       "name": "fleet_snapshot",
-      "roles": ["commander", "operator"],
+      "roles": ["commander", "lieutenant", "operator"],
       "description": "Coherent snapshot of your fleet (commander) or your own task (operator): lifecycle, phases, runtimes, pending operations, artifacts, open decisions, attention items, and the snapshot revision.",
       "inputSchema": {"type": "object", "properties": {"task_id": {"type": "string", "description": "Optional task id to scope the snapshot (commander only)."}}, "additionalProperties": false}
     },
     {
       "name": "fleet_task_create",
-      "roles": ["commander"],
+      "roles": ["commander", "lieutenant"],
       "description": "Create a ready task from a complete brief. Validates name grammar, kind, brief completeness, repository, dependencies (same fleet, no cycles) and resource claims. A named resource already held by an unarchived task is refused (resource-claimed, with the holder): retask that task instead of creating a replacement. You route the operator's model under the owner's policy rules from your boot message: pass the model/variant of the rule that applies (or the user's choice), omit model for the policy default, and always state model_reason. Where the owner wants to be asked first (a listed model, or every model while ask_first holds \"*\"), creation is refused (model-needs-approval) until you have proposed model and reason to the user and pass owner_approved. Returns the task with model, variant and model_source, or a structured refusal.",
       "inputSchema": {
         "type": "object",
@@ -39,19 +39,19 @@
     },
     {
       "name": "fleet_task_start",
-      "roles": ["commander"],
+      "roles": ["commander", "lieutenant"],
       "description": "Start a ready or suspended task. Returns an operation id; completion arrives as an event (do not poll).",
       "inputSchema": {"type": "object", "required": ["idempotency_key", "task_id"], "properties": {"idempotency_key": {"type": "string"}, "task_id": {"type": "string"}, "expected_revision": {"type": "integer"}}, "additionalProperties": false}
     },
     {
       "name": "fleet_task_retask",
-      "roles": ["commander"],
+      "roles": ["commander", "lieutenant"],
       "description": "Give a suspended/failed/blocked/done task new durable scope (a new brief revision) and make it ready to start again. If the task's operator runtime is still live but idle, Fleet stops it first and returns an operation id; completion arrives as a task-retasked event (do not poll), then call fleet_task_start. A runtime mid-turn is refused (runtime-busy): wait for its status event. Done tasks require non-empty new scope. Named resource claims stay with the task, so retask rather than create a replacement. Optional model/variant change what the next operator of this task runs on (workspace, brief history and progress.md carry over); pass them only when the user asked for a model or variant change, and an empty brief is fine when only that changes. An ask-first model needs owner_approved, as at creation.",
       "inputSchema": {"type": "object", "required": ["idempotency_key", "task_id", "brief"], "properties": {"idempotency_key": {"type": "string"}, "task_id": {"type": "string"}, "brief": {"type": "string", "description": "New scope text; may be empty when only model/variant change on a task that is not done."}, "note": {"type": "string"}, "expected_revision": {"type": "integer"}, "model": {"type": "string", "description": "Exact ECA model id from the catalog for the next operator, or \"default\" to return to the owner's default. Only on the user's request."}, "variant": {"type": "string", "description": "Variant for the next operator (e.g. low/medium/high/xhigh/max where supported), or \"default\". Only on the user's request."}, "owner_approved": {"type": "boolean", "description": "True only after the user agreed to (or named) the ask-first model."}}, "additionalProperties": false}
     },
     {
       "name": "fleet_message_send",
-      "roles": ["commander"],
+      "roles": ["commander", "lieutenant"],
       "description": "Queue a message to an operator's chat. Records queued/accepted/rejected/delivery-unknown truthfully; never a terminal fact about the task.",
       "inputSchema": {"type": "object", "required": ["idempotency_key", "task_id", "text"], "properties": {"idempotency_key": {"type": "string"}, "task_id": {"type": "string"}, "text": {"type": "string"}}, "additionalProperties": false}
     },
@@ -74,19 +74,19 @@
     },
     {
       "name": "fleet_artifact_register",
-      "roles": ["commander", "operator"],
+      "roles": ["commander", "lieutenant", "operator"],
       "description": "Register a named deliverable: a file or non-empty directory by rel_path, or an external URL/ref. rel_path is relative to your task directory (where report.md and progress.md live); the prefix workspace/ denotes your workspace wherever it is (tasks/<id>/workspace for study and ops tasks, the Git worktree for change tasks). The path must already exist; a bare name found only in the workspace is stored as workspace/<name>. Directories are verified by a digest over their whole tree. Not automatically verified.",
       "inputSchema": {"type": "object", "required": ["idempotency_key", "kind"], "properties": {"idempotency_key": {"type": "string"}, "task_id": {"type": "string", "description": "Commander only; operators register on their own task."}, "kind": {"type": "string"}, "rel_path": {"type": "string", "description": "Relative to the task directory; workspace/... for files in the workspace. Must exist."}, "external_ref": {"type": "string"}, "description": {"type": "string"}, "expected_identity": {"type": "string", "description": "Commit OID or digest."}}, "additionalProperties": false}
     },
     {
       "name": "fleet_artifact_verify",
-      "roles": ["commander"],
+      "roles": ["commander", "lieutenant"],
       "description": "Record verification (accepted or rejected) of an artifact against the task's current brief revision and the artifact's current content digest (file bytes, or the tree of a directory). Include criteria, evidence and limitations.",
       "inputSchema": {"type": "object", "required": ["idempotency_key", "artifact_id", "accepted", "criteria", "evidence"], "properties": {"idempotency_key": {"type": "string"}, "artifact_id": {"type": "string"}, "accepted": {"type": "boolean"}, "criteria": {"type": "string"}, "evidence": {"type": "string"}, "limitations": {"type": "string"}}, "additionalProperties": false}
     },
     {
       "name": "fleet_decision_resolve",
-      "roles": ["commander"],
+      "roles": ["commander", "lieutenant"],
       "description": "Resolve an operator's open decision with an answer under your authority (human-authority decisions must be escalated). Delivering the answer to the operator is a separate fleet_message_send.",
       "inputSchema": {"type": "object", "required": ["idempotency_key", "decision_id", "answer"], "properties": {"idempotency_key": {"type": "string"}, "decision_id": {"type": "string"}, "answer": {"type": "string"}, "expected_revision": {"type": "integer"}, "evidence": {"type": "string"}}, "additionalProperties": false}
     },
@@ -98,13 +98,13 @@
     },
     {
       "name": "fleet_events_pending",
-      "roles": ["commander"],
+      "roles": ["commander", "lieutenant"],
       "description": "Non-destructive list of unhandled events (and your already-started actions) with the current snapshot revision. Reading does not acknowledge.",
       "inputSchema": {"type": "object", "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 200}}, "additionalProperties": false}
     },
     {
       "name": "fleet_events_ack",
-      "roles": ["commander"],
+      "roles": ["commander", "lieutenant"],
       "description": "Acknowledge exact event ids after handling them (or durably recording a user decision), with a disposition.",
       "inputSchema": {"type": "object", "required": ["idempotency_key", "event_ids", "disposition"], "properties": {"idempotency_key": {"type": "string"}, "event_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1}, "disposition": {"type": "string"}}, "additionalProperties": false}
     },
@@ -116,19 +116,31 @@
     },
     {
       "name": "fleet_cleanup_evidence",
-      "roles": ["commander", "operator"],
+      "roles": ["commander", "lieutenant", "operator"],
       "description": "Read-only preservation/ownership/quiescence evidence for a change task's workspace (single Git evidence pass), including the exact dirty paths. Teardown runs this same check and refuses on any tracked, untracked or ignored leftover; operators run it before reporting done and clean up what it lists.",
       "inputSchema": {"type": "object", "properties": {"task_id": {"type": "string", "description": "Commander only; operators inspect their own task."}}, "additionalProperties": false}
     },
     {
       "name": "fleet_task_teardown",
-      "roles": ["commander"],
+      "roles": ["commander", "lieutenant"],
       "description": "Request normal verified teardown of a done+verified task. Returns an operation id; the result is an event. There is no force or discard option.",
       "inputSchema": {"type": "object", "required": ["idempotency_key", "task_id"], "properties": {"idempotency_key": {"type": "string"}, "task_id": {"type": "string"}, "expected_revision": {"type": "integer"}}, "additionalProperties": false}
     },
     {
+      "name": "fleet_delegate",
+      "roles": ["commander"],
+      "description": "Delegate an outcome to one of your lieutenants (listed in your boot message with their charters). Without request_id this opens a request: the text is a complete brief (goal, non-goals, acceptance, authority, delivery) queued to the lieutenant's chat, and a durable request id is returned. With request_id it sends a follow-up on that open request (an answer to its question, more scope, or an instruction to stop and settle partial). Refused when the lieutenant is not yours or its runtime is not ready (runtime-not-ready: the user restarts lieutenants). Reports come back as actionable lieutenant-report events; verify a settled request's evidence before presenting it.",
+      "inputSchema": {"type": "object", "required": ["idempotency_key", "lieutenant", "text"], "properties": {"idempotency_key": {"type": "string"}, "lieutenant": {"type": "string", "description": "Lieutenant name (as listed) or fleet id."}, "subject": {"type": "string", "description": "One line naming the outcome; required when opening a request."}, "text": {"type": "string", "description": "The brief (new request) or the follow-up message (existing request)."}, "request_id": {"type": "string", "description": "An open request of yours to this lieutenant; omit to open a new one."}}, "additionalProperties": false}
+    },
+    {
+      "name": "fleet_report",
+      "roles": ["lieutenant"],
+      "description": "Report to your commander. kind question: a decision you need (end your turn; the answer arrives as a message). kind progress: a milestone or plan-changing finding only. kind settled: the request is finished; give outcome (done, failed, partial), what was delivered, the evidence you verified and what remains; a settled request is closed and cannot be settled again. Name the request_id you report on; omit it only for an out-of-band notice (for example the human addressed you directly). Wakes the commander.",
+      "inputSchema": {"type": "object", "required": ["idempotency_key", "kind", "text"], "properties": {"idempotency_key": {"type": "string"}, "kind": {"type": "string", "enum": ["question", "progress", "settled"]}, "text": {"type": "string"}, "request_id": {"type": "string"}, "outcome": {"type": "string", "enum": ["done", "failed", "partial"], "description": "Required with kind settled."}}, "additionalProperties": false}
+    },
+    {
       "name": "fleet_operation",
-      "roles": ["commander", "operator"],
+      "roles": ["commander", "lieutenant", "operator"],
       "description": "Inspect an asynchronous operation by id (state, step, evidence, error). Look once if needed; completion arrives as an event.",
       "inputSchema": {"type": "object", "required": ["operation_id"], "properties": {"operation_id": {"type": "string"}}, "additionalProperties": false}
     }

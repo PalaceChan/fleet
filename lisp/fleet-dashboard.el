@@ -268,11 +268,23 @@ eca/status/runtime/nil."
          (w-state (fleet-dashboard--col-width (mapcar (lambda (p) (fleet-dashboard--state-label (cdr p))) projections) 12 20))
          (w-repo (fleet-dashboard--col-width (mapcar #'fleet-dashboard--repo-label all-tasks) 4 20))
          (w-model (fleet-dashboard--col-width (mapcar #'fleet-dashboard--task-model-label all-tasks) 5 30)))
-    (dolist (fleet fleets)
-      (fleet-dashboard--insert-header fleet projections)
-      (dolist (task (plist-get fleet :tasks))
-        (fleet-dashboard--insert-task fleet task (cdr (assoc (plist-get task :id) projections)) w-task w-state w-repo w-model))
-      (insert "\n"))))
+    ;; One group per root: its header and tasks, then each lieutenant's header and
+    ;; tasks indented under it (docs/lieutenants.md §6).  A lieutenant whose root
+    ;; is not in the snapshot is shown on its own rather than dropped.
+    (let ((ids (mapcar (lambda (f) (plist-get f :id)) fleets)))
+      (dolist (fleet fleets)
+        (unless (member (plist-get fleet :parent-id) ids)
+          (fleet-dashboard--insert-group fleet nil projections w-task w-state w-repo w-model)
+          (dolist (lt fleets)
+            (when (equal (plist-get lt :parent-id) (plist-get fleet :id))
+              (fleet-dashboard--insert-group lt fleet projections w-task w-state w-repo w-model)))
+          (insert "\n"))))))
+
+(defun fleet-dashboard--insert-group (fleet parent projections w-task w-state w-repo w-model)
+  "Insert FLEET's header and task rows; PARENT (a fleet or nil) sets the nesting."
+  (fleet-dashboard--insert-header fleet projections parent)
+  (dolist (task (plist-get fleet :tasks))
+    (fleet-dashboard--insert-task fleet task (cdr (assoc (plist-get task :id) projections)) w-task w-state w-repo w-model (if parent "    " "  "))))
 
 (defun fleet-dashboard--fleet-of (fleets task)
   "Fleet plist in FLEETS owning TASK."
@@ -313,8 +325,8 @@ The provider prefix is dropped unless FULL; the peek view shows full ids."
         (when (> (gethash s counts 0) 0) (push (format "%d %s" (gethash s counts) s) parts)))
       (if parts (string-join (nreverse parts) ", ") "no tasks"))))
 
-(defun fleet-dashboard--insert-header (fleet projections)
-  "Insert FLEET's header row."
+(defun fleet-dashboard--insert-header (fleet projections &optional parent)
+  "Insert FLEET's header row; with PARENT, as a lieutenant group nested under it."
   (let* ((cmd (fleet-dashboard-commander-status fleet))
          (attention (cl-some (lambda (task) (fleet-dashboard-attention-p (cdr (assoc (plist-get task :id) projections)))) (plist-get fleet :tasks)))
          (severe (cl-some (lambda (task) (memq (car (cdr (assoc (plist-get task :id) projections))) '(blocked failed dead))) (plist-get fleet :tasks)))
@@ -326,10 +338,13 @@ The provider prefix is dropped unless FULL; the peek view shows full ids."
                     ((eql 1 (plist-get fleet :supervision)) "supervision on")
                     (t "supervision paused")))
          (model (fleet-dashboard-model-label (plist-get fleet :commander)))
-         (line (format "Fleet %s - commander %s%s · %s · wakes %d · %s"
-                       (plist-get fleet :name) (car cmd)
+         (requests (length (plist-get fleet :open-requests)))
+         (line (format "%s%s %s - %s %s%s · %s · wakes %d%s · %s"
+                       (if parent "  " "") (if parent "↳" "Fleet") (plist-get fleet :name)
+                       (if parent "lieutenant" "commander") (car cmd)
                        (if (string-empty-p model) "" (format " [%s]" model))
                        sup (plist-get fleet :queued-wakes)
+                       (if (> requests 0) (format " · %d open request%s" requests (if (= requests 1) "" "s")) "")
                        (fleet-dashboard--tally fleet projections)))
          (beg (point)))
     (insert (propertize (fleet-dashboard--clean line) 'face face) "\n")
@@ -338,14 +353,15 @@ The provider prefix is dropped unless FULL; the peek view shows full ids."
                                            'fleet-attention (and (memq (nth 1 cmd) '(warn error)) (not (member lifecycle '("parked")))) ))
     (push (cons (plist-get fleet :id) 'commander) fleet-dashboard--rows)))
 
-(defun fleet-dashboard--insert-task (fleet task p w-task w-state w-repo w-model)
-  "Insert one TASK row of FLEET with projection P and column widths."
+(defun fleet-dashboard--insert-task (fleet task p w-task w-state w-repo w-model &optional indent)
+  "Insert one TASK row of FLEET with projection P and column widths.
+INDENT (default two spaces) nests lieutenant tasks under their group."
   (let* ((state (nth 0 p))
          (face (if (and (member (plist-get fleet :lifecycle) '("parked" "parking")) (memq state '(suspended stopping)))
                    'shadow
                  (fleet-dashboard--face state)))
          (beg (point)))
-    (insert "  "
+    (insert (or indent "  ")
             (propertize (fleet-dashboard--glyph state) 'face face) " "
             (propertize (fleet-dashboard--fit (plist-get task :name) w-task) 'face face) " "
             (propertize (fleet-dashboard--fit (fleet-dashboard--state-label p) w-state) 'face face) " "
@@ -426,12 +442,13 @@ The provider prefix is dropped unless FULL; the peek view shows full ids."
         (message "First fleet"))))
 
 (defun fleet-dash-jump ()
-  "Jump to a fleet header by name (required match)."
+  "Jump to a fleet or lieutenant header by selector (`root' or `root/child')."
   (interactive)
   (let* ((store (fleet-supervisor-store))
          (fleets (fleet-store-fleets store))
-         (name (completing-read "Fleet: " (mapcar (lambda (f) (plist-get f :name)) fleets) nil t))
-         (fleet (cl-find-if (lambda (f) (equal (plist-get f :name) name)) fleets)))
+         (choices (mapcar (lambda (f) (cons (fleet-core-fleet-selector store f) f)) fleets))
+         (name (completing-read "Fleet: " (mapcar #'car choices) nil t))
+         (fleet (cdr (assoc name choices))))
     (when (fleet-dashboard--goto-row (cons (plist-get fleet :id) 'commander))
       (recenter 0))))
 
@@ -635,10 +652,12 @@ Never creates an empty fake buffer."
             (t (dired ws))))))
 
 (defun fleet-dash-park ()
-  "Park the fleet at point with exactly the M-x semantics."
+  "Park the fleet at point with exactly the M-x semantics.
+On a lieutenant or one of its tasks this parks the whole root fleet; the
+confirmation names that scope."
   (interactive)
-  (pcase-let ((`(,_store ,fleet ,_task ,_rev) (fleet-dashboard--target)))
-    (fleet-park (plist-get fleet :name))))
+  (pcase-let ((`(,store ,fleet ,_task ,_rev) (fleet-dashboard--target)))
+    (fleet-park (plist-get (fleet-core-root-fleet store fleet) :name))))
 
 (provide 'fleet-dashboard)
 ;;; fleet-dashboard.el ends here

@@ -65,12 +65,21 @@ against, so MODEL passes through and ECA judges it at first prompt."
                                   known))))
     model))
 
-(cl-defun fleet-core-create-fleet (store name &key model agent variant)
+(cl-defun fleet-core-create-fleet (store name &key model agent variant parent-id charter)
   "Create an active fleet NAME; return its row.
-MODEL, AGENT and VARIANT select the commander's ECA model."
+MODEL, AGENT and VARIANT select the commander's ECA model.  With PARENT-ID
+the fleet is a lieutenant of that root fleet with CHARTER (required prose
+the root commander routes by); one level only (docs/lieutenants.md §2)."
   (fleet-paths-assert-name name "fleet")
-  (when (fleet-store-fleet-by-name store name)
-    (fleet-fail 'fleet-exists "A fleet with that name is active or parked" :name name))
+  (when parent-id
+    (let ((parent (fleet-core-fleet store parent-id)))
+      (when (plist-get parent :parent-id)
+        (fleet-fail 'nested-lieutenant "A lieutenant cannot have lieutenants" :parent (fleet-core-fleet-selector store parent)))
+      (when (or (null charter) (string-blank-p charter))
+        (fleet-fail 'charter-required "A lieutenant needs a charter" :name name))
+      (setq parent-id (plist-get parent :id))))
+  (when (fleet-store-fleet-by-name store name parent-id)
+    (fleet-fail 'fleet-exists "A fleet with that name is active or parked" :name name :parent-id parent-id))
   (fleet-core-assert-model store (or model fleet-commander-model))
   (let* ((id (fleet-paths-uuid)) (now (fleet-paths-now))
          (root (fleet-paths-fleet-dir id)))
@@ -85,14 +94,80 @@ MODEL, AGENT and VARIANT select the commander's ECA model."
     (fleet-store-transaction store
       (fleet-store-insert store "fleets"
                           (list :id id :name name :lifecycle "active" :supervision 1 :artifact-root root
+                                :parent-id parent-id :charter (and parent-id charter)
                                 :context-path "commander/context.md"
                                 :commander-model (or model fleet-commander-model)
                                 :commander-agent (or agent fleet-agent)
                                 :commander-variant (or variant fleet-commander-variant)
                                 :created-at now :updated-at now))
       (fleet-store-append-event store :fleet-id id :kind "fleet-created" :actor fleet-core-actor-human
-                                :payload (list :name name)))
+                                :payload (list :name name :parent-id parent-id)))
     (fleet-store-get store "fleets" id)))
+
+;;;; Lieutenants: selectors, hierarchy, effective role (docs/lieutenants.md)
+
+(defun fleet-core-fleet-selector (store fleet)
+  "Human-facing name of FLEET row: `root' or `root/child'."
+  (if-let* ((pid (plist-get fleet :parent-id)))
+      (format "%s/%s" (plist-get (fleet-store-get store "fleets" pid) :name) (plist-get fleet :name))
+    (plist-get fleet :name)))
+
+(defun fleet-core-lieutenants (store fleet-id)
+  "Non-archived lieutenant fleets of FLEET-ID."
+  (fleet-store-lieutenants store fleet-id))
+
+(defun fleet-core-root-fleet (store fleet)
+  "Root fleet row of FLEET (itself when it has no parent)."
+  (if-let* ((pid (plist-get fleet :parent-id)))
+      (fleet-store-get store "fleets" pid)
+    fleet))
+
+(defun fleet-core-effective-role (store rt)
+  "Role runtime RT acts under: `commander', `lieutenant' or `operator'.
+A commander runtime whose fleet has a parent is a lieutenant; the stored
+`runtimes.role' stays `commander' (it commands its own fleet)."
+  (let ((role (plist-get rt :role)))
+    (if (and (equal role "commander")
+             (plist-get (fleet-store-get store "fleets" (plist-get rt :fleet-id)) :parent-id))
+        "lieutenant"
+      role)))
+
+(defun fleet-core-ensure-lieutenants (store fleet-id)
+  "Apply the owner's configured lieutenants of root FLEET-ID (docs/lieutenants.md §3).
+Creates missing lieutenants (model/variant from the entry, else the root's
+commander pin) and records changed charters or pins.  Never removes,
+detaches or reparents: a lieutenant absent from the file is left alone.
+Returns (:created (ROW...) :updated (ROW...) :unconfigured (ROW...)).
+Signals `invalid-fleet-config' when the fleets section is malformed."
+  (let* ((fleet (fleet-core-fleet store fleet-id))
+         (configured (progn
+                       (when (plist-get fleet :parent-id)
+                         (fleet-fail 'nested-lieutenant "Only a root fleet has lieutenants" :fleet (fleet-core-fleet-selector store fleet)))
+                       (fleet-config-lieutenants (plist-get fleet :name))))
+         (pin (fleet-core-commander-model fleet))
+         created updated)
+    (dolist (c configured)
+      (let* ((model (or (plist-get c :model) (car pin)))
+             (variant (if (plist-get c :model) (plist-get c :variant) (cdr pin)))
+             (existing (fleet-store-fleet-by-name store (plist-get c :name) (plist-get fleet :id))))
+        (cond
+         ((null existing)
+          (push (fleet-core-create-fleet store (plist-get c :name) :parent-id (plist-get fleet :id) :charter (plist-get c :charter)
+                                         :model model :variant variant :agent (plist-get fleet :commander-agent))
+                created))
+         ((not (and (equal (plist-get existing :charter) (plist-get c :charter))
+                    (equal (plist-get existing :commander-model) model)
+                    (equal (plist-get existing :commander-variant) variant)))
+          (fleet-core-assert-model store model)
+          (fleet-store-transaction store
+            (fleet-store-update store "fleets" (plist-get existing :id)
+                                (fleet-store-touch (list :charter (plist-get c :charter) :commander-model model :commander-variant variant)))
+            (fleet-store-append-event store :fleet-id (plist-get existing :id) :kind "lieutenant-configured" :actor fleet-core-actor-human
+                                      :payload (list :charter (plist-get c :charter) :model model :variant variant)))
+          (push (fleet-store-get store "fleets" (plist-get existing :id)) updated)))))
+    (list :created (nreverse created) :updated (nreverse updated)
+          :unconfigured (cl-remove-if (lambda (lt) (cl-find (plist-get lt :name) configured :key (lambda (c) (plist-get c :name)) :test #'equal))
+                                      (fleet-core-lieutenants store (plist-get fleet :id))))))
 
 (cl-defun fleet-core-set-commander-model (store fleet-id &key model variant)
   "Pin FLEET-ID's commander to MODEL/VARIANT; return the updated fleet row.
@@ -118,9 +193,13 @@ nil means the ECA default."
         (or (plist-get fleet :commander-variant) fleet-commander-variant)))
 
 (defun fleet-core-fleet (store ref)
-  "Fleet row by id or active name REF, or signal `no-such-fleet'."
+  "Fleet row by id, active root name, or `root/child' selector REF.
+Signal `no-such-fleet' otherwise."
   (or (fleet-store-get store "fleets" ref)
-      (fleet-store-fleet-by-name store ref)
+      (if (string-match "\\`\\([^/]+\\)/\\([^/]+\\)\\'" ref)
+          (when-let* ((root (fleet-store-fleet-by-name store (match-string 1 ref))))
+            (fleet-store-fleet-by-name store (match-string 2 ref) (plist-get root :id)))
+        (fleet-store-fleet-by-name store ref))
       (fleet-fail 'no-such-fleet "No such fleet" :ref ref)))
 
 (defun fleet-core-set-supervision (store fleet-id on)
@@ -792,8 +871,8 @@ Return the count of emitted events."
   "Presentation name for runtime RT."
   (let ((fleet (fleet-store-get store "fleets" (plist-get rt :fleet-id))))
     (if (equal (plist-get rt :role) "commander")
-        (format "*eca:commander:%s*" (plist-get fleet :name))
-      (format "*eca:operator:%s:%s*" (plist-get fleet :name)
+        (format "*eca:%s:%s*" (fleet-core-effective-role store rt) (fleet-core-fleet-selector store fleet))
+      (format "*eca:operator:%s:%s*" (fleet-core-fleet-selector store fleet)
               (plist-get (fleet-store-get store "tasks" (plist-get rt :task-id)) :name)))))
 
 (defun fleet-core--run-dir (store rt)
@@ -805,13 +884,14 @@ Return the count of emitted events."
                          (plist-get rt :id))))
 
 (defun fleet-core-role-disabled-tools (role)
-  "Native ECA tools disabled for runtimes of ROLE.
+  "Native ECA tools disabled for runtimes of effective ROLE.
 Every runtime loses `eca__spawn_agent': a subagent would inherit the runtime
-credential (design §5.3).  Operators also lose `eca__ask_user': that tool
-parks the operator's turn on a human-only `chat/askQuestion' that the
-commander cannot answer, so operator messages queue behind it unseen.  The
-operator channel for questions is `fleet_status' phase `needs-decision',
-which ends the turn and wakes the commander (implementation note 12).  The
+credential (design §5.3).  Operators and lieutenants also lose
+`eca__ask_user': that tool parks the turn on a human-only `chat/askQuestion'
+that the supervising runtime cannot answer, so messages queue behind it
+unseen.  The operator channel for questions is `fleet_status' phase
+`needs-decision'; the lieutenant channel is `fleet_report' kind `question';
+both end the turn and wake the supervisor (implementation note 12).  The
 commander keeps `eca__ask_user' because its questions are for the human."
   (if (equal role "commander")
       (vector "eca__spawn_agent")
@@ -839,7 +919,7 @@ Records launch.json and the exact unit before calling systemd."
                     (cons "FLEET_CREDENTIAL_FILE" (fleet-paths-credential-file id))
                     (cons "FLEET_RUNTIME_ID" id)
                     (cons "XDG_CACHE_HOME" cache)
-                    (cons "ECA_CONFIG" (fleet-core--role-config-overlay (plist-get rt :role)))))
+                    (cons "ECA_CONFIG" (fleet-core--role-config-overlay (fleet-core-effective-role store rt)))))
          (setenv (append (mapcar #'car env) (fleet-runtime-selected-variables)))
          (command (fleet-runtime-wrapper-argv unit server :cwd cwd :setenv (cl-remove-duplicates setenv :test #'string=))))
     (fleet-paths-write-atomically (expand-file-name "launch.json" run-dir)
@@ -916,16 +996,37 @@ Never marks stopped without proof."
 
 (defun fleet-core--prompt (name) "Canonical prompt NAME text." (or (fleet-paths-read-file (fleet-paths-prompt-file name)) (fleet-fail 'prompt-missing "Prompt file missing" :name name)))
 
+(defun fleet-core--lieutenants-section (store fleet)
+  "Boot-message section listing FLEET's lieutenants with charters, or nil."
+  (when-let* ((lts (fleet-core-lieutenants store (plist-get fleet :id))))
+    (concat "\n## Lieutenants\n"
+            "Each owns a domain of this project with its own operators and context. Route work to the lieutenant whose charter it falls under with `fleet_delegate` (a complete brief, as for an operator); it reports back through `lieutenant-report` events (`question`, `progress`, `settled`). Verify a settled request's evidence before telling the user. Do not create operators for work a charter covers, and do not manage a lieutenant's operators yourself.\n"
+            (mapconcat (lambda (lt)
+                         (let* ((rt (and (plist-get lt :commander-runtime-id) (fleet-store-get store "runtimes" (plist-get lt :commander-runtime-id))))
+                                (open (fleet-store-scalar store "SELECT COUNT(*) FROM requests WHERE child_fleet_id = ? AND state = 'open'" (plist-get lt :id))))
+                           (format "- `%s` (fleet id `%s`): %s\n  runtime %s · %d open request(s)\n"
+                                   (plist-get lt :name) (plist-get lt :id) (plist-get lt :charter)
+                                   (if rt (plist-get rt :lifecycle) "none") open)))
+                       lts ""))))
+
 (defun fleet-core-commander-boot-payload (store fleet rt &optional recovery-summary)
-  "Self-contained boot message for a commander runtime RT of FLEET."
+  "Self-contained boot message for a commander runtime RT of FLEET.
+A lieutenant (FLEET has a parent) gets the commander doctrine plus the
+lieutenant overlay and its charter; a root gets its lieutenants listed."
   (let* ((root (plist-get fleet :artifact-root))
+         (parent (and (plist-get fleet :parent-id) (fleet-store-get store "fleets" (plist-get fleet :parent-id))))
          (snap (fleet-store-snapshot store (plist-get fleet :id))))
     (concat (fleet-core--prompt "commander")
+            (when parent (concat "\n\n" (fleet-core--prompt "lieutenant")))
             "\n\n## Your fleet\n"
             (format "- Fleet: `%s` (id `%s`)\n- Runtime: `%s`\n- Artifact root: `%s`\n- Project context: `%s`\n- Handoff note: `%s`\n"
-                    (plist-get fleet :name) (plist-get fleet :id) (plist-get rt :id) root
+                    (fleet-core-fleet-selector store fleet) (plist-get fleet :id) (plist-get rt :id) root
                     (expand-file-name "about.md" root) (expand-file-name "commander/context.md" root))
             "- Fleet tools are available as MCP tools named `fleet_*`; they are scoped to this fleet.\n"
+            (when parent
+              (format "- You are the lieutenant `%s` of fleet `%s` (id `%s`); its commander is your user.\n\n## Your charter\n%s\n"
+                      (plist-get fleet :name) (plist-get parent :name) (plist-get parent :id) (plist-get fleet :charter)))
+            (unless parent (fleet-core--lieutenants-section store fleet))
             (fleet-core--models-section store rt)
             (when recovery-summary (concat "\n## Recovery summary\n" recovery-summary "\n"))
             "\n## Current snapshot\n```json\n" (fleet-store-json (fleet-core--compact-snapshot snap)) "\n```\n"
@@ -978,6 +1079,10 @@ commander needs it to turn casual model names into exact ids."
         :fleets (mapcar (lambda (f)
                           (list :name (plist-get f :name) :lifecycle (plist-get f :lifecycle) :supervision (plist-get f :supervision)
                                 :pending-events (plist-get f :pending-events)
+                                :open-requests (mapcar (lambda (r) (list :id (plist-get r :id) :subject (plist-get r :subject)
+                                                                         :parent-fleet-id (plist-get r :parent-fleet-id) :child-fleet-id (plist-get r :child-fleet-id)
+                                                                         :created-at (plist-get r :created-at)))
+                                                       (plist-get f :open-requests))
                                 :tasks (mapcar (lambda (task)
                                                  (list :id (plist-get task :id) :name (plist-get task :name) :kind (plist-get task :kind)
                                                        :lifecycle (plist-get task :lifecycle) :phase (plist-get task :phase) :detail (plist-get task :detail)
@@ -1293,7 +1398,39 @@ Operators are untouched."
 ;;;; Operation: fleet park
 
 (cl-defun fleet-core-park-fleet (store fleet-id &key callback)
-  "Park FLEET-ID: stop operators, retain commander and durable work.
+  "Park FLEET-ID and, for a root, every lieutenant of it (docs/lieutenants.md §5).
+Each fleet is its own `fleet-park' operation; CALLBACK gets the root's
+operation row, with `:state' \"failed\" and an `:error' naming the
+lieutenants whose park did not finish, and `:lieutenants' listing their
+operation rows.  Returns the root's operation id.  There is deliberately
+no per-lieutenant park: a parked root with an active lieutenant could
+still start operators."
+  (let* ((fleet (fleet-core-fleet store fleet-id))
+         (children (cl-remove-if-not (lambda (c) (member (plist-get c :lifecycle) '("active" "parking")))
+                                     (fleet-core-lieutenants store fleet-id)))
+         (pending (1+ (length children)))
+         (child-ops nil) (root-op nil))
+    (unless (member (plist-get fleet :lifecycle) '("active" "parking"))
+      (fleet-fail 'fleet-not-active "Fleet cannot be parked from this state" :lifecycle (plist-get fleet :lifecycle)))
+    (cl-flet ((finish ()
+                (when (and (<= (cl-decf pending) 0) callback)
+                  (let ((failed (cl-remove-if (lambda (op) (equal (plist-get op :state) "done")) child-ops)))
+                    (funcall callback
+                             (append (if (and failed (equal (plist-get root-op :state) "done"))
+                                         (plist-put (copy-sequence root-op) :state "failed")
+                                       root-op)
+                                     (list :lieutenants child-ops
+                                           :error (or (plist-get root-op :error)
+                                                      (and failed (format "lieutenant park not finished: %s"
+                                                                          (mapconcat (lambda (op) (format "%s (%s)" (plist-get (fleet-store-get store "fleets" (plist-get op :fleet-id)) :name)
+                                                                                                          (or (plist-get op :error) (plist-get op :state))))
+                                                                                     failed ", ")))))))))))
+      (dolist (c children)
+        (fleet-core--park-one store (plist-get c :id) :callback (lambda (op) (push op child-ops) (finish))))
+      (fleet-core--park-one store fleet-id :callback (lambda (op) (setq root-op op) (finish))))))
+
+(cl-defun fleet-core--park-one (store fleet-id &key callback)
+  "Park the single fleet FLEET-ID: stop operators, retain commander and durable work.
 Returns the operation id."
   (let ((fleet (fleet-core-fleet store fleet-id)))
     (unless (member (plist-get fleet :lifecycle) '("active" "parking"))
@@ -1355,15 +1492,21 @@ Then wait for the launch barrier."
   (when callback (funcall callback (fleet-store-get store "operations" op))))
 
 (defun fleet-core-resume-fleet (store fleet-id)
-  "Mark a parked FLEET-ID active again (explicit human resume).
-Operators start only on request."
+  "Mark a parked FLEET-ID active again (explicit human resume), lieutenants included.
+Operators start only on request.  Returns the ids of the fleets resumed."
   (let ((fleet (fleet-core-fleet store fleet-id)))
+    (when (plist-get fleet :parent-id)
+      (fleet-fail 'fleet-not-root "Lieutenants park and resume with their root fleet" :root (plist-get (fleet-core-root-fleet store fleet) :name)))
     (unless (equal (plist-get fleet :lifecycle) "parked")
       (fleet-fail 'fleet-not-parked "Only a parked fleet can be resumed" :lifecycle (plist-get fleet :lifecycle)))
-    (fleet-store-transaction store
-      (fleet-store-update store "fleets" fleet-id (fleet-store-touch (list :lifecycle "active")))
-      (fleet-store-exec store "UPDATE messages SET state = 'queued', updated_at = ? WHERE fleet_id = ? AND state = 'held'" (fleet-paths-now) fleet-id)
-      (fleet-store-append-event store :fleet-id fleet-id :kind "fleet-resumed" :actor fleet-core-actor-human))))
+    (let ((ids (cons fleet-id (mapcar (lambda (c) (plist-get c :id))
+                                      (cl-remove-if-not (lambda (c) (equal (plist-get c :lifecycle) "parked")) (fleet-core-lieutenants store fleet-id))))))
+      (fleet-store-transaction store
+        (dolist (id ids)
+          (fleet-store-update store "fleets" id (fleet-store-touch (list :lifecycle "active")))
+          (fleet-store-exec store "UPDATE messages SET state = 'queued', updated_at = ? WHERE fleet_id = ? AND state = 'held'" (fleet-paths-now) id)
+          (fleet-store-append-event store :fleet-id id :kind "fleet-resumed" :actor fleet-core-actor-human)))
+      ids)))
 
 ;;;; Operation: task teardown (design §10.5)
 
@@ -1543,6 +1686,12 @@ REASON is required and recorded.  Returns (:operation-id ... :task-id ...)."
   (let ((fleet (fleet-core-fleet store fleet-id)))
     (when (> (fleet-store-scalar store "SELECT COUNT(*) FROM tasks WHERE fleet_id = ? AND lifecycle <> 'archived'" fleet-id) 0)
       (fleet-fail 'fleet-not-empty "Fleet still has unarchived tasks"))
+    ;; Retirement is never recursive: lieutenants are retired one by one first.
+    (when-let* ((lts (fleet-core-lieutenants store fleet-id)))
+      (fleet-fail 'fleet-not-empty "Fleet still has lieutenants; retire them first (fleet-destroy root/child)"
+                  :lieutenants (mapcar (lambda (lt) (plist-get lt :name)) lts)))
+    (when (> (fleet-store-scalar store "SELECT COUNT(*) FROM requests WHERE (child_fleet_id = ? OR parent_fleet_id = ?) AND state = 'open'" fleet-id fleet-id) 0)
+      (fleet-fail 'fleet-not-empty "Fleet has open requests; settle them first"))
     (when (> (fleet-store-scalar store "SELECT COUNT(*) FROM operations WHERE fleet_id = ? AND state = 'running'" fleet-id) 0)
       (fleet-fail 'operation-in-progress "Fleet has running operations"))
     (when (> (fleet-store-scalar store "SELECT COUNT(*) FROM runtimes WHERE fleet_id = ? AND role = 'operator' AND lifecycle NOT IN ('stopped','never-launched')" fleet-id) 0)

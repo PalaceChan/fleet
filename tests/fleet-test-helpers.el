@@ -10,6 +10,7 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'fleet-paths)
+(require 'fleet-policy)
 
 (defvar fleet-test--roots nil "Current temporary root, for diagnostics.")
 
@@ -56,6 +57,17 @@ process filters and timers run; never sleeps blindly."
   (make-directory (file-name-directory file) t)
   (with-temp-file file (insert content))
   file)
+
+(defun fleet-test-write-config (&rest sections)
+  "Write the owner `config.json' from SECTIONS, JSON text keyed by section name.
+\(fleet-test-write-config :models POLICY-JSON :fleets FLEETS-JSON); a nil
+section is omitted.  Returns the file path."
+  (fleet-test-write (fleet-config-file)
+                    (concat "{"
+                            (string-join (cl-loop for (k v) on sections by #'cddr
+                                                  when v collect (format "%S: %s" (substring (symbol-name k) 1) v))
+                                         ", ")
+                            "}")))
 
 (defun fleet-test-native-p ()
   "Non-nil when opt-in native ECA/systemd tests are requested."

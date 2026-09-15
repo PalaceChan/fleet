@@ -43,7 +43,11 @@ for a fresh one.
 full-suite run in the same daemon inherited timers and lease-helper processes from the first: a
 pre-existing supervisor test failed and the following lease test hung until interrupted (`kill -USR2
 <pid>` breaks a wedged eval without killing the server). The same suite passed 137/137 on a fresh daemon.
-Use a **fresh daemon for full-suite runs**; targeted selectors (a handful of tests) can reuse a daemon.
+Observed again 2026-09-15: after two or three targeted runs that start fake commanders, a fake-backed
+supervisor test that had just passed ran for minutes on the reused daemon, and a second `USR2` while
+wedged terminated the server. Also, `fleet-dash-jump`'s `recenter` errors in a frameless daemon; tests
+stub it. Use a **fresh daemon for full-suite runs**; treat targeted reuse as a convenience for one or two
+runs, and prefer `timeout` on the `emacsclient` call so a wedge is visible.
 The following Bash commands work from any directory after setting `TEST_SOCKET` to that confirmed name:
 
 ```bash

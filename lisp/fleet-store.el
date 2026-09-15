@@ -18,7 +18,7 @@
 (require 'json)
 (require 'fleet-paths)
 
-(defconst fleet-store-schema-version 2
+(defconst fleet-store-schema-version 3
   "Newest schema this package can open for writing.")
 
 (defconst fleet-store-busy-timeout-ms 3000
@@ -401,13 +401,25 @@ BODY must return a plist result; it is recorded with the action."
 ;;;; Projection
 
 (defun fleet-store-fleets (store &optional include-archived)
-  "All fleets (alphabetical), excluding archived unless INCLUDE-ARCHIVED."
+  "All fleets (alphabetical), excluding archived unless INCLUDE-ARCHIVED.
+Roots and lieutenants alike; see `fleet-store-root-fleets' and
+`fleet-store-lieutenants' for the hierarchy."
   (fleet-store-query store (format "SELECT * FROM fleets %s ORDER BY name ASC"
                                    (if include-archived "" "WHERE lifecycle <> 'archived'"))))
 
-(defun fleet-store-fleet-by-name (store name)
-  "Non-archived fleet named NAME or nil."
-  (fleet-store-query1 store "SELECT * FROM fleets WHERE name = ? AND lifecycle <> 'archived'" name))
+(defun fleet-store-root-fleets (store)
+  "Non-archived fleets without a parent, alphabetical."
+  (fleet-store-query store "SELECT * FROM fleets WHERE parent_id IS NULL AND lifecycle <> 'archived' ORDER BY name ASC"))
+
+(defun fleet-store-lieutenants (store fleet-id)
+  "Non-archived child fleets of FLEET-ID, alphabetical."
+  (fleet-store-query store "SELECT * FROM fleets WHERE parent_id = ? AND lifecycle <> 'archived' ORDER BY name ASC" fleet-id))
+
+(defun fleet-store-fleet-by-name (store name &optional parent-id)
+  "Non-archived fleet named NAME under PARENT-ID (nil: a root), or nil."
+  (if parent-id
+      (fleet-store-query1 store "SELECT * FROM fleets WHERE name = ? AND parent_id = ? AND lifecycle <> 'archived'" name parent-id)
+    (fleet-store-query1 store "SELECT * FROM fleets WHERE name = ? AND parent_id IS NULL AND lifecycle <> 'archived'" name)))
 
 (defun fleet-store-tasks (store fleet-id &optional include-archived)
   "Tasks of FLEET-ID alphabetically."
@@ -440,6 +452,8 @@ Returns (:revision N :fleets (FLEET...)) where each FLEET plist carries
                              :queued-wakes (fleet-store-scalar store "SELECT COUNT(*) FROM messages WHERE fleet_id = ? AND origin IN ('wake','reminder') AND state IN ('queued','held','dispatching')" fid)
                              :open-decisions (fleet-store-query store "SELECT * FROM decisions WHERE fleet_id = ? AND state = 'open'" fid)
                              :running-operations (fleet-store-query store "SELECT * FROM operations WHERE fleet_id = ? AND state IN ('running','blocked','failed') ORDER BY created_at" fid)
+                             ;; Delegations this fleet is party to, either side (docs/lieutenants.md §4).
+                             :open-requests (fleet-store-query store "SELECT * FROM requests WHERE (parent_fleet_id = ? OR child_fleet_id = ?) AND state = 'open' ORDER BY created_at" fid fid)
                              :tasks (mapcar (lambda (task) (fleet-store--task-projection store task))
                                             (fleet-store-tasks store fid))))))
            fleets))))

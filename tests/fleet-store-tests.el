@@ -140,6 +140,50 @@
       (fleet-store-transaction store (fleet-store-update store "fleets" id1 (list :lifecycle "archived")))
       (should (fleet-store-test-fleet store "same")))))
 
+(defun fleet-store-test-lieutenant (store parent-id name)
+  "Insert a child fleet NAME under PARENT-ID and return its id."
+  (let ((id (fleet-paths-uuid)) (now (fleet-paths-now)))
+    (fleet-store-transaction store
+      (fleet-store-insert store "fleets"
+                          (list :id id :name name :parent-id parent-id :charter "domain" :lifecycle "active" :supervision 1
+                                :artifact-root (fleet-paths-fleet-dir id) :created-at now :updated-at now)))
+    id))
+
+(ert-deftest fleet-store-lieutenant-names-are-unique-per-parent ()
+  "Two roots may each have a `frontend'; a lieutenant may share a root's name; siblings may not clash."
+  (fleet-store-test-with store
+    (let ((a (fleet-store-test-fleet store "a")) (b (fleet-store-test-fleet store "b")))
+      (let ((a-front (fleet-store-test-lieutenant store a "frontend")))
+        (should (fleet-store-test-lieutenant store b "frontend"))
+        (should (fleet-store-test-lieutenant store a "b"))
+        (should-error (fleet-store-test-lieutenant store a "frontend"))
+        (should (equal a-front (plist-get (fleet-store-fleet-by-name store "frontend" a) :id)))
+        (should-not (fleet-store-fleet-by-name store "frontend"))
+        (should (equal '("a" "b") (mapcar (lambda (f) (plist-get f :name)) (fleet-store-root-fleets store))))
+        (should (equal '("b" "frontend") (mapcar (lambda (f) (plist-get f :name)) (fleet-store-lieutenants store a))))
+        (should-not (fleet-store-lieutenants store a-front))))))
+
+(ert-deftest fleet-store-v2-database-upgrades-to-v3-keeping-roots ()
+  "A populated v2 store gains parent_id/charter/requests; old fleets stay roots and the per-parent name index applies."
+  (fleet-test-with-roots
+    (cl-letf (((symbol-value 'fleet-store-schema-version) 2))
+      (let ((store (fleet-store-open (fleet-paths-db-file))))
+        (fleet-store-test-fleet store "old")
+        (fleet-store-close store)))
+    (let ((store (fleet-store-open (fleet-paths-db-file))))
+      (unwind-protect
+          (let ((old (fleet-store-fleet-by-name store "old")))
+            (should (= 3 (fleet-store--current-version store)))
+            (should old)
+            (should-not (plist-get old :parent-id))
+            (should (member "requests" (mapcar #'car (sqlite-select (fleet-store-db store) "SELECT name FROM sqlite_master WHERE type='table'"))))
+            ;; The old global name index is gone: a lieutenant may be called `old'.
+            (should (fleet-store-test-lieutenant store (plist-get old :id) "old"))
+            (should-error (fleet-store-test-fleet store "old"))
+            (should (equal 0 (length (plist-get (car (plist-get (fleet-store-snapshot store (plist-get old :id)) :fleets)) :open-requests)))))
+        (fleet-store-close store)))
+    (should (directory-files (fleet-paths-data-root) nil "pre-migration-v2"))))
+
 (ert-deftest fleet-store-read-only-refuses-writes ()
   (fleet-test-with-roots
     (let ((w (fleet-store-open (fleet-paths-db-file))))

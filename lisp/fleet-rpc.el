@@ -116,10 +116,17 @@ Diagnostics only.")
   (let ((rt (fleet-store-query1 store "SELECT * FROM runtimes WHERE credential_hash = ?" (fleet-paths-sha256-string token))))
     (unless rt (fleet-fail 'unauthenticated "unknown credential"))
     (fleet-core-runtime-authorized store (plist-get rt :id))
-    (list :role (plist-get rt :role) :runtime-id (plist-get rt :id) :fleet-id (plist-get rt :fleet-id) :task-id (plist-get rt :task-id)
+    ;; :role is the effective role (commander / lieutenant / operator): it
+    ;; selects the tool list and the scope rules.  The logical actor of a
+    ;; lieutenant is its own fleet's commander actor, as it commands that fleet.
+    (list :role (fleet-core-effective-role store rt) :runtime-id (plist-get rt :id) :fleet-id (plist-get rt :fleet-id) :task-id (plist-get rt :task-id)
           :logical (if (equal (plist-get rt :role) "commander")
                        (fleet-core-actor-commander (plist-get rt :fleet-id))
                      (fleet-core-actor-operator (plist-get rt :task-id))))))
+
+(defun fleet-rpc--operator-p (actor)
+  "Non-nil when ACTOR is an operator (commanders and lieutenants supervise)."
+  (equal (plist-get actor :role) "operator"))
 
 ;;;; Dispatch
 
@@ -222,7 +229,7 @@ Checks required keys, types and enums."
                 (fleet-store-with-action store logical key payload (funcall thunk))))
       (pcase operation
         ("fleet_snapshot"
-         (if (equal (plist-get actor :role) "operator")
+         (if (fleet-rpc--operator-p actor)
              (let ((task (fleet-store-get store "tasks" (plist-get actor :task-id))))
                (list :revision (fleet-store-snapshot-revision store)
                      :task (fleet-core--compact-task (fleet-store--task-projection store task))))
@@ -290,10 +297,10 @@ Checks required keys, types and enums."
                                  :wait (list :reason (plist-get params :reason) :deadline (plist-get params :deadline) :job-id (plist-get params :job_id))))
         ("fleet_artifact_register"
          (mutation params (lambda ()
-                            (when (and (equal (plist-get actor :role) "commander") (plist-get params :task_id))
+                            (when (and (not (fleet-rpc--operator-p actor)) (plist-get params :task_id))
                               (fleet-rpc--task-in-fleet store actor (plist-get params :task_id)))
                             (fleet-core-artifact-register store :runtime-id (plist-get actor :runtime-id)
-                                                          :task-id (if (equal (plist-get actor :role) "commander") (plist-get params :task_id) (plist-get actor :task-id))
+                                                          :task-id (if (fleet-rpc--operator-p actor) (plist-get actor :task-id) (plist-get params :task_id))
                                                           :kind (plist-get params :kind) :rel-path (plist-get params :rel_path) :external-ref (plist-get params :external_ref)
                                                           :description (plist-get params :description) :expected-identity (plist-get params :expected_identity)))))
         ("fleet_artifact_verify"
@@ -325,7 +332,7 @@ Checks required keys, types and enums."
                             (fleet-supervisor-ack store :fleet-id fid :receipt-ids (fleet-rpc--lst (plist-get params :event_ids))
                                                   :outcome (plist-get params :disposition) :actor logical))))
         ("fleet_cleanup_evidence"
-         (let ((task (fleet-rpc--task-in-fleet store actor (if (equal (plist-get actor :role) "operator")
+         (let ((task (fleet-rpc--task-in-fleet store actor (if (fleet-rpc--operator-p actor)
                                                                 (plist-get actor :task-id)
                                                               (or (plist-get params :task_id) (fleet-fail 'invalid-request "task_id required"))))))
            (unless (and (equal (plist-get task :kind) "change") (plist-get task :workspace-path))
@@ -336,6 +343,19 @@ Checks required keys, types and enums."
          (unless key (fleet-fail 'invalid-request "idempotency_key required"))
          (prog1 (fleet-core-teardown-task store (plist-get params :task_id) :expected-revision (plist-get params :expected_revision) :actor logical :action-id key)
            (fleet-supervisor--changed fid)))
+        ("fleet_delegate"
+         ;; Like fleet_message_send: idempotent through the message row, no
+         ;; transaction around the dispatch.
+         (unless key (fleet-fail 'invalid-request "idempotency_key required"))
+         (prog1 (fleet-supervisor-delegate store :fleet-id fid :actor logical :lieutenant (plist-get params :lieutenant)
+                                           :subject (plist-get params :subject) :text (plist-get params :text)
+                                           :request-id (plist-get params :request_id) :idempotency-key key)
+           (fleet-supervisor--changed fid)))
+        ("fleet_report"
+         (mutation params (lambda ()
+                            (prog1 (fleet-supervisor-report store :fleet-id fid :actor logical :kind (plist-get params :kind) :text (plist-get params :text)
+                                                            :request-id (plist-get params :request_id) :outcome (plist-get params :outcome))
+                              (fleet-supervisor--changed (plist-get (fleet-store-get store "fleets" fid) :parent-id))))))
         ("fleet_operation"
          (let ((op (fleet-store-get store "operations" (plist-get params :operation_id))))
            (unless (and op (equal (plist-get op :fleet-id) fid)) (fleet-fail 'forbidden "Operation is not in your fleet"))

@@ -140,6 +140,54 @@
         (should (= rev (fleet-store-snapshot-revision store)))
         (should (= 0 (fleet-store-scalar store "SELECT COUNT(*) FROM event_receipts WHERE state = 'acknowledged'")))))))
 
+(ert-deftest fleet-dashboard-lieutenants-nest-under-their-root ()
+  "A lieutenant renders as an indented group after its root's tasks; row
+identities are unchanged so navigation, refresh and jump keep working; X on a
+lieutenant row parks the root."
+  (fleet-dash-test-with
+    (let* ((rid (fleet-core-test-fleet store "workshop"))
+           (lid (plist-get (fleet-core-create-fleet store "frontend" :parent-id rid :charter "UI") :id))
+           (other (fleet-core-test-fleet store "other"))
+           (root-task (plist-get (fleet-core-test-study store rid "audit") :id))
+           (lt-task (plist-get (fleet-core-test-study store lid "nav") :id)))
+      (fleet-dashboard-render)
+      ;; Order: root header, root task, lieutenant header, lieutenant task, blank, next root.
+      (should (equal fleet-dashboard--rows
+                     (list (cons other 'commander)
+                           (cons rid 'commander) (cons rid root-task) (cons lid 'commander) (cons lid lt-task))))
+      (should (string-match-p "\\`Fleet workshop - commander none" (fleet-dash-test-row-line (cons rid 'commander))))
+      (should (string-match-p "\\`  ↳ frontend - lieutenant none · supervision on · wakes 0 · 1 suspended" (fleet-dash-test-row-line (cons lid 'commander))))
+      (should (string-prefix-p "  " (fleet-dash-test-row-line (cons rid root-task))))
+      (should (string-prefix-p "    " (fleet-dash-test-row-line (cons lid lt-task))))
+      ;; N/P step over lieutenant headers too; n reaches every row.
+      (fleet-dashboard--goto-row (cons rid 'commander))
+      (fleet-dash-next-fleet)
+      (should (equal (fleet-dashboard--row-at) (cons lid 'commander)))
+      (fleet-dash-prev-fleet)
+      (should (equal (fleet-dashboard--row-at) (cons rid 'commander)))
+      (fleet-dash-next) (fleet-dash-next) (fleet-dash-next)
+      (should (equal (fleet-dashboard--row-at) (cons lid lt-task)))
+      ;; Refresh keeps the selected lieutenant task; an open request shows on both headers.
+      (fleet-sup-test-commander store rid) (fleet-sup-test-commander store lid) (fleet-sup-test-settle)
+      (fleet-supervisor-delegate store :fleet-id rid :actor (fleet-core-actor-commander rid) :lieutenant "frontend" :subject "s" :text "t" :idempotency-key "k")
+      (fleet-sup-test-settle) ; the request's turn finishes on the fake lieutenant
+      (fleet-dashboard-render)
+      (should (equal (fleet-dashboard--row-at) (cons lid lt-task)))
+      (should (string-match-p "1 open request" (fleet-dash-test-row-line (cons rid 'commander))))
+      (should (string-match-p "lieutenant live/idle \\[model\\] · supervision on · wakes 0 · 1 open request" (fleet-dash-test-row-line (cons lid 'commander))))
+      ;; j offers selectors; X on the lieutenant targets the root.
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (_p choices &rest _) (should (member "workshop/frontend" choices)) (should (member "other" choices)) "workshop/frontend"))
+                ((symbol-function 'recenter) #'ignore)) ; no window shows the buffer in a daemon
+        (goto-char (point-min))
+        (fleet-dash-jump)
+        (should (equal (fleet-dashboard--row-at) (cons lid 'commander))))
+      (let (parked)
+        (cl-letf (((symbol-function 'fleet-park) (lambda (name) (setq parked name))))
+          (fleet-dashboard--goto-row (cons lid lt-task))
+          (fleet-dash-park)
+          (should (equal parked "workshop")))))))
+
 (ert-deftest fleet-dashboard-navigation-and-attention-wrap ()
   (fleet-dash-test-with
     (let* ((f1 (fleet-core-test-fleet store "alpha")) (f2 (fleet-core-test-fleet store "beta"))

@@ -42,8 +42,9 @@ systemd-owned process; **Emacs** owns state, scheduling and the dashboard.
    the catalog and Fleet refuses ids that are not in it. The dashboard shows each runtime's model next to the
    commander status and in the task rows (provider prefix dropped; `v` peek shows the full id).
 
-   **Operator model policy.** To stop naming models by hand, write your standing preferences in
-   `~/.config/fleet/models.json` (or `fleet-model-policy-file`) as rules in your own words: `when` a
+   **Operator model policy.** To stop naming models by hand, write your standing preferences under
+   `models` in `~/.config/fleet/config.json` (the owner configuration file; an older stand-alone
+   `models.json` is still read when `config.json` is absent) as rules in your own words: `when` a
    description of the work applies, `use` this model (a single selection or a best-first chain), optionally
    with a `why`. The commander judges which rule a task falls under, passes that model and a one-line
    `model_reason`, and Fleet records both on the `task-created` event; with no applicable rule it omits
@@ -60,26 +61,49 @@ systemd-owned process; **Emacs** owns state, scheduling and the dashboard.
    ```json
    {
      "version": 1,
-     "default": {"model": "openrouter/x-ai/grok-4.6"},
-     "ask_first": ["*"],
-     "fallback": {"openrouter/x-ai/grok-4.6": {"model": "openai/gpt-5.6-terra", "variant": "medium"}},
-     "rules": [
-       {"when": "non-simple technical or architecture design, planning, research, review, or an involved browser workflow",
-        "use": [{"model": "openai/gpt-6-astra", "variant": "medium"},
-                {"model": "anthropic/claude-fable-5-1", "variant": "high"}, "openrouter/moonshotai/kimi-k3"]},
-       {"when": "major or ambiguous feature implementation",
-        "use": [{"model": "anthropic/claude-fable-5-1", "variant": "high"},
-                {"model": "openai/gpt-6-astra", "variant": "medium"}, "openrouter/moonshotai/kimi-k3"],
-        "why": "coding-heavy work goes to fable first"},
-       {"when": "simple bug fix whose root cause is understood, a documentation update, or a simple chore",
-        "use": ["openrouter/deepseek/deepseek-v4.1-flash", "openrouter/x-ai/grok-4.6"]}
-     ]
+     "models": {
+       "default": {"model": "openrouter/x-ai/grok-4.6"},
+       "ask_first": ["*"],
+       "fallback": {"openrouter/x-ai/grok-4.6": {"model": "openai/gpt-5.6-terra", "variant": "medium"}},
+       "rules": [
+         {"when": "non-simple technical or architecture design, planning, research, review, or an involved browser workflow",
+          "use": [{"model": "openai/gpt-6-astra", "variant": "medium"},
+                  {"model": "anthropic/claude-fable-5-1", "variant": "high"}, "openrouter/moonshotai/kimi-k3"]},
+         {"when": "major or ambiguous feature implementation",
+          "use": [{"model": "anthropic/claude-fable-5-1", "variant": "high"},
+                  {"model": "openai/gpt-6-astra", "variant": "medium"}, "openrouter/moonshotai/kimi-k3"],
+          "why": "coding-heavy work goes to fable first"},
+         {"when": "simple bug fix whose root cause is understood, a documentation update, or a simple chore",
+          "use": ["openrouter/deepseek/deepseek-v4.1-flash", "openrouter/x-ai/grok-4.6"]}
+       ]
+     },
+     "fleets": {
+       "workshop": {
+         "lieutenants": {
+           "frontend": {"charter": "UI, interaction design, accessibility and browser-facing implementation."},
+           "backend":  {"charter": "Service APIs, persistence, data processing and server-side performance."}
+         }
+       }
+     }
    }
    ```
 
    The policy `default` takes precedence over `fleet-operator-model`; the commander's own model is still the
    fleet pin / `fleet-commander-model`. `model_source` on the event is `explicit`, `policy-default`, `config`
    or `eca-default`; `model_reason` is the commander's stated ground, recorded verbatim.
+
+   **Lieutenants.** The `fleets` section declares, per root fleet, long-lived domain supervisors between
+   the commander and the operators ([design and status](docs/lieutenants.md)). Each lieutenant is a fleet
+   of its own — own commander runtime, tasks, `commander/context.md` and inbox — whose commander's user is
+   the root commander. A `charter` is prose the commander routes by; optional `model`/`variant` pin the
+   lieutenant's runtime (default: the root's commander pin). Lieutenants are created and started when the
+   root's commander starts (`fleet-new`, `fleet-commander-replace`); removing one from the file never
+   deletes it. Everywhere a fleet is named, a lieutenant is `root/child`: `fleet-commander-stop
+   workshop/frontend` replaces just that lieutenant's runtime, `fleet-new workshop/frontend` restarts a
+   stopped one, `fleet-destroy workshop/frontend` retires an empty one. Park and resume are whole-fleet
+   operations on the root. The commander delegates with `fleet_delegate` (a brief opens a durable
+   request); the lieutenant runs its own operators and reports back with `fleet_report`
+   (`question`/`progress`/`settled`), which wakes the commander like any other event.
 
 3. (Optional) Fleet runtimes receive the Fleet MCP bridge automatically through a per-runtime `ECA_CONFIG` overlay;
    your `~/.config/eca/config.json` is not modified. `M-x fleet-install-mcp` can additionally merge the one
@@ -108,13 +132,13 @@ systemd-owned process; **Emacs** owns state, scheduling and the dashboard.
 |---|---|
 | `fleet-dashboard` | Show the live grouped view; starts Fleet in this Emacs (owner, or read-only if another Emacs owns the data root). `C-c h f` if you bound it. |
 | `fleet-new` | Create a named fleet and its commander, or resume/visit an existing one. A live commander is visited, never duplicated. A parked fleet asks *resume* vs *visit only*. |
-| `fleet-park` | Stop every operator with verified service evidence; keep the commander and all durable work. Confirms with live-operator/tool/external-job counts. |
+| `fleet-park` | Stop every operator of a root fleet **and its lieutenants** with verified service evidence; keep the commanders and all durable work. Confirms with live-operator/tool/external-job counts across the whole fleet. |
 | `fleet-task-close` | Archive one task on your authority, without the teardown evidence gate: failed or abandoned work, or done work that can no longer be verified. Needs a reason, a stopped operator (park first) and, for change tasks, an already-removed worktree. Nothing is deleted. |
-| `fleet-destroy` | Retire an **empty** fleet (all tasks archived): archive-move its artifact tree and release the name. No dashboard key, no commander tool. |
+| `fleet-destroy` | Retire an **empty** fleet (all tasks archived, no lieutenants, no open requests): archive-move its artifact tree and release the name. Lieutenants retire one by one (`root/child`) before their root. No dashboard key, no commander tool. |
 | `fleet-watch-start` / `fleet-watch-stop` | Enable / pause automatic commander wakes for a fleet. Pausing never stops processes or event recording. |
 | `fleet-doctor` | Partial dependency probe; ownership/storage/runtime diagnostics when the store is already open. Does not start the supervisor. |
-| `fleet-commander-stop` | Verified stop of the commander only; operators keep running. |
-| `fleet-commander-replace` | Verified stop, then a fresh commander booted with the durable snapshot and `commander/context.md`. Offers to change the commander's model/variant first. |
+| `fleet-commander-stop` | Verified stop of one supervisor only (a root's commander, or a lieutenant by `root/child`); operators and other supervisors keep running. |
+| `fleet-commander-replace` | Verified stop, then a fresh commander booted with the durable snapshot and `commander/context.md`. Offers to change the commander's model/variant first. On a root, also applies configured lieutenants and starts any without a live runtime; `root/child` replaces just that lieutenant. |
 | `fleet-commander-set-model` | Pin the model/variant the fleet's *next* commander launches with (RET keeps the current one). A live commander is untouched. |
 | `fleet-install-mcp` | Optional: merge the single Fleet MCP entry into ECA's global config with backup + diff. |
 | `fleet-timeline` / `fleet-stats` | Read-only telemetry from an already-open store, including archived fleets: event→wake/ack latencies, tools/refusals, turns, tokens/cost, operations. Refuses if Fleet is not started; use offline SQL when startup is not authorized. |
@@ -122,13 +146,14 @@ systemd-owned process; **Emacs** owns state, scheduling and the dashboard.
 ## Dashboard keys
 
 Buffer `fleet:*`. Rows: `glyph task state·source kind repo age detail`. Sorted alphabetically; urgency comes
-from `a`, not reordering.
+from `a`, not reordering. A root fleet's header and tasks are followed by each of its lieutenants as an
+indented `↳ name - lieutenant …` header with its own tasks; the header shows open requests.
 
 | Key | Action |
 |---|---|
-| `n` / `p` | next / previous entry (fleet headers included); no wrap. `p` is *previous*, not peek. |
-| `N` / `P` | next / previous fleet header |
-| `j` | jump to a fleet by name |
+| `n` / `p` | next / previous entry (fleet and lieutenant headers included); no wrap. `p` is *previous*, not peek. |
+| `N` / `P` | next / previous fleet or lieutenant header |
+| `j` | jump to a fleet or lieutenant by selector (`root`, `root/child`) |
 | `a` | next entry needing you (decision, blocked, failed, dead, unknown, stop/delivery problems); wraps. If only the commander has a problem, its header. |
 | `RET` | header → the commander's real ECA chat; task → the operator's chat. Unavailable sessions show recovery info and the retained transcript, never an empty new chat. |
 | `v` (also `?`) | read-only peek: last 40 lines, in `fleet-peek*` |
@@ -137,7 +162,7 @@ from `a`, not reordering.
 | `t` | operator only: normal teardown with the full evidence gate (confirm) |
 | `b` / `r` | view brief / report read-only (`view-mode`; `q` leaves, `e` edits — editing does not change dispatched scope) |
 | `w` | dired into the task's worktree (change tasks with an existing worktree) |
-| `X` | park the fleet at point (same confirmation as `M-x fleet-park`) |
+| `X` | park the root fleet of the row at point, lieutenants included (same confirmation as `M-x fleet-park`) |
 | `g` | refresh (no mutation) |
 | `q` | bury the dashboard; stops nothing |
 

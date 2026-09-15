@@ -3,6 +3,7 @@
 
 (require 'ert)
 (require 'fleet-supervisor)
+(require 'fleet-rpc)
 (require 'fleet-test-fakes)
 (require 'fleet-core-tests)
 
@@ -58,6 +59,98 @@ completion and the commander can resolve casual model names."
         (should (string-match-p "You run on `fake/model`" boot))
         (should (string-match-p "fake/model, fake/other" boot))
         (should (string-match-p "Variants announced.*low, high" boot))))))
+
+(ert-deftest fleet-supervisor-delegation-is-a-lane-message-down-and-an-actionable-event-up ()
+  "fleet_delegate opens a request and queues the brief on the lieutenant's lane;
+fleet_report appends an actionable event to the parent, which wakes the root
+commander; settling closes the request once; scope refusals hold."
+  (fleet-sup-test-with
+    (let* ((rid (fleet-core-test-fleet store "workshop"))
+           (lt (fleet-core-create-fleet store "frontend" :parent-id rid :charter "UI"))
+           (lid (plist-get lt :id))
+           (other (fleet-core-test-fleet store "other"))
+           (root-actor (fleet-core-actor-commander rid))
+           (lt-actor (fleet-core-actor-commander lid)))
+      ;; Not ready: refused, nothing recorded.
+      (fleet-test-should-fail 'runtime-not-ready
+        (fleet-supervisor-delegate store :fleet-id rid :actor root-actor :lieutenant "frontend" :subject "nav" :text "brief" :idempotency-key "k0"))
+      (should (= 0 (fleet-store-scalar store "SELECT COUNT(*) FROM requests")))
+      (let ((root-cid (fleet-sup-test-commander store rid)) (lt-cid (fleet-sup-test-commander store lid)))
+        (fleet-sup-test-settle)
+        ;; Scope: only my own lieutenant, by name or id; a root is nobody's lieutenant.
+        (fleet-test-should-fail 'forbidden (fleet-supervisor-delegate store :fleet-id other :actor (fleet-core-actor-commander other) :lieutenant "frontend" :subject "s" :text "t" :idempotency-key "k1"))
+        (fleet-test-should-fail 'forbidden (fleet-supervisor-delegate store :fleet-id rid :actor root-actor :lieutenant "other" :subject "s" :text "t" :idempotency-key "k1"))
+        (fleet-test-should-fail 'invalid-request (fleet-supervisor-delegate store :fleet-id rid :actor root-actor :lieutenant lid :text "no subject" :idempotency-key "k1"))
+        ;; Open a request: durable row + message on the lieutenant lane, prefixed with the request id.
+        (let* ((r (fleet-supervisor-delegate store :fleet-id rid :actor root-actor :lieutenant "frontend" :subject "Keyboard navigation" :text "Goal: ..." :idempotency-key "k2"))
+               (req-id (plist-get r :request-id))
+               (req (fleet-store-get store "requests" req-id)))
+          (should req-id)
+          (should (equal (plist-get req :state) "open"))
+          (should (equal (plist-get req :parent-fleet-id) rid))
+          (should (equal (plist-get req :child-fleet-id) lid))
+          (should (equal (plist-get req :message-id) (plist-get r :message-id)))
+          (fleet-sup-test-settle)
+          (let ((m (fleet-store-get store "messages" (plist-get r :message-id))))
+            (should (equal (plist-get m :target-runtime-id) lt-cid))
+            (should (equal (plist-get m :origin) "commander"))
+            (should (equal (plist-get m :fleet-id) lid))
+            (should (string-match-p (format "Request `%s` — Keyboard navigation" req-id) (plist-get m :text)))
+            (should (string-match-p "Goal: \\.\\.\\." (plist-get m :text))))
+          (should (fleet-sup-test-submissions (lambda (s) (string-match-p "Keyboard navigation" s))))
+          ;; Same key replays without a second request or message.
+          (let ((again (fleet-supervisor-delegate store :fleet-id rid :actor root-actor :lieutenant "frontend" :subject "Keyboard navigation" :text "Goal: ..." :idempotency-key "k2")))
+            (should (plist-get again :replayed))
+            (should (equal (plist-get again :request-id) req-id)))
+          (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM requests")))
+          ;; Follow-up on the open request; a stranger's or unknown request is refused.
+          (should (equal (plist-get (fleet-supervisor-delegate store :fleet-id rid :actor root-actor :lieutenant lid :text "Also cover the settings menu" :request-id req-id :idempotency-key "k3") :request-id) req-id))
+          (fleet-test-should-fail 'forbidden (fleet-supervisor-delegate store :fleet-id rid :actor root-actor :lieutenant lid :text "x" :request-id "nope" :idempotency-key "k4"))
+          (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM requests")))
+          ;; The root and the lieutenant both see the open request in their snapshots.
+          (should (= 1 (length (plist-get (car (plist-get (fleet-store-snapshot store rid) :fleets)) :open-requests))))
+          (should (= 1 (length (plist-get (car (plist-get (fleet-store-snapshot store lid) :fleets)) :open-requests))))
+          ;; Reporting: only a lieutenant, only on its own open request; settled needs an outcome.
+          (fleet-test-should-fail 'not-a-lieutenant (fleet-supervisor-report store :fleet-id rid :actor root-actor :kind "progress" :text "x"))
+          (fleet-test-should-fail 'forbidden (fleet-supervisor-report store :fleet-id lid :actor lt-actor :kind "progress" :text "x" :request-id "nope"))
+          (fleet-test-should-fail 'invalid-request (fleet-supervisor-report store :fleet-id lid :actor lt-actor :kind "settled" :text "x" :request-id req-id))
+          (fleet-test-should-fail 'invalid-request (fleet-supervisor-report store :fleet-id lid :actor lt-actor :kind "settled" :text "x"))
+          ;; A question wakes the root: actionable receipt in the parent fleet, wake message names the lieutenant and request.
+          (setq fleet-test-fake-turn 'busy)
+          (let ((q (fleet-supervisor-report store :fleet-id lid :actor lt-actor :kind "question" :text "Dark mode too?" :request-id req-id)))
+            (should (plist-get q :event-id))
+            (should (equal (plist-get q :state) "open")))
+          (fleet-sup-test-settle)
+          (let ((wakes (fleet-sup-test-wakes store rid)))
+            (should (= 1 (length wakes)))
+            (should (equal (plist-get (car wakes) :target-runtime-id) root-cid))
+            (should (string-match-p "lieutenant-report · lieutenant `frontend` question" (plist-get (car wakes) :text)))
+            (should (string-match-p (format "request `%s`" req-id) (plist-get (car wakes) :text)))
+            (should (string-match-p "Dark mode too\\?" (plist-get (car wakes) :text))))
+          (should (= 0 (length (fleet-sup-test-wakes store lid))))
+          (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM event_receipts WHERE fleet_id = ? AND state = 'claimed'" rid)))
+          ;; Settle once; a second settlement and further follow-ups are refused.
+          (let ((s (fleet-supervisor-report store :fleet-id lid :actor lt-actor :kind "settled" :outcome "done" :text "Shipped on branch x" :request-id req-id)))
+            (should (equal (plist-get s :state) "settled")))
+          (let ((req (fleet-store-get store "requests" req-id)))
+            (should (equal (plist-get req :state) "settled"))
+            (should (equal (plist-get req :outcome) "done"))
+            (should (equal (plist-get req :summary) "Shipped on branch x")))
+          (fleet-test-should-fail 'request-settled (fleet-supervisor-report store :fleet-id lid :actor lt-actor :kind "settled" :outcome "done" :text "again" :request-id req-id))
+          (fleet-test-should-fail 'request-settled (fleet-supervisor-delegate store :fleet-id rid :actor root-actor :lieutenant lid :text "more" :request-id req-id :idempotency-key "k5"))
+          (should (= 0 (length (plist-get (car (plist-get (fleet-store-snapshot store rid) :fleets)) :open-requests))))
+          ;; An out-of-band notice needs no request.  Question, settle and notice: three receipts for the root.
+          (should (plist-get (fleet-supervisor-report store :fleet-id lid :actor lt-actor :kind "progress" :text "The user asked me directly to ...") :event-id))
+          (should (= 3 (fleet-store-scalar store "SELECT COUNT(*) FROM event_receipts WHERE fleet_id = ?" rid)))
+          ;; Wire scope: a lieutenant's tools are the commander's plus fleet_report, minus fleet_delegate.
+          (let ((fleet-rpc--tools nil) ; read the checkout's schema, not a cached one
+                (names (lambda (role) (mapcar (lambda (tool) (plist-get tool :name)) (fleet-rpc-tools-for-role role)))))
+            (should (member "fleet_report" (funcall names "lieutenant")))
+            (should-not (member "fleet_delegate" (funcall names "lieutenant")))
+            (should (member "fleet_delegate" (funcall names "commander")))
+            (should-not (member "fleet_report" (funcall names "commander")))
+            (should (member "fleet_task_create" (funcall names "lieutenant")))
+            (should-not (member "fleet_report" (funcall names "operator")))))))))
 
 (ert-deftest fleet-supervisor-wake-requires-idle-commander-and-pending-events ()
   (fleet-sup-test-with
@@ -278,7 +371,7 @@ error, is resent on the owner's fallback model: the runtime moves to it and
 keeps its chat.  A barren fallback turn finishes the message and is surfaced;
 a turn that did work before failing is never resent."
   (fleet-sup-test-with
-    (fleet-test-write (fleet-policy-file) "{\"fallback\": {\"fake/model\": \"fake/other\"}}")
+    (fleet-test-write-config :models "{\"fallback\": {\"fake/model\": \"fake/other\"}}")
     (let* ((fid (fleet-core-test-fleet store)) (cid (fleet-sup-test-commander store fid))
            (conn (fleet-eca-conn cid))
            (sent (lambda (text) (fleet-sup-test-submissions (lambda (s) (equal s text)))))
@@ -342,7 +435,7 @@ a turn that did work before failing is never resent."
           (should (equal "finished" (funcall state "operator ping")))
           (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'turn-empty' AND actionable = 1 AND runtime_id = ?" rid)))))
       ;; a fallback ECA does not offer is not tried: the failure is surfaced directly
-      (fleet-test-write (fleet-policy-file) "{\"fallback\": {\"fake/other\": \"fake/unknown\"}}")
+      (fleet-test-write-config :models "{\"fallback\": {\"fake/other\": \"fake/unknown\"}}")
       (fleet-supervisor--human-sink conn '(:text "once more"))
       (fleet-sup-test-settle)
       (fleet-test-fake-finish conn "Error: still down" t) (fleet-sup-test-settle)

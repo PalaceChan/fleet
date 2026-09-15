@@ -662,9 +662,14 @@ Returns the message id or the blocker symbol."
           (mapconcat (lambda (r)
                        (let* ((task (and (plist-get r :task-id) (fleet-store-get store "tasks" (plist-get r :task-id))))
                               (payload (fleet-store-unjson (plist-get r :payload))))
-                         (format "- event %s: %s%s%s%s"
+                         (format "- event %s: %s%s%s%s%s"
                                  (plist-get r :event-id) (plist-get r :kind)
                                  (if task (format " · task `%s`" (plist-get task :name)) "")
+                                 (if (plist-get payload :lieutenant)
+                                     (format " · lieutenant `%s` %s%s%s" (plist-get payload :lieutenant) (plist-get payload :kind)
+                                             (if (plist-get payload :outcome) (format " (%s)" (plist-get payload :outcome)) "")
+                                             (if (plist-get payload :request-id) (format " · request `%s`" (plist-get payload :request-id)) ""))
+                                   "")
                                  (if (plist-get payload :detail) (format " · %s" (fleet-eca--clip (plist-get payload :detail) 120)) "")
                                  (if (equal (plist-get r :state) "needs-reconciliation") " · (unresolved from a previous commander: inspect before acting)" ""))))
                      receipts "\n")))
@@ -727,6 +732,87 @@ Dashboard `s' and fleet_message_send share this."
       (fleet-supervisor-enqueue store :fleet-id fleet-id :task-id task-id :target-runtime-id runtime-id
                                 :origin (if (equal sender fleet-core-actor-human) "human" "commander") :sender sender
                                 :idempotency-key idempotency-key :text text :brief-revision (and task (plist-get task :brief-revision))))))
+
+;;;; Delegation between a root commander and its lieutenants (docs/lieutenants.md §4)
+
+(defun fleet-supervisor--lieutenant-of (store fleet-id ref)
+  "Lieutenant fleet REF (name or id) of root FLEET-ID, or signal `forbidden'."
+  (let ((child (or (fleet-store-get store "fleets" ref) (fleet-store-fleet-by-name store ref fleet-id))))
+    (unless (and child (equal (plist-get child :parent-id) fleet-id) (not (equal (plist-get child :lifecycle) "archived")))
+      (fleet-fail 'forbidden "Not one of your lieutenants" :lieutenant ref))
+    child))
+
+(cl-defun fleet-supervisor-delegate (store &key fleet-id actor lieutenant subject text request-id idempotency-key)
+  "Send TEXT from the commander ACTOR of FLEET-ID to LIEUTENANT (name or id).
+Without REQUEST-ID a new request with SUBJECT is opened; with it, TEXT is a
+follow-up on that open request.  Parent → child travels as an ordinary
+`commander'-origin message on the lieutenant's lane, so lane admission,
+hold-while-parked and truthful delivery states apply unchanged.  Idempotent
+by (ACTOR, IDEMPOTENCY-KEY) through the message row, like `fleet_message_send';
+no transaction spans the dispatch.  Returns (:request-id :message-id :state)."
+  (when-let* ((m (and idempotency-key (fleet-store-query1 store "SELECT id, state FROM messages WHERE sender = ? AND idempotency_key = ?" actor idempotency-key))))
+    (let ((req (fleet-store-query1 store "SELECT id FROM requests WHERE message_id = ?" (plist-get m :id))))
+      (cl-return-from fleet-supervisor-delegate
+        (list :request-id (or request-id (plist-get req :id)) :message-id (plist-get m :id) :state (plist-get m :state) :replayed t))))
+  (let* ((parent (fleet-store-get store "fleets" fleet-id))
+         (child (fleet-supervisor--lieutenant-of store fleet-id lieutenant))
+         (rt-id (plist-get child :commander-runtime-id))
+         (rt (and rt-id (fleet-store-get store "runtimes" rt-id)))
+         (req (and request-id (fleet-store-get store "requests" request-id)))
+         (now (fleet-paths-now)))
+    (unless (and rt (equal (plist-get rt :lifecycle) "ready"))
+      (fleet-fail 'runtime-not-ready "Lieutenant runtime is not ready; ask the user to restart it (M-x fleet-new root/child)"
+                  :lieutenant (plist-get child :name) :lifecycle (and rt (plist-get rt :lifecycle))))
+    (cond
+     (request-id
+      (unless (and req (equal (plist-get req :parent-fleet-id) fleet-id) (equal (plist-get req :child-fleet-id) (plist-get child :id)))
+        (fleet-fail 'forbidden "Not your request to this lieutenant" :request-id request-id))
+      (unless (equal (plist-get req :state) "open")
+        (fleet-fail 'request-settled "Request already settled; open a new one for further work" :request-id request-id :outcome (plist-get req :outcome))))
+     (t
+      (when (or (null subject) (string-blank-p subject)) (fleet-fail 'invalid-request "subject required to open a request"))
+      (setq request-id (fleet-paths-uuid))
+      (fleet-store-transaction store
+        (fleet-store-insert store "requests" (list :id request-id :parent-fleet-id fleet-id :child-fleet-id (plist-get child :id)
+                                                   :subject subject :state "open" :created-at now :updated-at now))
+        (fleet-store-append-event store :fleet-id (plist-get child :id) :kind "request-opened" :actor actor
+                                  :payload (list :request-id request-id :subject subject)))))
+    (let ((m (fleet-supervisor-enqueue store :fleet-id (plist-get child :id) :target-runtime-id rt-id :origin "commander" :sender actor
+                                       :idempotency-key idempotency-key
+                                       :text (format "## Request `%s` — %s\n%s from the commander of fleet `%s`. Report on it with `fleet_report` naming this request_id.\n\n%s"
+                                                     request-id (or subject (plist-get req :subject))
+                                                     (if req "Follow-up" "New request") (plist-get parent :name) text))))
+      (unless req
+        (fleet-store-transaction store
+          (fleet-store-update store "requests" request-id (fleet-store-touch (list :message-id (plist-get m :message-id))))))
+      (list :request-id request-id :message-id (plist-get m :message-id) :state (plist-get m :state)))))
+
+(cl-defun fleet-supervisor-report (store &key fleet-id actor kind text request-id outcome)
+  "Record a report of KIND from lieutenant fleet FLEET-ID (actor ACTOR) upstream.
+Appends an actionable `lieutenant-report' event to the parent fleet, whose
+receipt wakes the root commander through the usual admission; `settled'
+also closes the request with OUTCOME.  Pure store mutation: callers wrap it
+in the keyed action.  Returns (:event-id :request-id :state)."
+  (let* ((fleet (fleet-store-get store "fleets" fleet-id))
+         (parent-id (plist-get fleet :parent-id))
+         (req (and request-id (fleet-store-get store "requests" request-id))))
+    (unless parent-id (fleet-fail 'not-a-lieutenant "Only a lieutenant reports upstream" :fleet (plist-get fleet :name)))
+    (when request-id
+      (unless (and req (equal (plist-get req :child-fleet-id) fleet-id))
+        (fleet-fail 'forbidden "Not a request addressed to you" :request-id request-id))
+      (unless (equal (plist-get req :state) "open")
+        (fleet-fail 'request-settled "Request already settled" :request-id request-id :outcome (plist-get req :outcome))))
+    (when (equal kind "settled")
+      (unless req (fleet-fail 'invalid-request "settled needs the request_id it settles"))
+      (unless (member outcome '("done" "failed" "partial")) (fleet-fail 'invalid-request "settled needs outcome done, failed or partial")))
+    (fleet-store-transaction store
+      (when (equal kind "settled")
+        (fleet-store-update store "requests" request-id (fleet-store-touch (list :state "settled" :outcome outcome :summary text))))
+      (let ((eid (fleet-store-append-event store :fleet-id parent-id :kind "lieutenant-report" :actor actor :source "rpc" :actionable t
+                                           :payload (list :lieutenant (plist-get fleet :name) :lieutenant-fleet-id fleet-id
+                                                          :request-id request-id :subject (plist-get req :subject)
+                                                          :kind kind :outcome outcome :detail text))))
+        (list :event-id eid :request-id request-id :state (cond ((equal kind "settled") "settled") (req "open") (t nil)))))))
 
 (provide 'fleet-supervisor)
 ;;; fleet-supervisor.el ends here

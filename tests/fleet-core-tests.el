@@ -50,15 +50,47 @@ exist)."
         (fleet-test-should-fail 'invalid-task (fleet-core-create-task store fid :name "x" :kind "change" :brief fleet-test-brief :repo "/nonexistent"))))))
 
 (ert-deftest fleet-core-eca-overlay-disables-ask-user-for-operators-only ()
-  "Operators lose ask_user (their question channel is needs-decision); the commander keeps it."
+  "Operators and lieutenants lose ask_user (their question channels are
+needs-decision and fleet_report); the commander keeps it."
   (let* ((parse (lambda (role) (fleet-store-unjson (fleet-core--role-config-overlay role))))
          (commander (funcall parse "commander"))
+         (lieutenant (funcall parse "lieutenant"))
          (operator (funcall parse "operator")))
     (should (equal (append (plist-get commander :disabledTools) nil) '("eca__spawn_agent")))
+    (should (equal (append (plist-get lieutenant :disabledTools) nil) '("eca__spawn_agent" "eca__ask_user")))
     (should (equal (append (plist-get operator :disabledTools) nil) '("eca__spawn_agent" "eca__ask_user")))
-    ;; Both roles still get the MCP bridge entry.
-    (dolist (o (list commander operator))
+    ;; All roles still get the MCP bridge entry.
+    (dolist (o (list commander lieutenant operator))
       (should (equal (plist-get (plist-get (plist-get o :mcpServers) :fleet) :command) fleet-python-executable)))))
+
+(ert-deftest fleet-core-lieutenant-is-a-child-fleet-with-selector-and-effective-role ()
+  "A lieutenant is created under a root with a charter, resolves as root/child,
+cannot nest, needs a charter, and its commander runtime acts as a lieutenant."
+  (fleet-test-with-fakes
+    (let* ((root-id (fleet-core-test-fleet store "workshop"))
+           (lt (fleet-core-create-fleet store "frontend" :parent-id root-id :charter "UI work"))
+           (lt-id (plist-get lt :id)))
+      (should (equal (plist-get lt :parent-id) root-id))
+      (should (equal (plist-get lt :charter) "UI work"))
+      (should (equal (fleet-core-fleet-selector store lt) "workshop/frontend"))
+      (should (equal (plist-get (fleet-core-fleet store "workshop/frontend") :id) lt-id))
+      (should (equal (plist-get (fleet-core-fleet store "workshop") :id) root-id))
+      (fleet-test-should-fail 'no-such-fleet (fleet-core-fleet store "frontend"))
+      (fleet-test-should-fail 'no-such-fleet (fleet-core-fleet store "workshop/backend"))
+      ;; Same name under another root is fine; a sibling clash and nesting are not.
+      (let ((other (fleet-core-test-fleet store "other")))
+        (should (fleet-core-create-fleet store "frontend" :parent-id other :charter "UI elsewhere")))
+      (fleet-test-should-fail 'fleet-exists (fleet-core-create-fleet store "frontend" :parent-id root-id :charter "again"))
+      (fleet-test-should-fail 'nested-lieutenant (fleet-core-create-fleet store "deeper" :parent-id lt-id :charter "no"))
+      (fleet-test-should-fail 'charter-required (fleet-core-create-fleet store "mute" :parent-id root-id))
+      (should (equal (mapcar (lambda (f) (plist-get f :name)) (fleet-core-lieutenants store root-id)) '("frontend")))
+      (should (equal (plist-get (fleet-core-root-fleet store lt) :id) root-id))
+      ;; Effective role: the lieutenant's commander runtime is a lieutenant; the root's is a commander.
+      (let ((rt-root (fleet-core--new-runtime store :role "commander" :fleet-id root-id))
+            (rt-lt (fleet-core--new-runtime store :role "commander" :fleet-id lt-id)))
+        (should (equal (fleet-core-effective-role store rt-root) "commander"))
+        (should (equal (fleet-core-effective-role store rt-lt) "lieutenant"))
+        (should (equal (fleet-core-runtime-display-name store rt-lt) "*eca:lieutenant:workshop/frontend*"))))))
 
 (ert-deftest fleet-core-model-and-variant-flow-to-runtimes-and-unknown-models-are-refused ()
   (fleet-test-with-fakes
@@ -113,10 +145,10 @@ commander asserts the user's approval, however they were chosen."
       (let ((fleet-operator-model "fake/other"))
         (should (equal (plist-get (funcall mk "cfg") :model-source) "config")))
       ;; A malformed policy refuses creation rather than silently using defaults.
-      (fleet-test-write (fleet-policy-file) "{\"rules\": 3}")
+      (fleet-test-write-config :models "{\"rules\": 3}")
       (fleet-test-should-fail 'invalid-model-policy (funcall mk "broken"))
       (should (string-match-p "could not be loaded" (fleet-core--models-section store '(:id "none"))))
-      (fleet-test-write (fleet-policy-file) fleet-core-test-policy-json)
+      (fleet-test-write-config :models fleet-core-test-policy-json)
       ;; The commander applied rule 1: the model is ask-first, so creation is refused with the reason echoed.
       (let ((err (fleet-test-should-fail 'model-needs-approval
                    (funcall mk "ask" :model "fake/pricey" :variant "high" :model-reason "rule 1: ambiguous feature work"))))
@@ -163,12 +195,12 @@ commander asserts the user's approval, however they were chosen."
       (fleet-store-record-eca-catalog store :models '("fake/model" "fake/other"))
       (should (string-match-p "does not offer.*`fake/pricey`" (fleet-core--models-section store '(:id "none"))))
       ;; Wildcard: while the owner is shaping the rules, everything asks first — the default included.
-      (fleet-test-write (fleet-policy-file) "{\"default\": \"fake/model\", \"ask_first\": [\"*\"]}")
+      (fleet-test-write-config :models "{\"default\": \"fake/model\", \"ask_first\": [\"*\"]}")
       (fleet-test-should-fail 'model-needs-approval (funcall mk "wild" :model-reason "default"))
       (fleet-test-should-fail 'model-needs-approval (funcall mk "wild" :model "fake/other" :model-reason "user named it"))
       (should (equal (plist-get (funcall mk "wild" :model-reason "default, user agreed" :owner-approved t) :model) "fake/model"))
       (should (string-match-p "Ask first: \\*\\*every task\\*\\*" (fleet-core--models-section store '(:id "none"))))
-      (delete-file (fleet-policy-file))
+      (delete-file (fleet-config-file))
       (should (string-match-p "No owner policy file" (fleet-core--models-section store '(:id "none")))))))
 
 (ert-deftest fleet-core-commander-model-pin-is-changeable-and-governs-the-next-start ()
@@ -216,6 +248,71 @@ defcustom, else the ECA default) is what each commander start launches with."
       (fleet-core-set-commander-model store fid :model "fake/other")
       (should (equal (plist-get (funcall commander-rt) :model) "fake/model"))
       (should (equal (plist-get (funcall commander-rt) :lifecycle) "ready")))))
+
+(ert-deftest fleet-core-configured-lieutenants-are-created-updated-and-never-removed ()
+  "ensure-lieutenants creates configured lieutenants (pin from the entry, else
+the root's), records charter/pin changes, reports lieutenants no longer in the
+file without touching them, and refuses on a lieutenant."
+  (fleet-test-with-fakes
+    (let* ((fleet-commander-model nil) (fleet-commander-variant nil)
+           (root (fleet-core-create-fleet store "workshop" :model "fake/model" :variant "high"))
+           (rid (plist-get root :id))
+           (by-name (lambda (n) (fleet-store-fleet-by-name store n rid))))
+      ;; No config: nothing to do, nothing created.
+      (should (equal (fleet-core-ensure-lieutenants store rid) '(:created nil :updated nil :unconfigured nil)))
+      (fleet-test-write-config
+       :fleets "{\"workshop\": {\"lieutenants\": {\"frontend\": {\"charter\": \"UI\"}, \"backend\": {\"charter\": \"data\", \"model\": \"fake/other\"}}}}")
+      (let ((r (fleet-core-ensure-lieutenants store rid)))
+        (should (equal (mapcar (lambda (f) (plist-get f :name)) (plist-get r :created)) '("frontend" "backend")))
+        (should-not (plist-get r :updated)))
+      (should (equal (plist-get (funcall by-name "frontend") :commander-model) "fake/model"))
+      (should (equal (plist-get (funcall by-name "frontend") :commander-variant) "high"))
+      (should (equal (plist-get (funcall by-name "backend") :commander-model) "fake/other"))
+      (should-not (plist-get (funcall by-name "backend") :commander-variant))
+      (should (file-exists-p (expand-file-name "commander/context.md" (plist-get (funcall by-name "frontend") :artifact-root))))
+      ;; Idempotent.
+      (should (equal (fleet-core-ensure-lieutenants store rid) '(:created nil :updated nil :unconfigured nil)))
+      ;; Charter edit is recorded; a dropped entry is reported, not removed.
+      (fleet-test-write-config :fleets "{\"workshop\": {\"lieutenants\": {\"frontend\": {\"charter\": \"UI and a11y\"}}}}")
+      (let ((r (fleet-core-ensure-lieutenants store rid)))
+        (should (equal (mapcar (lambda (f) (plist-get f :name)) (plist-get r :updated)) '("frontend")))
+        (should (equal (mapcar (lambda (f) (plist-get f :name)) (plist-get r :unconfigured)) '("backend"))))
+      (should (equal (plist-get (funcall by-name "frontend") :charter) "UI and a11y"))
+      (should (funcall by-name "backend"))
+      (should (= 2 (length (fleet-core-lieutenants store rid))))
+      ;; Malformed section: refused with the reason, nothing changed.
+      (fleet-test-write-config :fleets "{\"workshop\": {\"lieutenants\": {\"x\": {}}}}")
+      (fleet-test-should-fail 'invalid-fleet-config (fleet-core-ensure-lieutenants store rid))
+      (should (= 2 (length (fleet-core-lieutenants store rid))))
+      (fleet-test-should-fail 'nested-lieutenant (fleet-core-ensure-lieutenants store (plist-get (funcall by-name "frontend") :id))))))
+
+(ert-deftest fleet-core-lieutenant-boot-carries-charter-and-root-boot-lists-lieutenants ()
+  "A lieutenant boots as a commander of its own fleet plus the lieutenant
+overlay and charter; the root's boot lists its lieutenants and charters."
+  (fleet-test-with-fakes
+    (let* ((rid (fleet-core-test-fleet store "workshop"))
+           (lt (fleet-core-create-fleet store "frontend" :parent-id rid :charter "UI and browser-facing work"))
+           (lid (plist-get lt :id)))
+      (fleet-test-wait-op store (fleet-core-start-commander store lid))
+      (let* ((lt (fleet-store-get store "fleets" lid))
+             (rt (fleet-store-get store "runtimes" (plist-get lt :commander-runtime-id)))
+             (boot (plist-get (car (last fleet-test-fake-submissions)) :text)))
+        (should (equal (plist-get rt :lifecycle) "ready"))
+        (should (equal (plist-get rt :role) "commander"))
+        (should (equal (fleet-core-effective-role store rt) "lieutenant"))
+        (should (equal (fleet-eca-conn-display-name (fleet-eca-conn (plist-get rt :id))) "*eca:lieutenant:workshop/frontend*"))
+        (should (string-match-p "# You are a lieutenant" boot))
+        (should (string-match-p "## Your charter\nUI and browser-facing work" boot))
+        (should (string-match-p (format "lieutenant `frontend` of fleet `workshop` (id `%s`)" rid) boot))
+        (should (string-match-p "Fleet: `workshop/frontend`" boot))
+        ;; The doctrine's Lieutenants section is shared; the listing of lieutenants is the root's alone.
+        (should-not (string-match-p "(fleet id `" boot)))
+      (fleet-test-wait-op store (fleet-core-start-commander store rid))
+      (let ((boot (plist-get (car fleet-test-fake-submissions) :text)))
+        (should (string-match-p "## Lieutenants" boot))
+        (should (string-match-p (format "- `frontend` (fleet id `%s`): UI and browser-facing work\n  runtime ready · 0 open request(s)" lid) boot))
+        (should (string-match-p "fleet_delegate" boot))
+        (should-not (string-match-p "# You are a lieutenant" boot))))))
 
 (ert-deftest fleet-core-dependencies-reject-cycles-and-cross-fleet ()
   (fleet-test-with-fakes
@@ -609,6 +706,50 @@ repo, or the change worktree; commander roots must cover the fleet dir."
       (fleet-core-resume-fleet store fid)
       (should (equal (plist-get (fleet-store-get store "messages" "m1") :state) "queued"))
       (should (equal (plist-get (fleet-core-test-start store t1) :state) "done")))))
+
+(ert-deftest fleet-core-park-and-resume-cover-lieutenants-and-retire-refuses-them ()
+  "Parking a root parks its lieutenants (operators stop, supervisors stay);
+resume reactivates both; a lieutenant cannot be parked or resumed alone;
+a root with lieutenants or open requests cannot be retired."
+  (fleet-test-with-fakes
+    (let* ((rid (fleet-core-test-fleet store "workshop"))
+           (lid (plist-get (fleet-core-create-fleet store "frontend" :parent-id rid :charter "UI") :id))
+           (root-task (plist-get (fleet-core-test-study store rid "audit") :id))
+           (lt-task (plist-get (fleet-core-test-study store lid "nav") :id)))
+      (fleet-test-wait-op store (fleet-core-start-commander store rid))
+      (fleet-test-wait-op store (fleet-core-start-commander store lid))
+      (fleet-core-test-start store root-task)
+      (fleet-core-test-start store lt-task)
+      (should (= 2 (fleet-store-scalar store "SELECT COUNT(*) FROM runtimes WHERE role = 'operator' AND lifecycle = 'ready'")))
+      (let (result)
+        (fleet-core-park-fleet store rid :callback (lambda (op) (setq result op)))
+        (should (fleet-test-wait-for (lambda () result) 10))
+        (should (equal (plist-get result :state) "done"))
+        (should (equal (plist-get result :fleet-id) rid))
+        (should (= 1 (length (plist-get result :lieutenants))))
+        (should (equal (plist-get (car (plist-get result :lieutenants)) :fleet-id) lid)))
+      (should (equal (plist-get (fleet-store-get store "fleets" rid) :lifecycle) "parked"))
+      (should (equal (plist-get (fleet-store-get store "fleets" lid) :lifecycle) "parked"))
+      (should (equal (plist-get (fleet-store-get store "tasks" lt-task) :lifecycle) "suspended"))
+      (should (= 0 (fleet-store-scalar store "SELECT COUNT(*) FROM runtimes WHERE role = 'operator' AND lifecycle <> 'stopped'")))
+      ;; Both supervisors are retained.
+      (should (= 2 (fleet-store-scalar store "SELECT COUNT(*) FROM runtimes WHERE role = 'commander' AND lifecycle = 'ready'")))
+      ;; The lieutenant cannot start operators while its root is parked, and cannot resume alone.
+      (fleet-test-should-fail 'fleet-not-active (fleet-core-start-task store lt-task))
+      (fleet-test-should-fail 'fleet-not-root (fleet-core-resume-fleet store lid))
+      (should (equal (fleet-core-resume-fleet store rid) (list rid lid)))
+      (should (equal (plist-get (fleet-store-get store "fleets" lid) :lifecycle) "active"))
+      (should (equal (plist-get (fleet-core-test-start store lt-task) :state) "done"))
+      ;; Retirement never recurses: even a root without tasks keeps its lieutenants.
+      (fleet-test-should-fail 'fleet-not-empty (fleet-core-retire-fleet store rid))
+      (let* ((bare (fleet-core-test-fleet store "bare"))
+             (bare-lt (plist-get (fleet-core-create-fleet store "side" :parent-id bare :charter "x") :id))
+             (err (fleet-test-should-fail 'fleet-not-empty (fleet-core-retire-fleet store bare))))
+        (should (string-match-p "lieutenants" (fleet-error-message err)))
+        (should (equal (plist-get (fleet-error-evidence err) :lieutenants) '("side")))
+        ;; The lieutenant itself retires like any empty fleet; then the root can.
+        (should (equal (plist-get (fleet-test-wait-op store (fleet-core-retire-fleet store bare-lt)) :state) "done"))
+        (should (equal (plist-get (fleet-test-wait-op store (fleet-core-retire-fleet store bare)) :state) "done"))))))
 
 (ert-deftest fleet-core-park-stays-parking-on-unknown-stop ()
   (fleet-test-with-fakes

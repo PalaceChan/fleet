@@ -28,7 +28,8 @@ All Lisp is under [`lisp/`](../lisp/); tests under [`tests/`](../tests/).
 | XDG roots, identities, containment, artifact hashes | `fleet-paths.el` | `fleet-paths-tests.el`; design §3 |
 | SQLite transactions, migrations, projections, idempotency | `fleet-store.el` | `fleet-store-tests.el`; [`schema/`](../schema/), design §7 |
 | Task create/start/retask, park/teardown/retire, recovery | `fleet-core.el` | `fleet-core-tests.el`; [recovery](recovery.md), design §10 |
-| Owner model policy file: parse, natural-language rules for the commander, default, ask-first gate, fallback | `fleet-policy.el` (pure; applied by core and supervisor) | `fleet-policy-tests.el`, policy cases in core/supervisor suites; [quickstart](../quickstart.md) |
+| Owner configuration `config.json`: model policy (rules, default, ask-first gate, fallback) and lieutenant declarations | `fleet-policy.el` (pure; applied by core and supervisor) | `fleet-policy-tests.el`, policy cases in core/supervisor suites; [quickstart](../quickstart.md) |
+| Lieutenants: child fleets, selectors, effective role, delegation requests/reports, whole-fleet park | `fleet-core.el` (identity, boot, park), `fleet-supervisor.el` (`fleet-supervisor-delegate/-report`), `fleet.el` (start with root) | lieutenant cases in core/supervisor/dashboard suites; [plan and tracker](lieutenants.md) |
 | Ownership, delivery lanes, wake batches, receipts | `fleet-supervisor.el` | `fleet-supervisor-tests.el`; design §6/§8/§9 |
 | ECA wire events, frontend advice, model/variant pinning | `fleet-eca.el` | `fleet-eca-tests.el`, `tests/fake_eca.py`, redacted fixtures; [integration](eca-compatibility.md) |
 | systemd launch/stop and cgroup proof | `fleet-runtime.el` | `fleet-runtime-tests.el`; design §6 |
@@ -73,7 +74,8 @@ Do not reload the owner's server as part of a source/documentation check.
 | Structs, advice, callbacks, owner/store/RPC code | Plan a quiescent owner-approved restart or carefully reviewed reload. Existing objects, closures, processes and DB handles survive definition reloads; there is no universal safe hot-reload recipe. |
 | `schema/tools-v1.json` | `fleet-rpc-tools` caches it in `fleet-rpc--tools`; another `tools/list` or reloading a `defvar` does not invalidate that cache. Coordinate cache lifecycle with runtime/tool refresh in an approved maintenance session. |
 | `schema/*.sql` | Applied by store migration on opening the database, not by commander replacement. Never open the production store just to test a migration. |
-| `prompts/*.md`, fleet `about.md`, `commander/context.md` | Boot messages read these at runtime creation; edits do not retroactively change an agent's context. Commander replacement refreshes commander context/doctrine, **not loaded Lisp**, and leaves operators running. |
+| `prompts/*.md`, fleet `about.md`, `commander/context.md` | Boot messages read these at runtime creation; edits do not retroactively change an agent's context. Commander replacement refreshes commander context/doctrine, **not loaded Lisp**, and leaves operators (and lieutenants) running. |
+| `~/.config/fleet/config.json` `fleets` section | Applied when a root's commander starts (`fleet-new`, `fleet-commander-replace`): lieutenants are created/updated then, never removed. `models` is read on every task creation. |
 | `bridge/fleet_bridge.py` or per-runtime configuration overlay | Existing processes retain their loaded program/environment; changes affect subsequent launches. |
 
 For an authorized commander-context refresh, prefer an idle commander, request a durable handoff, then use

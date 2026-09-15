@@ -26,26 +26,42 @@
 ;; configuration, never in product defaults, so a missing file means "no
 ;; policy" and every function then answers nil.
 ;;
-;; File format (all keys optional; unknown keys are refused so typos are
-;; caught):
+;; The owner file is `config.json' under the Fleet config root
+;; (`fleet-config-file').  Its `models' object is the policy; its `fleets'
+;; object declares lieutenants per root fleet (docs/lieutenants.md §3).  The
+;; two sections are validated independently, so a typo in one does not
+;; disable the other.  The earlier `models.json' (the bare policy object) is
+;; still read when `config.json' is absent.
 ;;
 ;;   {
 ;;     "version": 1,
-;;     "default": {"model": "provider/model", "variant": "medium"},
-;;     "ask_first": ["provider/expensive", ...],       // or ["*"] for everything
-;;     "fallback": {"provider/model": {"model": "provider/other", "variant": "medium"}},
-;;     "rules": [
-;;       {"when": "non-simple architecture design or research",
-;;        "use": [{"model": "a/x", "variant": "medium"}, "b/y"],
-;;        "why": "standing preference"}
-;;     ]
+;;     "models": {
+;;       "default": {"model": "provider/model", "variant": "medium"},
+;;       "ask_first": ["provider/expensive", ...],       // or ["*"] for everything
+;;       "fallback": {"provider/model": {"model": "provider/other", "variant": "medium"}},
+;;       "rules": [
+;;         {"when": "non-simple architecture design or research",
+;;          "use": [{"model": "a/x", "variant": "medium"}, "b/y"],
+;;          "why": "standing preference"}
+;;       ]
+;;     },
+;;     "fleets": {
+;;       "workshop": {
+;;         "lieutenants": {
+;;           "frontend": {"charter": "UI and browser-facing work."},
+;;           "backend":  {"charter": "Services and data.", "model": "a/x", "variant": "high"}
+;;         }
+;;       }
+;;     }
 ;;   }
 ;;
 ;; A selection is an object with `model' and optional `variant', or a bare
 ;; model id string.  `use' is a single selection or an ordered preference
 ;; chain: best first, the rest are what the commander offers when the owner
 ;; declines or the catalog lacks the first.  `when' is free text for the
-;; commander's judgement; `why' is optional context shown alongside it.
+;; commander's judgement; `why' is optional context shown alongside it.  A
+;; lieutenant's `charter' is likewise free text the root commander routes by;
+;; its optional `model'/`variant' pin the lieutenant's own runtime.
 
 ;;; Code:
 
@@ -53,29 +69,60 @@
 (require 'subr-x)
 (require 'fleet-paths)
 
+(defcustom fleet-config-file nil
+  "Path of the owner's Fleet configuration JSON (models policy and lieutenants).
+Nil means `config.json' under the Fleet config root (see
+`fleet-paths-config-root')."
+  :type '(choice (const nil) file) :group 'fleet)
+
 (defcustom fleet-model-policy-file nil
-  "Path of the owner's operator model policy JSON.
-Nil means `models.json' under the Fleet config root (see
-`fleet-paths-config-root').  A missing file disables the policy."
+  "Path of a stand-alone operator model policy JSON (the pre-`config.json' format).
+Nil means `models.json' under the Fleet config root, consulted only when
+`fleet-config-file' does not exist.  Set this to keep a bare policy file
+elsewhere; it then wins over `config.json'."
   :type '(choice (const nil) file) :group 'fleet)
 
 (defconst fleet-policy-ask-first-wildcard "*"
   "An `ask_first' entry meaning every model, the default included.")
 
+(defconst fleet-config--top-keys '(:version :models :fleets))
+(defconst fleet-config--fleet-keys '(:lieutenants))
+(defconst fleet-config--lieutenant-keys '(:charter :model :variant))
 (defconst fleet-policy--top-keys '(:version :default :ask_first :fallback :rules))
 (defconst fleet-policy--rule-keys '(:when :use :why))
 (defconst fleet-policy--selection-keys '(:model :variant))
 
+(defun fleet-config-file ()
+  "Absolute path of the owner configuration file, whether or not it exists."
+  (expand-file-name (or fleet-config-file (expand-file-name "config.json" (fleet-paths-config-root)))))
+
+(defun fleet-policy-legacy-file ()
+  "Absolute path of the stand-alone policy file (`models.json')."
+  (expand-file-name (or fleet-model-policy-file (expand-file-name "models.json" (fleet-paths-config-root)))))
+
 (defun fleet-policy-file ()
-  "Absolute path of the policy file, whether or not it exists."
-  (expand-file-name (or fleet-model-policy-file
-                        (expand-file-name "models.json" (fleet-paths-config-root)))))
+  "Absolute path of the file the model policy is read from.
+An explicitly configured `fleet-model-policy-file' wins; otherwise
+`config.json' when it exists, else a present `models.json', else the
+(absent) `config.json'.  Callers show this path in messages."
+  (cond (fleet-model-policy-file (fleet-policy-legacy-file))
+        ((file-exists-p (fleet-config-file)) (fleet-config-file))
+        ((file-exists-p (fleet-policy-legacy-file)) (fleet-policy-legacy-file))
+        (t (fleet-config-file))))
+
+(defun fleet-policy-legacy-file-p (file)
+  "Non-nil when FILE is a bare policy file rather than a `config.json'."
+  (equal (expand-file-name file) (fleet-policy-legacy-file)))
 
 ;;;; Parsing
 
+(defvar fleet-policy--error-code 'invalid-model-policy
+  "Error code the parsers signal; bound per section.")
+
 (defun fleet-policy--fail (file reason &rest evidence)
-  "Signal `invalid-model-policy' for FILE with REASON and EVIDENCE."
-  (apply #'fleet-fail 'invalid-model-policy (format "Model policy file is invalid: %s" reason)
+  "Signal `fleet-policy--error-code' for FILE with REASON and EVIDENCE."
+  (apply #'fleet-fail fleet-policy--error-code
+         (format "%s is invalid: %s" (if (eq fleet-policy--error-code 'invalid-fleet-config) "Fleet configuration" "Model policy") reason)
          :file file evidence))
 
 (defun fleet-policy--list (v)
@@ -124,15 +171,39 @@ Nil means `models.json' under the Fleet config root (see
                           collect (fleet-policy--selection file (format "%s.use[%d]" what j) s))
             :why (fleet-policy--text file (concat what ".why") (plist-get r :why) t)))))
 
-(defun fleet-policy-parse (text file)
-  "Parse policy JSON TEXT (from FILE, for messages) into a normalized plist.
-Signals `invalid-model-policy' on any structural problem."
+(defun fleet-policy--json (text file)
+  "Parse JSON TEXT of FILE into a plist; nil for an empty object."
   (let ((raw (condition-case err
                  (json-parse-string text :object-type 'plist :array-type 'array :null-object nil :false-object :false)
                (error (fleet-policy--fail file (format "not valid JSON (%s)" (error-message-string err)))))))
-    ;; An empty object parses to nil in plist mode; that is a valid, empty policy.
+    ;; An empty object parses to nil in plist mode; that is a valid, empty document.
     (unless (or (null raw) (and (consp raw) (keywordp (car raw)))) (fleet-policy--fail file "top level must be an object"))
-    (fleet-policy--check-keys file "the top level" raw fleet-policy--top-keys)
+    raw))
+
+(defun fleet-config-parse (text file)
+  "Parse `config.json' TEXT of FILE into (:models RAW-POLICY :fleets RAW-FLEETS).
+Only the top level is checked here; each section is validated by its own
+reader so that one broken section does not disable the other."
+  (let ((raw (fleet-policy--json text file)))
+    (fleet-policy--check-keys file "the top level" raw fleet-config--top-keys)
+    (when (and (plist-get raw :version) (not (eql (plist-get raw :version) 1)))
+      (fleet-policy--fail file "unsupported version" :version (plist-get raw :version)))
+    (dolist (k '(:models :fleets))
+      (let ((v (plist-get raw k)))
+        (unless (or (null v) (and (consp v) (keywordp (car v))))
+          (fleet-policy--fail file (format "%s must be an object" (substring (symbol-name k) 1))))))
+    (list :models (plist-get raw :models) :fleets (plist-get raw :fleets))))
+
+(defun fleet-policy-parse (text file)
+  "Parse policy JSON TEXT (from FILE, for messages) into a normalized plist.
+TEXT is a bare policy object (`models.json') or a `config.json' whose
+`models' section is the policy, by FILE.  Signals `invalid-model-policy'
+on any structural problem."
+  (let* ((legacy (fleet-policy-legacy-file-p file))
+         (raw (if legacy
+                  (fleet-policy--json text file)
+                (plist-get (fleet-config-parse text file) :models))))
+    (fleet-policy--check-keys file (if legacy "the top level" "the models section") raw fleet-policy--top-keys)
     (when (and (plist-get raw :version) (not (eql (plist-get raw :version) 1)))
       (fleet-policy--fail file "unsupported version" :version (plist-get raw :version)))
     (let ((fallback (plist-get raw :fallback)) (rules (plist-get raw :rules)) (ask (plist-get raw :ask_first)))
@@ -153,10 +224,63 @@ Signals `invalid-model-policy' on any structural problem."
   "The owner's model policy as a normalized plist, or nil when there is no file.
 The file is read on every call: it is small, and a stale cache would make
 an owner's edit take effect at some unknown later time.  A malformed file
-signals `invalid-model-policy' rather than silently running on defaults."
-  (let* ((file (fleet-policy-file))
+signals `invalid-model-policy' rather than silently running on defaults.
+A `config.json' without a `models' section is an empty policy (not nil):
+the owner has a configuration file, just no model rules."
+  (let* ((fleet-policy--error-code 'invalid-model-policy)
+         (file (fleet-policy-file))
          (text (fleet-paths-read-file file)))
     (when text (fleet-policy-parse text file))))
+
+;;;; Lieutenants (docs/lieutenants.md §3)
+
+(defun fleet-config--lieutenant (file what name v)
+  "Normalize lieutenant entry V named NAME at WHAT in FILE."
+  (unless (fleet-paths-valid-name-p name)
+    (fleet-policy--fail file (format "%s is not a valid lieutenant name (%s)" what fleet-paths-name-regexp) :name name))
+  (unless (and (consp v) (keywordp (car v)))
+    (fleet-policy--fail file (format "%s must be an object with a charter" what)))
+  (when (plist-member v :lieutenants)
+    (fleet-policy--fail file (format "%s: lieutenants cannot have lieutenants (one level only)" what)))
+  (fleet-policy--check-keys file what v fleet-config--lieutenant-keys)
+  (let ((model (plist-get v :model)) (variant (plist-get v :variant)))
+    (when (and model (not (and (stringp model) (not (string-blank-p model)))))
+      (fleet-policy--fail file (format "%s.model must be a non-empty string" what)))
+    (when (and variant (not (stringp variant)))
+      (fleet-policy--fail file (format "%s.variant must be a string" what)))
+    (list :name name :charter (fleet-policy--text file (concat what ".charter") (plist-get v :charter))
+          :model model :variant variant)))
+
+(defun fleet-config--fleet (file name v)
+  "Normalize fleet entry V named NAME: (:name NAME :lieutenants (...))."
+  (let ((what (format "fleets.%s" name)))
+    (unless (fleet-paths-valid-name-p name)
+      (fleet-policy--fail file (format "%s is not a valid fleet name (%s)" what fleet-paths-name-regexp) :name name))
+    (unless (or (null v) (and (consp v) (keywordp (car v))))
+      (fleet-policy--fail file (format "%s must be an object" what)))
+    (fleet-policy--check-keys file what v fleet-config--fleet-keys)
+    (let ((lts (plist-get v :lieutenants)))
+      (unless (or (null lts) (and (consp lts) (keywordp (car lts))))
+        (fleet-policy--fail file (format "%s.lieutenants must be an object mapping names to entries" what)))
+      (list :name name
+            :lieutenants (cl-loop for (k lv) on lts by #'cddr
+                                  for lname = (substring (symbol-name k) 1)
+                                  collect (fleet-config--lieutenant file (format "%s.lieutenants.%s" what lname) lname lv))))))
+
+(defun fleet-config-fleets ()
+  "Configured fleets as a list of (:name :lieutenants), or nil without a `config.json'.
+Only the `fleets' section is validated; signals `invalid-fleet-config'."
+  (let* ((fleet-policy--error-code 'invalid-fleet-config)
+         (file (fleet-config-file))
+         (text (fleet-paths-read-file file)))
+    (when text
+      (let ((raw (plist-get (fleet-config-parse text file) :fleets)))
+        (cl-loop for (k v) on raw by #'cddr
+                 collect (fleet-config--fleet file (substring (symbol-name k) 1) v))))))
+
+(defun fleet-config-lieutenants (fleet-name)
+  "Configured lieutenants of root FLEET-NAME: a list of (:name :charter :model :variant)."
+  (plist-get (cl-find fleet-name (fleet-config-fleets) :key (lambda (f) (plist-get f :name)) :test #'equal) :lieutenants))
 
 ;;;; Mechanical answers
 

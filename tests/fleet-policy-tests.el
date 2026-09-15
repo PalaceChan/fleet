@@ -21,14 +21,19 @@
 }")
 
 (defun fleet-policy-test-write (json)
-  "Write JSON as the policy file in the temporary config root; return the path."
-  (fleet-test-write (fleet-policy-file) json))
+  "Write JSON as a stand-alone `models.json' in the temporary config root; return the path.
+The parsing tests below exercise the bare policy format this way; the
+`config.json' wrapper is covered by `fleet-policy-config-json-*'."
+  (fleet-test-write (fleet-policy-legacy-file) json))
 
 (ert-deftest fleet-policy-missing-file-means-no-policy ()
   (fleet-test-with-roots
     (should-not (file-exists-p (fleet-policy-file)))
     (should (string-prefix-p fleet-config-root (fleet-policy-file)))
+    (should (equal (fleet-policy-file) (fleet-config-file)))
     (should-not (fleet-policy-load))
+    (should-not (fleet-config-fleets))
+    (should-not (fleet-config-lieutenants "any"))
     ;; Every question answered nil without a policy.
     (should-not (fleet-policy-default nil))
     (should-not (fleet-policy-ask-first-p nil "oa/astra"))
@@ -116,6 +121,70 @@
       (should (string-match-p "No policy default" text))
       (should (string-match-p "No routing rules" text))
       (should (string-match-p "No ask-first models" text)))))
+
+(ert-deftest fleet-policy-config-json-holds-models-and-wins-over-legacy ()
+  "`config.json' carries the policy under `models'; when present it is read
+instead of `models.json'; a config without `models' is an empty policy."
+  (fleet-test-with-roots
+    (fleet-policy-test-write "{\"default\": \"legacy/model\"}")
+    (should (equal (plist-get (fleet-policy-default (fleet-policy-load)) :model) "legacy/model"))
+    (fleet-test-write-config :models "{\"default\": \"new/model\", \"ask_first\": [\"new/model\"]}" :fleets "{}")
+    (should (equal (fleet-policy-file) (fleet-config-file)))
+    (let ((p (fleet-policy-load)))
+      (should (equal (plist-get p :file) (fleet-config-file)))
+      (should (equal (plist-get (fleet-policy-default p) :model) "new/model"))
+      (should (fleet-policy-ask-first-p p "new/model"))
+      (should (string-match-p "Policy file: `.*config.json`" (fleet-policy-describe p))))
+    (fleet-test-write-config :fleets "{}")
+    (let ((p (fleet-policy-load)))
+      (should p)
+      (should-not (fleet-policy-default p))
+      (should-not (plist-get p :rules)))
+    ;; Section errors are reported where they belong: a broken models section
+    ;; is an invalid policy; the fleets reader is untouched by it and vice versa.
+    (fleet-test-write-config :models "{\"defaults\": 1}" :fleets "{\"w\": {\"lieutenants\": {\"a\": {\"charter\": \"x\"}}}}")
+    (should (string-match-p "unknown key defaults in the models section"
+                            (fleet-error-message (fleet-test-should-fail 'invalid-model-policy (fleet-policy-load)))))
+    (should (equal (mapcar (lambda (l) (plist-get l :name)) (fleet-config-lieutenants "w")) '("a")))
+    (fleet-test-write-config :models "{\"default\": \"a/b\"}" :fleets "{\"w\": {\"lieutenant\": {}}}")
+    (should (fleet-policy-load))
+    (should (string-match-p "unknown key lieutenant in fleets.w"
+                            (fleet-error-message (fleet-test-should-fail 'invalid-fleet-config (fleet-config-fleets)))))
+    ;; Top-level problems hit both readers.
+    (fleet-test-write (fleet-config-file) "{\"model\": {}}")
+    (fleet-test-should-fail 'invalid-model-policy (fleet-policy-load))
+    (fleet-test-should-fail 'invalid-fleet-config (fleet-config-fleets))))
+
+(ert-deftest fleet-policy-config-json-lieutenants-parse-and-validate ()
+  (fleet-test-with-roots
+    (fleet-test-write-config
+     :fleets "{\"workshop\": {\"lieutenants\": {
+                 \"frontend\": {\"charter\": \"UI and browser-facing work.\"},
+                 \"backend\": {\"charter\": \"Services and data.\", \"model\": \"a/x\", \"variant\": \"high\"}}},
+               \"personal\": {},
+               \"quiet\": {\"lieutenants\": {}}}")
+    (should (equal (mapcar (lambda (f) (plist-get f :name)) (fleet-config-fleets)) '("workshop" "personal" "quiet")))
+    (should (equal (fleet-config-lieutenants "workshop")
+                   '((:name "frontend" :charter "UI and browser-facing work." :model nil :variant nil)
+                     (:name "backend" :charter "Services and data." :model "a/x" :variant "high"))))
+    (should-not (fleet-config-lieutenants "personal"))
+    (should-not (fleet-config-lieutenants "quiet"))
+    (should-not (fleet-config-lieutenants "unknown"))
+    (cl-flet ((invalid (fleets)
+                (fleet-test-write-config :fleets fleets)
+                (let ((err (fleet-test-should-fail 'invalid-fleet-config (fleet-config-fleets))))
+                  (should (equal (plist-get (fleet-error-evidence err) :file) (fleet-config-file)))
+                  (fleet-error-message err))))
+      (should (string-match-p "fleets.bad name is not a valid fleet name" (invalid "{\"bad name\": {}}")))
+      (should (string-match-p "fleets.w must be an object" (invalid "{\"w\": 3}")))
+      (should (string-match-p "fleets.w.lieutenants must be an object" (invalid "{\"w\": {\"lieutenants\": [\"a\"]}}")))
+      (should (string-match-p "fleets.w.lieutenants.a must be an object with a charter" (invalid "{\"w\": {\"lieutenants\": {\"a\": \"x\"}}}")))
+      (should (string-match-p "fleets.w.lieutenants.a.charter must be a non-empty string" (invalid "{\"w\": {\"lieutenants\": {\"a\": {\"model\": \"m\"}}}}")))
+      (should (string-match-p "fleets.w.lieutenants.a.charter must be a non-empty string" (invalid "{\"w\": {\"lieutenants\": {\"a\": {\"charter\": \" \"}}}}")))
+      (should (string-match-p "fleets.w.lieutenants.a/b is not a valid lieutenant name" (invalid "{\"w\": {\"lieutenants\": {\"a/b\": {\"charter\": \"x\"}}}}")))
+      (should (string-match-p "one level only" (invalid "{\"w\": {\"lieutenants\": {\"a\": {\"charter\": \"x\", \"lieutenants\": {}}}}}")))
+      (should (string-match-p "unknown key when in fleets.w.lieutenants.a" (invalid "{\"w\": {\"lieutenants\": {\"a\": {\"charter\": \"x\", \"when\": \"y\"}}}}")))
+      (should (string-match-p "a.model must be a non-empty string" (invalid "{\"w\": {\"lieutenants\": {\"a\": {\"charter\": \"x\", \"model\": \"\"}}}}"))))))
 
 (provide 'fleet-policy-tests)
 ;;; fleet-policy-tests.el ends here
