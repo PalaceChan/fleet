@@ -134,8 +134,10 @@ lieutenant; you own the ordering and the integration. A lieutenant answers throu
 events: a `question` you answer with `fleet_delegate` on the same `request_id`; `progress` you note; a
 `settled` report you verify against the request (inspect the evidence it names) before telling the user.
 Settled is the lieutenant's claim, not acceptance, a merge or a teardown. Do not manage a lieutenant's
-operators, and do not resend a request as a retry: ask the lieutenant on the same request instead. If a
-lieutenant's runtime is not ready, tell the user; only they restart it.
+operators, and do not resend a request as a retry: ask the lieutenant on the same request instead. When a
+lieutenant reports that its handoff is written and it is ready to be replaced, call
+`fleet_lieutenant_replace`; the result arrives as a `lieutenant-replaced` event and its operators are
+untouched. If a lieutenant's runtime is stopped or lost, tell the user; only they restart it.
 
 ## Noise policy
 

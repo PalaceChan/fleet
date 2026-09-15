@@ -351,6 +351,11 @@ Checks required keys, types and enums."
                                            :subject (plist-get params :subject) :text (plist-get params :text)
                                            :request-id (plist-get params :request_id) :idempotency-key key)
            (fleet-supervisor--changed fid)))
+        ("fleet_lieutenant_replace"
+         (unless key (fleet-fail 'invalid-request "idempotency_key required"))
+         (prog1 (fleet-supervisor-replace-lieutenant store :fleet-id fid :actor logical :lieutenant (plist-get params :lieutenant) :action-id key
+                                                     :callback (lambda (_op) (fleet-supervisor--changed fid)))
+           (fleet-supervisor--changed fid)))
         ("fleet_report"
          (mutation params (lambda ()
                             (prog1 (fleet-supervisor-report store :fleet-id fid :actor logical :kind (plist-get params :kind) :text (plist-get params :text)

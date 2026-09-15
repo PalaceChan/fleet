@@ -21,16 +21,13 @@
 }")
 
 (defun fleet-policy-test-write (json)
-  "Write JSON as a stand-alone `models.json' in the temporary config root; return the path.
-The parsing tests below exercise the bare policy format this way; the
-`config.json' wrapper is covered by `fleet-policy-config-json-*'."
-  (fleet-test-write (fleet-policy-legacy-file) json))
+  "Write JSON as the `models' section of `config.json' in the temporary config root."
+  (fleet-test-write-config :models json))
 
 (ert-deftest fleet-policy-missing-file-means-no-policy ()
   (fleet-test-with-roots
-    (should-not (file-exists-p (fleet-policy-file)))
-    (should (string-prefix-p fleet-config-root (fleet-policy-file)))
-    (should (equal (fleet-policy-file) (fleet-config-file)))
+    (should-not (file-exists-p (fleet-config-file)))
+    (should (string-prefix-p fleet-config-root (fleet-config-file)))
     (should-not (fleet-policy-load))
     (should-not (fleet-config-fleets))
     (should-not (fleet-config-lieutenants "any"))
@@ -40,14 +37,14 @@ The parsing tests below exercise the bare policy format this way; the
     (should-not (fleet-policy-ask-first-p nil nil))
     (should-not (fleet-policy-fallback nil "or/grok"))
     ;; The defcustom points elsewhere when set.
-    (let ((fleet-model-policy-file (expand-file-name "elsewhere.json" fleet-test--roots)))
-      (should (equal (fleet-policy-file) (expand-file-name "elsewhere.json" fleet-test--roots))))))
+    (let ((fleet-config-file (expand-file-name "elsewhere.json" fleet-test--roots)))
+      (should (equal (fleet-config-file) (expand-file-name "elsewhere.json" fleet-test--roots))))))
 
 (ert-deftest fleet-policy-parses-and-normalizes ()
   (fleet-test-with-roots
     (fleet-policy-test-write fleet-policy-test-json)
     (let ((p (fleet-policy-load)))
-      (should (equal (plist-get p :file) (fleet-policy-file)))
+      (should (equal (plist-get p :file) (fleet-config-file)))
       (should (equal (plist-get p :default) '(:model "or/grok" :variant nil)))
       (should (equal (plist-get p :ask-first) '("oa/astra" "an/fable")))
       (should (equal (fleet-policy-fallback p "or/grok") '(:model "oa/terra" :variant "medium")))
@@ -87,11 +84,13 @@ The parsing tests below exercise the bare policy format this way; the
     (cl-flet ((invalid (json)
                 (fleet-policy-test-write json)
                 (let ((err (fleet-test-should-fail 'invalid-model-policy (fleet-policy-load))))
-                  (should (equal (plist-get (fleet-error-evidence err) :file) (fleet-policy-file)))
+                  (should (equal (plist-get (fleet-error-evidence err) :file) (fleet-config-file)))
                   (fleet-error-message err))))
       (should (string-match-p "not valid JSON" (invalid "{")))
-      (should (string-match-p "top level must be an object" (invalid "[1]")))
-      (should (string-match-p "unknown key defaults" (invalid "{\"defaults\": \"x/y\"}")))
+      (should (string-match-p "models must be an object" (invalid "[1]")))
+      (fleet-test-write (fleet-config-file) "[1]")
+      (should (string-match-p "top level must be an object" (fleet-error-message (fleet-test-should-fail 'invalid-model-policy (fleet-policy-load)))))
+      (should (string-match-p "unknown key defaults in the models section" (invalid "{\"defaults\": \"x/y\"}")))
       (should (string-match-p "unsupported version" (invalid "{\"version\": 2}")))
       (should (string-match-p "rules\\[0\\] needs a non-empty use" (invalid "{\"rules\": [{\"when\": \"x\"}]}")))
       (should (string-match-p "rules\\[0\\]\\.when must be a non-empty string" (invalid "{\"rules\": [{\"use\": \"a/b\"}]}")))
@@ -108,7 +107,7 @@ The parsing tests below exercise the bare policy format this way; the
   (fleet-test-with-roots
     (fleet-policy-test-write fleet-policy-test-json)
     (let ((text (fleet-policy-describe (fleet-policy-load))))
-      (should (string-match-p "Policy file: `.*models.json`" text))
+      (should (string-match-p "Policy file: `.*config.json`" text))
       (should (string-match-p "Default (no rule applies; omit `model`): `or/grok`" text))
       (should (string-match-p "1\\. when new feature work on project X → `an/fable` (variant `high`) (why: standing rule from the user)" text))
       (should (string-match-p "2\\. when non-simple technical/architecture design or research → `oa/astra` (variant `medium`), then `an/fable` (variant `high`), then `or/kimi`\n" text))
@@ -122,19 +121,15 @@ The parsing tests below exercise the bare policy format this way; the
       (should (string-match-p "No routing rules" text))
       (should (string-match-p "No ask-first models" text)))))
 
-(ert-deftest fleet-policy-config-json-holds-models-and-wins-over-legacy ()
-  "`config.json' carries the policy under `models'; when present it is read
-instead of `models.json'; a config without `models' is an empty policy."
+(ert-deftest fleet-policy-config-json-sections-are-validated-independently ()
+  "A config without `models' is an empty policy; a broken section disables
+only itself; a broken top level disables both."
   (fleet-test-with-roots
-    (fleet-policy-test-write "{\"default\": \"legacy/model\"}")
-    (should (equal (plist-get (fleet-policy-default (fleet-policy-load)) :model) "legacy/model"))
     (fleet-test-write-config :models "{\"default\": \"new/model\", \"ask_first\": [\"new/model\"]}" :fleets "{}")
-    (should (equal (fleet-policy-file) (fleet-config-file)))
     (let ((p (fleet-policy-load)))
       (should (equal (plist-get p :file) (fleet-config-file)))
       (should (equal (plist-get (fleet-policy-default p) :model) "new/model"))
-      (should (fleet-policy-ask-first-p p "new/model"))
-      (should (string-match-p "Policy file: `.*config.json`" (fleet-policy-describe p))))
+      (should (fleet-policy-ask-first-p p "new/model")))
     (fleet-test-write-config :fleets "{}")
     (let ((p (fleet-policy-load)))
       (should p)

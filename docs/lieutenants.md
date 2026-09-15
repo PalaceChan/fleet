@@ -55,9 +55,9 @@ vocabulary `commander` / `lieutenant` / `operator`), the ECA tool overlay (a lie
 
 ## 3. Owner configuration
 
-One owner file, `~/.config/fleet/config.json`, replaces `models.json` (the old file is still read when
-the new one is absent; `fleet-doctor` says so). The `models` object is the unchanged model policy;
-`fleets` declares lieutenants:
+One owner file, `~/.config/fleet/config.json` (`fleet-config-file`), replaces the earlier `models.json`
+without a compatibility path: the owner has a single configuration and no fleets predating this change.
+The `models` object is the unchanged model policy; `fleets` declares lieutenants:
 
 ```json
 {
@@ -129,7 +129,11 @@ requests. A settled request is evidence for the commander to verify, not user ac
 - **Stop / replace** are per supervisor and non-cascading: `fleet-commander-stop root/child` and
   `fleet-commander-replace root/child` act on the lieutenant only; the root and all operators continue.
   Replacing the root leaves lieutenants running. Claims of a replaced lieutenant's runtime go to
-  `needs-reconciliation` as for any commander.
+  `needs-reconciliation` as for any commander. The commander can do the same without the human:
+  when a lieutenant reports that its handoff is written and its context is long, `fleet_lieutenant_replace`
+  (`fleet-supervisor-replace-lieutenant`) runs the identical stop → reconcile → start sequence as one
+  `lieutenant-replace` operation, refused while the lieutenant is mid-turn, and completes as an actionable
+  `lieutenant-replaced` / `lieutenant-replace-failed` event for the root.
 - **Park / resume** are whole-fleet operations on the root: `fleet-park root` parks the root and every
   child (operators stop, supervisors stay), reports the descendant counts, and records per-child
   partial failure. `fleet-resume` recurses the same way. Dashboard `X` on a lieutenant row parks its
@@ -155,9 +159,6 @@ model-routing policy for lieutenants.
 
 Deferred (revisit after v1 ships; add to `TODO.md` if still wanted):
 
-- **Commander-initiated lieutenant replacement** when a lieutenant's context runs long (a
-  `fleet_lieutenant_replace` tool reusing `fleet-commander-replace`). Today the human runs
-  `M-x fleet-commander-replace root/child`.
 - **Structured request bodies** (acceptance, constraints, authority as fields). v1 keeps the brief in
   prose, as commander→operator briefs are.
 - **Cancel semantics.** v1 cancels by follow-up message asking the lieutenant to stop and settle
@@ -182,7 +183,7 @@ parentheses. Verify through the disposable `fleet-test` server per [testing](tes
   `fleet-core-effective-role`; overlay disables `ask_user` for lieutenants; `fleet-core-lieutenants`
   lists children. Test: `fleet-core-lieutenant-is-a-child-fleet-with-selector-and-effective-role`.
 - [x] **L01.3 Owner config** (`fleet-policy.el`, `fleet-policy-tests.el`, `quickstart.md`):
-  `config.json` with `models` and `fleets`; legacy `models.json` fallback; `fleet-config-lieutenants
+  `config.json` with `models` and `fleets` (no `models.json` fallback; the owner migrated); `fleet-config-lieutenants
   fleet-name` with validation errors naming the key; `fleet-doctor` reports the file in use and each
   section's validity. Tests: `fleet-policy-config-json-*`, `fleet-core-configured-lieutenants-are-created-updated-and-never-removed`.
 - [x] **L01.4 Boot and prompts** (`fleet-core.el`, `prompts/lieutenant.md`, `prompts/commander.md`,
@@ -194,7 +195,9 @@ parentheses. Verify through the disposable `fleet-test` server per [testing](tes
   `:open-requests`; wake text names lieutenant, kind and request. Test:
   `fleet-supervisor-delegation-is-a-lane-message-down-and-an-actionable-event-up` (lane message down,
   actionable receipt and admitted wake up, replay, scope refusals, settle-once, tool visibility).
-  Not yet covered: a wire-level RPC test through `fleet-rpc-dispatch` for the two tools (the handlers
+  `fleet_lieutenant_replace` (`fleet-supervisor-replace-lieutenant`), test
+  `fleet-supervisor-lieutenant-replace-is-non-cascading-and-wakes-the-root`.
+  Not yet covered: a wire-level RPC test through `fleet-rpc-dispatch` for the three tools (the handlers
   are thin; add one when touching `fleet-rpc-tests.el`).
 - [x] **L01.6 Lifecycle glue** (`fleet.el`, `fleet-core.el`, core tests): `fleet-core-ensure-lieutenants`
   applied and lieutenants started by `fleet--start-commander-and-show` on a root; selectors in
@@ -206,14 +209,16 @@ parentheses. Verify through the disposable `fleet-test` server per [testing](tes
   `j` selectors, `X` to the root, open-request count on headers; row identity unchanged so refresh
   restores selection. Test: `fleet-dashboard-lieutenants-nest-under-their-root`.
 - [ ] **L01.8 Documentation and acceptance** (`quickstart.md`, `development.md`, `prompts/`):
-  - [x] Guides updated; full non-native suite on a fresh `fleet-test` daemon at the feature commit:
-    **PASSED 146, FAILED 0, SKIPPED 3 (native opt-in), TOTAL 150** (one assertion fixed and re-run
-    singly afterwards); Python bridge tests pass.
+  - [x] Guides updated; full non-native suite on a fresh `fleet-test` daemon: at the feature commit
+    **146 passed, 3 skipped (native opt-in), 150 total**; at the follow-up commit (config simplified,
+    `fleet_lieutenant_replace` added) **147 passed, 1 failed, 3 skipped, 151 total**, the failure being
+    a `cl-flet`→`cl-labels` slip in the new replace function, fixed and re-run singly to green. Python
+    bridge tests 9/9.
   - [ ] Live rehearsal (owner-authorized, separate step, costs model turns): declare one lieutenant in
     `config.json`, `fleet-new` a root, confirm the lieutenant starts with it and appears nested; root
     delegates a small study; lieutenant creates, verifies and settles; root verifies and reports;
     `fleet-commander-replace root` while the lieutenant works (no operator restart, request intact);
     `fleet-park`/resume of the whole fleet; `fleet-destroy root/child` refusal while its task exists.
     Record redacted evidence here, then decide whether to keep this file or fold the remainder into `TODO.md`.
-  - [ ] `docs/design.md` has no lieutenant section yet; add a short pointer to this file under the
-    fleet/commander model when the design is next edited.
+  - [x] `docs/design.md` points here from its model-policy note; a fuller design section can wait for
+    the next design edit.

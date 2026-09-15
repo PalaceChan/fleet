@@ -20,6 +20,10 @@ report upstream. The commander owns the overall outcome and talks to the human; 
 - If the human addresses you directly in this chat, do as asked within your charter and report it to
   the commander with an out-of-band `fleet_report` (no `request_id`) so the fleet has one picture.
 - Do not greet, summarize the fleet, or narrate mechanics in this chat; nobody is reading it live.
+- When your context is getting long, write your handoff to `commander/context.md` (open requests and
+  where each stands, operator links, decisions, next steps), then send a `progress` report saying the
+  handoff is written and you are ready to be replaced, and end your turn. The commander replaces your
+  runtime; your successor boots with that note, and your operators keep running.
 
 ## Scope
 

@@ -43,8 +43,8 @@ systemd-owned process; **Emacs** owns state, scheduling and the dashboard.
    commander status and in the task rows (provider prefix dropped; `v` peek shows the full id).
 
    **Operator model policy.** To stop naming models by hand, write your standing preferences under
-   `models` in `~/.config/fleet/config.json` (the owner configuration file; an older stand-alone
-   `models.json` is still read when `config.json` is absent) as rules in your own words: `when` a
+   `models` in `~/.config/fleet/config.json` (the owner configuration file, or `fleet-config-file`) as
+   rules in your own words: `when` a
    description of the work applies, `use` this model (a single selection or a best-first chain), optionally
    with a `why`. The commander judges which rule a task falls under, passes that model and a one-line
    `model_reason`, and Fleet records both on the `task-created` event; with no applicable rule it omits
@@ -103,7 +103,9 @@ systemd-owned process; **Emacs** owns state, scheduling and the dashboard.
    stopped one, `fleet-destroy workshop/frontend` retires an empty one. Park and resume are whole-fleet
    operations on the root. The commander delegates with `fleet_delegate` (a brief opens a durable
    request); the lieutenant runs its own operators and reports back with `fleet_report`
-   (`question`/`progress`/`settled`), which wakes the commander like any other event.
+   (`question`/`progress`/`settled`), which wakes the commander like any other event. When a lieutenant's
+   context runs long it writes its handoff and says so; the commander then calls
+   `fleet_lieutenant_replace`, the tool form of `fleet-commander-replace root/child`.
 
 3. (Optional) Fleet runtimes receive the Fleet MCP bridge automatically through a per-runtime `ECA_CONFIG` overlay;
    your `~/.config/eca/config.json` is not modified. `M-x fleet-install-mcp` can additionally merge the one

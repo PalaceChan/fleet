@@ -82,7 +82,7 @@ Nil discovers the executable the installed ECA package would use."
 
 (defcustom fleet-operator-model nil
   "ECA provider/model id for operators.  Nil uses the ECA default.
-The owner's model policy file (`fleet-model-policy-file') takes precedence
+The owner's model policy (`models' in `fleet-config-file') takes precedence
 when it names a default or a matching rule."
   :type '(choice (const nil) string) :group 'fleet)
 

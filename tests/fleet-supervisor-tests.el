@@ -152,6 +152,52 @@ commander; settling closes the request once; scope refusals hold."
             (should (member "fleet_task_create" (funcall names "lieutenant")))
             (should-not (member "fleet_report" (funcall names "operator")))))))))
 
+(ert-deftest fleet-supervisor-lieutenant-replace-is-non-cascading-and-wakes-the-root ()
+  "The commander replaces one lieutenant's runtime: verified stop, claims to
+reconciliation, successor booted with the handoff; the root, siblings and
+operators continue; the root gets an actionable event; busy/foreign refusals."
+  (fleet-sup-test-with
+    (let* ((rid (fleet-core-test-fleet store "workshop"))
+           (lid (plist-get (fleet-core-create-fleet store "frontend" :parent-id rid :charter "UI") :id))
+           (sid (plist-get (fleet-core-create-fleet store "backend" :parent-id rid :charter "data") :id))
+           (other (fleet-core-test-fleet store "other"))
+           (root-actor (fleet-core-actor-commander rid))
+           (root-cid (fleet-sup-test-commander store rid))
+           (old (fleet-sup-test-commander store lid))
+           (sib (fleet-sup-test-commander store sid))
+           (tid (plist-get (fleet-core-test-study store lid "nav") :id)))
+      (fleet-sup-test-settle)
+      (fleet-core-test-start store tid)
+      (let ((op-rt (fleet-core-test-runtime store tid)))
+        (fleet-test-write (expand-file-name "commander/context.md" (plist-get (fleet-store-get store "fleets" lid) :artifact-root)) "# handoff\nnav is half done\n")
+        ;; Foreign and mid-turn refusals.
+        (fleet-test-should-fail 'forbidden (fleet-supervisor-replace-lieutenant store :fleet-id other :actor (fleet-core-actor-commander other) :lieutenant "frontend" :action-id "r0"))
+        (fleet-store-transaction store (fleet-store-update store "runtimes" old (list :turn-state "running")))
+        (fleet-test-should-fail 'runtime-busy (fleet-supervisor-replace-lieutenant store :fleet-id rid :actor root-actor :lieutenant "frontend" :action-id "r1"))
+        (fleet-store-transaction store (fleet-store-update store "runtimes" old (list :turn-state "idle")))
+        ;; Replace: same key replays the same operation.
+        (let* ((r (fleet-supervisor-replace-lieutenant store :fleet-id rid :actor root-actor :lieutenant "frontend" :action-id "r2"))
+               (op (plist-get r :operation-id)))
+          (should (equal (plist-get r :lieutenant) "frontend"))
+          (should (equal (plist-get (fleet-supervisor-replace-lieutenant store :fleet-id rid :actor root-actor :lieutenant "frontend" :action-id "r2") :operation-id) op))
+          (should (equal (plist-get (fleet-test-wait-op store op) :state) "done")))
+        (fleet-sup-test-settle)
+        (let* ((lt (fleet-store-get store "fleets" lid)) (new (plist-get lt :commander-runtime-id)))
+          (should-not (equal new old))
+          (should (equal (plist-get (fleet-store-get store "runtimes" old) :lifecycle) "stopped"))
+          (should (equal (plist-get (fleet-store-get store "runtimes" new) :lifecycle) "ready"))
+          (should (equal (fleet-core-effective-role store (fleet-store-get store "runtimes" new)) "lieutenant"))
+          ;; Successor booted with the handoff; root, sibling and the operator untouched.
+          (should (string-match-p "nav is half done" (plist-get (car (fleet-sup-test-submissions (lambda (s) (string-match-p "Recovery summary" s)))) :text)))
+          (should (equal (plist-get (fleet-store-get store "fleets" rid) :commander-runtime-id) root-cid))
+          (should (equal (plist-get (fleet-store-get store "fleets" sid) :commander-runtime-id) sib))
+          (should (equal (plist-get (fleet-store-get store "runtimes" op-rt) :lifecycle) "ready"))
+          (should (equal (fleet-core-test-runtime store tid) op-rt)))
+        ;; The root has an actionable lieutenant-replaced event.
+        (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM events e JOIN event_receipts r ON r.event_id = e.id WHERE e.fleet_id = ? AND e.kind = 'lieutenant-replaced'" rid)))
+        (should (member "fleet_lieutenant_replace" (let ((fleet-rpc--tools nil)) (mapcar (lambda (tool) (plist-get tool :name)) (fleet-rpc-tools-for-role "commander")))))
+        (should-not (member "fleet_lieutenant_replace" (let ((fleet-rpc--tools nil)) (mapcar (lambda (tool) (plist-get tool :name)) (fleet-rpc-tools-for-role "lieutenant")))))))))
+
 (ert-deftest fleet-supervisor-wake-requires-idle-commander-and-pending-events ()
   (fleet-sup-test-with
     (let* ((fid (fleet-core-test-fleet store)) (cid (fleet-sup-test-commander store fid))

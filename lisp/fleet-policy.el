@@ -5,7 +5,7 @@
 ;;; Commentary:
 
 ;; The owner's operator model policy, read from a JSON file under the Fleet
-;; config root (`fleet-policy-file').  It lets the owner write down, once and
+;; config root (`fleet-config-file').  It lets the owner write down, once and
 ;; in their own words, how operators should be routed to models, instead of
 ;; naming a model to the commander for every task.
 ;;
@@ -30,8 +30,7 @@
 ;; (`fleet-config-file').  Its `models' object is the policy; its `fleets'
 ;; object declares lieutenants per root fleet (docs/lieutenants.md §3).  The
 ;; two sections are validated independently, so a typo in one does not
-;; disable the other.  The earlier `models.json' (the bare policy object) is
-;; still read when `config.json' is absent.
+;; disable the other.
 ;;
 ;;   {
 ;;     "version": 1,
@@ -75,13 +74,6 @@ Nil means `config.json' under the Fleet config root (see
 `fleet-paths-config-root')."
   :type '(choice (const nil) file) :group 'fleet)
 
-(defcustom fleet-model-policy-file nil
-  "Path of a stand-alone operator model policy JSON (the pre-`config.json' format).
-Nil means `models.json' under the Fleet config root, consulted only when
-`fleet-config-file' does not exist.  Set this to keep a bare policy file
-elsewhere; it then wins over `config.json'."
-  :type '(choice (const nil) file) :group 'fleet)
-
 (defconst fleet-policy-ask-first-wildcard "*"
   "An `ask_first' entry meaning every model, the default included.")
 
@@ -96,23 +88,7 @@ elsewhere; it then wins over `config.json'."
   "Absolute path of the owner configuration file, whether or not it exists."
   (expand-file-name (or fleet-config-file (expand-file-name "config.json" (fleet-paths-config-root)))))
 
-(defun fleet-policy-legacy-file ()
-  "Absolute path of the stand-alone policy file (`models.json')."
-  (expand-file-name (or fleet-model-policy-file (expand-file-name "models.json" (fleet-paths-config-root)))))
 
-(defun fleet-policy-file ()
-  "Absolute path of the file the model policy is read from.
-An explicitly configured `fleet-model-policy-file' wins; otherwise
-`config.json' when it exists, else a present `models.json', else the
-(absent) `config.json'.  Callers show this path in messages."
-  (cond (fleet-model-policy-file (fleet-policy-legacy-file))
-        ((file-exists-p (fleet-config-file)) (fleet-config-file))
-        ((file-exists-p (fleet-policy-legacy-file)) (fleet-policy-legacy-file))
-        (t (fleet-config-file))))
-
-(defun fleet-policy-legacy-file-p (file)
-  "Non-nil when FILE is a bare policy file rather than a `config.json'."
-  (equal (expand-file-name file) (fleet-policy-legacy-file)))
 
 ;;;; Parsing
 
@@ -195,15 +171,11 @@ reader so that one broken section does not disable the other."
     (list :models (plist-get raw :models) :fleets (plist-get raw :fleets))))
 
 (defun fleet-policy-parse (text file)
-  "Parse policy JSON TEXT (from FILE, for messages) into a normalized plist.
-TEXT is a bare policy object (`models.json') or a `config.json' whose
-`models' section is the policy, by FILE.  Signals `invalid-model-policy'
-on any structural problem."
-  (let* ((legacy (fleet-policy-legacy-file-p file))
-         (raw (if legacy
-                  (fleet-policy--json text file)
-                (plist-get (fleet-config-parse text file) :models))))
-    (fleet-policy--check-keys file (if legacy "the top level" "the models section") raw fleet-policy--top-keys)
+  "Parse `config.json' TEXT (from FILE, for messages) into a normalized policy plist.
+The `models' section is the policy.  Signals `invalid-model-policy' on any
+structural problem."
+  (let ((raw (plist-get (fleet-config-parse text file) :models)))
+    (fleet-policy--check-keys file "the models section" raw fleet-policy--top-keys)
     (when (and (plist-get raw :version) (not (eql (plist-get raw :version) 1)))
       (fleet-policy--fail file "unsupported version" :version (plist-get raw :version)))
     (let ((fallback (plist-get raw :fallback)) (rules (plist-get raw :rules)) (ask (plist-get raw :ask_first)))
@@ -228,7 +200,7 @@ signals `invalid-model-policy' rather than silently running on defaults.
 A `config.json' without a `models' section is an empty policy (not nil):
 the owner has a configuration file, just no model rules."
   (let* ((fleet-policy--error-code 'invalid-model-policy)
-         (file (fleet-policy-file))
+         (file (fleet-config-file))
          (text (fleet-paths-read-file file)))
     (when text (fleet-policy-parse text file))))
 

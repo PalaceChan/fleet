@@ -134,7 +134,7 @@ existing-server procedure. Source work, native acceptance, and live activation a
   - **Payoff:** the user stops naming models per task; expensive models (or, while shaping the rules with
     `"*"`, every task) need one explicit yes; an OpenRouter outage moves a runtime to the configured
     fallback instead of stalling.
-  - **Done:** `lisp/fleet-policy.el` + `~/.config/fleet/models.json`; `fleet_task_create` requires
+  - **Done:** `lisp/fleet-policy.el` + `~/.config/fleet/config.json` (`models`; originally `models.json`); `fleet_task_create` requires
     `model_reason` and accepts `owner_approved`; `model-needs-approval` refusal echoing the proposal;
     `model-fallback`/`turn-failed` events; boot-message policy section; commander doctrine. Tests:
     `fleet-policy-tests.el`, `fleet-core-operator-model-follows-owner-policy-and-ask-first-gate`,
@@ -273,5 +273,5 @@ reprioritizes it. An easy label is not a reason to implement unsolicited UI or p
   documented in [commander doctrine](prompts/commander.md); it is not a request to weaken teardown.
 - Do not introduce a sandbox/backend redesign, global trust changes, version gates, undocumented cache
   parsing, or private session-log migration as incidental "cleanup." Model selection is owner policy
-  (F12): extend it through `~/.config/fleet/models.json`, never through product defaults or commander
+  (F12): extend it through `models` in `~/.config/fleet/config.json`, never through product defaults or commander
   discretion.

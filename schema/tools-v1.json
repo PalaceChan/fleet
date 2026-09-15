@@ -133,6 +133,12 @@
       "inputSchema": {"type": "object", "required": ["idempotency_key", "lieutenant", "text"], "properties": {"idempotency_key": {"type": "string"}, "lieutenant": {"type": "string", "description": "Lieutenant name (as listed) or fleet id."}, "subject": {"type": "string", "description": "One line naming the outcome; required when opening a request."}, "text": {"type": "string", "description": "The brief (new request) or the follow-up message (existing request)."}, "request_id": {"type": "string", "description": "An open request of yours to this lieutenant; omit to open a new one."}}, "additionalProperties": false}
     },
     {
+      "name": "fleet_lieutenant_replace",
+      "roles": ["commander"],
+      "description": "Give a lieutenant a fresh runtime: verified stop of its current one, then a successor booted with its commander/context.md handoff and snapshot. Its operators, its open requests and everything else continue. Use it when a lieutenant reports that its context is getting long (it writes its handoff first and ends its turn); refused while the lieutenant is mid-turn (runtime-busy). Returns an operation id; completion arrives as a lieutenant-replaced or lieutenant-replace-failed event (do not poll).",
+      "inputSchema": {"type": "object", "required": ["idempotency_key", "lieutenant"], "properties": {"idempotency_key": {"type": "string"}, "lieutenant": {"type": "string", "description": "Lieutenant name (as listed) or fleet id."}}, "additionalProperties": false}
+    },
+    {
       "name": "fleet_report",
       "roles": ["lieutenant"],
       "description": "Report to your commander. kind question: a decision you need (end your turn; the answer arrives as a message). kind progress: a milestone or plan-changing finding only. kind settled: the request is finished; give outcome (done, failed, partial), what was delivered, the evidence you verified and what remains; a settled request is closed and cannot be settled again. Name the request_id you report on; omit it only for an out-of-band notice (for example the human addressed you directly). Wakes the commander.",

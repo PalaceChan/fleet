@@ -1071,7 +1071,7 @@ commander needs it to turn casual model names into exact ids."
                         (format "- Policy ids the catalog does not offer (Fleet will refuse them; use the next in the chain and tell the user, they may be typos): %s.\n"
                                 (mapconcat (lambda (m) (format "`%s`" m)) missing ", ")))))
              (t (format "- No owner policy file (`%s`); every task without an explicit `model` gets the operator default.\n"
-                        (fleet-policy-file)))))))
+                        (fleet-config-file)))))))
 
 (defun fleet-core--compact-snapshot (snap)
   "Reduce SNAP to the fields a model needs."
@@ -1382,6 +1382,17 @@ Return the operation id."
                                  (fleet-core-operation-finish store op :state "failed" :error (format "boot payload %s" outcome)))
                                (when callback (funcall callback (fleet-store-get store "operations" op))))))))
       op)))
+
+(defun fleet-core-recovery-summary (store fleet)
+  "Deterministic recovery summary text a replacement commander of FLEET boots with."
+  (let ((tasks (fleet-store-tasks store (plist-get fleet :id))))
+    (concat (format "Fleet `%s` is %s. Tasks:\n" (fleet-core-fleet-selector store fleet) (plist-get fleet :lifecycle))
+            (mapconcat (lambda (task)
+                         (format "- `%s` (%s): lifecycle %s, phase %s, brief rev %d — %s" (plist-get task :name) (plist-get task :kind)
+                                 (plist-get task :lifecycle) (or (plist-get task :phase) "none") (plist-get task :brief-revision) (or (plist-get task :detail) "")))
+                       tasks "\n")
+            (format "\nDone tasks are verified/finalized, not rerun. Unfinished suspended tasks may be started again under their existing scope with fleet_task_start once the fleet is active. Held messages: %d. Read commander/context.md for the previous handoff."
+                    (fleet-store-scalar store "SELECT COUNT(*) FROM messages WHERE fleet_id = ? AND state = 'held'" (plist-get fleet :id))))))
 
 (cl-defun fleet-core-stop-commander (store fleet-id &key callback)
   "Stop FLEET-ID's commander with verified service evidence.

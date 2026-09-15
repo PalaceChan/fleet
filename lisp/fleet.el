@@ -186,16 +186,7 @@ The prompt is skipped when no catalog is known yet (nothing to choose from)."
         (message "Retained commander %s is %s; stop it (fleet-commander-stop) before starting a new one" (fleet-paths-short-id (plist-get rt :id)) (plist-get rt :lifecycle)))
        (t (fleet--pin-and-start-commander store fleet (fleet--recovery-summary store fleet)))))))
 
-(defun fleet--recovery-summary (store fleet)
-  "Deterministic recovery summary text for FLEET."
-  (let ((tasks (fleet-store-tasks store (plist-get fleet :id))))
-    (concat (format "Fleet `%s` is %s. Tasks:\n" (fleet-core-fleet-selector store fleet) (plist-get fleet :lifecycle))
-            (mapconcat (lambda (task)
-                         (format "- `%s` (%s): lifecycle %s, phase %s, brief rev %d — %s" (plist-get task :name) (plist-get task :kind)
-                                 (plist-get task :lifecycle) (or (plist-get task :phase) "none") (plist-get task :brief-revision) (or (plist-get task :detail) "")))
-                       tasks "\n")
-            (format "\nDone tasks are verified/finalized, not rerun. Unfinished suspended tasks may be started again under their existing scope with fleet_task_start once the fleet is active. Held messages: %d. Read commander/context.md for the previous handoff."
-                    (fleet-store-scalar store "SELECT COUNT(*) FROM messages WHERE fleet_id = ? AND state = 'held'" (plist-get fleet :id))))))
+(defalias 'fleet--recovery-summary #'fleet-core-recovery-summary)
 
 (defun fleet--start-commander-and-show (fleet recovery-summary)
   "Start FLEET's commander with RECOVERY-SUMMARY, then show chat and dashboard.
@@ -487,18 +478,17 @@ Each check reports its evidence."
                                             (t "none"))
                               (or (fleet-supervisor-owner-p) (fleet-supervisor-read-only-p))))
         ;; Owner configuration: which file is read, and whether each section parses.
-        (let* ((cfg (fleet-config-file)) (legacy (fleet-policy-legacy-file))
+        (let* ((cfg (fleet-config-file))
                (models (condition-case err (progn (fleet-policy-load) "models ok") (fleet-error (fleet-error-string err))))
                (fleets (condition-case err (format "%d fleet(s) with %d lieutenant(s) declared"
                                                    (length (fleet-config-fleets))
                                                    (apply #'+ (mapcar (lambda (f) (length (plist-get f :lieutenants))) (fleet-config-fleets))))
-                         (fleet-error (fleet-error-string err))))
-               (ok (and (equal models "models ok") (not (string-match-p "invalid" fleets)))))
+                         (fleet-error (fleet-error-string err)))))
           (fleet--doctor-line "Owner config"
-                              (cond ((file-exists-p cfg) (format "%s — %s; %s" cfg models fleets))
-                                    ((file-exists-p legacy) (format "%s (stand-alone policy; move it under \"models\" in %s to declare lieutenants) — %s" legacy cfg models))
-                                    (t (format "none (%s absent; no model policy, no lieutenants)" cfg)))
-                              (if (or (file-exists-p cfg) (file-exists-p legacy)) ok 'info)))
+                              (if (file-exists-p cfg)
+                                  (format "%s — %s; %s" cfg models fleets)
+                                (format "none (%s absent; no model policy, no lieutenants)" cfg))
+                              (if (file-exists-p cfg) (and (equal models "models ok") (not (string-match-p "invalid" fleets))) 'info)))
         (let* ((cfg (expand-file-name "config.json" (fleet-paths-eca-config-root)))
                (json (and (file-exists-p cfg) (ignore-errors (fleet-store-unjson (fleet-paths-read-file cfg)))))
                (entry (plist-get (plist-get json :mcpServers) :fleet)))

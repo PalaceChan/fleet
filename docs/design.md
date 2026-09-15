@@ -2118,7 +2118,7 @@ Each was driven by evidence from the installed pair (see `docs/eca-compatibility
 19. **Operator models come from an owner policy file, not from repeating oneself (2026-09-13).** Every
     task that wanted something other than the ECA default needed the user to name a model to the commander,
     and the expensive models had no guard beyond doctrine. The owner's preferences now live in
-    `~/.config/fleet/models.json` (`fleet-policy.el`, pure: parse, describe, mechanical answers): a
+    the `models` section of `~/.config/fleet/config.json` (`fleet-policy.el`, pure: parse, describe, mechanical answers; the same file's `fleets` section declares lieutenants, see [lieutenants](lieutenants.md)): a
     `default`, `rules` written as natural language — `when` a description of the work applies, `use` this
     selection or best-first chain, optionally `why` — an `ask_first` list and a `fallback` map. The split
     is deliberate: routing is judgement, so the *commander* does it (the boot message shows the rules; it

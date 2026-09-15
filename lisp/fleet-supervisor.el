@@ -814,5 +814,58 @@ in the keyed action.  Returns (:event-id :request-id :state)."
                                                           :kind kind :outcome outcome :detail text))))
         (list :event-id eid :request-id request-id :state (cond ((equal kind "settled") "settled") (req "open") (t nil)))))))
 
+(cl-defun fleet-supervisor-replace-lieutenant (store &key fleet-id actor lieutenant action-id callback)
+  "Replace the runtime of LIEUTENANT (name or id) of root FLEET-ID on behalf of ACTOR.
+The same non-cascading operation as `fleet-commander-replace' for one
+supervisor: verified stop of the current runtime, its claims marked for
+reconciliation, a successor booted with the handoff context.  Operators
+and the root continue.  Refused while the lieutenant's turn is running
+(`runtime-busy'): the commander asks it to write its handoff and end the
+turn first.  Returns (:operation-id :lieutenant); completion reaches the
+root as an actionable `lieutenant-replaced' or `lieutenant-replace-failed'
+event.  Idempotent by ACTION-ID; the keyed part is the admission only,
+no transaction spans the stop."
+  (fleet-store-with-action store actor action-id (list :op "lieutenant-replace" :lieutenant lieutenant)
+    (let* ((child (fleet-supervisor--lieutenant-of store fleet-id lieutenant))
+           (cid (plist-get child :id))
+           (old (plist-get child :commander-runtime-id))
+           (rt (and old (fleet-store-get store "runtimes" old))))
+      (unless (equal (plist-get child :lifecycle) "active")
+        (fleet-fail 'fleet-not-active "Lieutenant is not active" :lifecycle (plist-get child :lifecycle)))
+      (when (and rt (equal (plist-get rt :lifecycle) "ready") (equal (plist-get rt :turn-state) "running"))
+        (fleet-fail 'runtime-busy "Lieutenant is mid-turn; ask it to write its handoff and end the turn, then retry" :runtime-id old))
+      (when (> (fleet-store-scalar store "SELECT COUNT(*) FROM operations WHERE fleet_id = ? AND kind IN ('commander-start','lieutenant-replace') AND state = 'running'" cid) 0)
+        (fleet-fail 'operation-in-progress "A start or replacement of this lieutenant is already running"))
+      (let ((op (fleet-core-operation-begin store "lieutenant-replace" :fleet-id cid :runtime-id old :intent (list :parent-fleet-id fleet-id))))
+        (cl-labels ((finish (state error)
+                    (fleet-core-operation-finish store op :state state :error error)
+                    (fleet-store-transaction store
+                      (fleet-store-append-event store :fleet-id fleet-id :kind (if error "lieutenant-replace-failed" "lieutenant-replaced")
+                                                :operation-id op :actor actor :actionable t
+                                                :payload (list :lieutenant (plist-get child :name) :lieutenant-fleet-id cid :kind "replaced"
+                                                               :detail (or error (format "lieutenant `%s` has a fresh runtime with its handoff context" (plist-get child :name))))))
+                    (fleet-supervisor--changed fleet-id)
+                    (when callback (funcall callback (fleet-store-get store "operations" op))))
+                  (start ()
+                    (when old (fleet-supervisor-on-commander-replaced store cid old))
+                    (fleet-core-operation-step store op "starting-successor")
+                    (condition-case err
+                        (fleet-core-start-commander store cid :recovery-summary (fleet-core-recovery-summary store (fleet-store-get store "fleets" cid))
+                                                    :callback (lambda (start-op)
+                                                                (finish (plist-get start-op :state)
+                                                                        (and (not (equal (plist-get start-op :state) "done"))
+                                                                             (format "successor start: %s" (plist-get start-op :error))))))
+                      (fleet-error (finish "failed" (format "successor start refused: %s" (fleet-error-string err)))))))
+          (if (and rt (not (member (plist-get rt :lifecycle) '("stopped" "never-launched"))))
+              (progn
+                (fleet-core-operation-step store op "stopping-predecessor")
+                (fleet-core-stop-commander store cid
+                                           :callback (lambda (r)
+                                                       (if (equal (plist-get r :lifecycle) "stopped")
+                                                           (start)
+                                                         (finish "failed" (format "predecessor stop verdict %s; nothing started" (plist-get r :verdict)))))))
+            (start)))
+        (list :operation-id op :lieutenant (plist-get child :name))))))
+
 (provide 'fleet-supervisor)
 ;;; fleet-supervisor.el ends here
