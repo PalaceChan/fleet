@@ -35,15 +35,18 @@ Parallelize only genuinely independent ownership areas. Several IDs touch `fleet
 recommended verification foundation, not a reason to skip tests: until fixed, use the documented safe
 existing-server procedure. Source work, native acceptance, and live activation are separate stages.
 
-## 0. Feature in progress — tracked in its own document
+## 0. Feature landing — tracked in its own document
 
 - [ ] **L01 — Lieutenants: domain supervisors between commander and operators** · **hard**
   - **Payoff:** a commander delegates a whole domain (frontend, backend, …) to a long-lived lieutenant
     that owns its own operators, context and inbox; routine operator traffic stays out of the
     commander's context and the fleet scales.
+  - **Status:** implemented and covered by the deterministic suite (schema v3, `config.json`,
+    `fleet_delegate`/`fleet_report`/`fleet_lieutenant_replace`, nested dashboard). **Next: the live
+    rehearsal** scripted in the tracker; nothing has run against native ECA yet.
   - **Plan, decisions and step-by-step tracker:** [docs/lieutenants.md](docs/lieutenants.md). Check this
     box only when that document's tracker is complete or its remainder has been moved back here.
-  - **Start:** the tracker's first unchecked step; owning layers are listed per step.
+    L02 (context-size hint in wake messages) is proposed there and waits for an owner decision.
 
 ## 1. Correctness foundation — do first
 

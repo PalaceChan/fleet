@@ -3,11 +3,17 @@
 [TODO backlog](../TODO.md) · [Contributor rules](../AGENTS.md) · [Development](development.md) ·
 [Design](design.md) · [Known gaps](known-gaps.md)
 
-This document is both the design of the lieutenant feature and its **work tracker** while it is in
-progress. `TODO.md` item **L01** points here. When the feature ships to `master`, move whatever is left
-unchecked back into `TODO.md` (or keep this file and the pointer if the remainder is still substantial)
-and turn the rest of this file into plain reference. Check boxes only with the same evidence standard as
-`TODO.md`: tests at the owning layer, exact results reported.
+This document is both the design of the lieutenant feature and its **work tracker**. `TODO.md` item
+**L01** points here. Check boxes only with the same evidence standard as `TODO.md`: tests at the owning
+layer, exact results reported.
+
+**Status and next step.** The implementation is merged and covered by the deterministic suite; nothing
+has run against native ECA yet. The next step is the **live rehearsal** in §8 (L01.8), owner-authorized
+because it spends model turns: it decides whether the remaining items move back to `TODO.md` or this
+file stays as the feature's reference. Before the first live use on a host that ran the old code:
+restart Emacs (the loaded Lisp and the owner lease predate this feature), delete stale
+`lisp/*.elc`, and — since the owner keeps no fleets from before — start with a fresh data root
+(`rm -rf ~/.local/share/fleet ~/.cache/fleet`); `M-x fleet-dashboard` then creates a v3 store.
 
 ## 1. Purpose
 
@@ -142,6 +148,17 @@ requests. A settled request is evidence for the commander to verify, not user ac
 - **Destroy.** `fleet-destroy root` refuses while it has unarchived children; `fleet-destroy root/child`
   retires an empty lieutenant. Open requests block a lieutenant's retirement.
 - **Old state.** Existing fleets have `parent_id NULL` and behave as before. No task is moved.
+- **Model approvals.** A lieutenant routes its operators under the same `models` policy and hits the
+  same `model-needs-approval` gate; having no user of its own, it batches its proposals for a request
+  into one `fleet_report` `question`, the commander puts them to the human as it does for its own tasks
+  and relays the answer on the request, and the lieutenant creates the tasks with `owner_approved`. The
+  human may also answer in the lieutenant's chat directly. While `ask_first` is `["*"]` this costs one
+  round trip per delegation; it fades as the rules converge. The commander never approves on the
+  human's behalf.
+- **Long context.** Handoff timing is the supervisor's judgement, for roots and lieutenants alike; a
+  lieutenant writes `context.md`, reports `progress` "ready to be replaced", and the commander calls
+  `fleet_lieutenant_replace`. Fleet has per-turn usage but no window size, so it gives no number yet
+  (see L02 below).
 
 ## 6. Dashboard
 
@@ -159,6 +176,14 @@ model-routing policy for lieutenants.
 
 Deferred (revisit after v1 ships; add to `TODO.md` if still wanted):
 
+- **L02 — Context-size hint in wake messages** · **easy–medium**. Fleet records each finished turn's
+  `usage` (telemetry) but a supervisor never sees its own token count, so "context is getting long" is
+  a guess. Proposal: an optional per-model (or single) `context_tokens` threshold in `config.json`;
+  when a supervisor's last observed usage exceeds it, `fleet-supervisor--wake-text` appends one line
+  ("your last turn reported N tokens; write your handoff and report ready-to-replace"). Decision left
+  with the model; Fleet supplies the number. Caveats from `known-gaps.md`: usage is sometimes absent
+  (no hint then, never a false one) and Fleet does not know window sizes, hence an owner threshold.
+  Decide where the threshold lives before implementing; test with fake usage.
 - **Structured request bodies** (acceptance, constraints, authority as fields). v1 keeps the brief in
   prose, as commander→operator briefs are.
 - **Cancel semantics.** v1 cancels by follow-up message asking the lieutenant to stop and settle
@@ -214,11 +239,24 @@ parentheses. Verify through the disposable `fleet-test` server per [testing](tes
     `fleet_lieutenant_replace` added) **147 passed, 1 failed, 3 skipped, 151 total**, the failure being
     a `cl-flet`→`cl-labels` slip in the new replace function, fixed and re-run singly to green. Python
     bridge tests 9/9.
-  - [ ] Live rehearsal (owner-authorized, separate step, costs model turns): declare one lieutenant in
-    `config.json`, `fleet-new` a root, confirm the lieutenant starts with it and appears nested; root
-    delegates a small study; lieutenant creates, verifies and settles; root verifies and reports;
-    `fleet-commander-replace root` while the lieutenant works (no operator restart, request intact);
-    `fleet-park`/resume of the whole fleet; `fleet-destroy root/child` refusal while its task exists.
-    Record redacted evidence here, then decide whether to keep this file or fold the remainder into `TODO.md`.
+  - [ ] **Live rehearsal — the next step** (owner-authorized, costs model turns; fresh data root as
+    described at the top). Suggested script, in order, each with its evidence:
+    1. `config.json`: under `fleets.master.lieutenants` add one entry (e.g. `study` with a charter
+       covering research/study work). `M-x fleet-dashboard`, `M-x fleet-new master`: the lieutenant is
+       created and started with the root and appears nested; `fleet-doctor` shows the config line green.
+    2. Ask the commander for a small study that falls under the charter: it should `fleet_delegate`
+       rather than create an operator; the dashboard shows `1 open request` on both headers.
+    3. With `ask_first: ["*"]`, the lieutenant's model proposal should arrive as one relayed question
+       from the commander; answer it; the lieutenant creates and starts its operator.
+    4. The lieutenant verifies the report and settles; the commander verifies and reports to you.
+    5. `M-x fleet-commander-replace master` while the lieutenant's operator works: no operator
+       restart, request intact, successor lists the lieutenant.
+    6. Ask the lieutenant (directly in its chat) to write its handoff and report ready; the commander
+       should call `fleet_lieutenant_replace`; check `lieutenant-replaced` in its next wake.
+    7. `M-x fleet-park master` then resume: both supervisors retained, operators stopped and resumable.
+    8. `M-x fleet-destroy master/study` while its task exists: refused with the reason.
+    Record redacted evidence (wire fixtures per [integration notes](eca-compatibility.md) where the
+    native tool list or a prompt shape is involved), then decide whether the remaining items fold
+    into `TODO.md` or this file stays as the feature's reference.
   - [x] `docs/design.md` points here from its model-policy note; a fuller design section can wait for
     the next design edit.
