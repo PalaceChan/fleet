@@ -295,11 +295,13 @@ defcustom, else the ECA default) is what each commander start launches with."
         (should (equal (fleet-core-commander-model (fleet-store-get store "fleets" fid)) (cons nil nil)))
         (funcall start)
         (should (equal (plist-get (funcall commander-rt) :model) "fake/model")))
-      ;; No pin, no defcustom, but an owner policy: its default governs the
-      ;; commander too (live run 2026-09-17: the commander ran on ECA's
-      ;; default while every operator followed config.json).
+      ;; No pin, no defcustom: the policy `default' is for operators only, so
+      ;; the commander still follows the ECA default; the policy's own
+      ;; `commander' selection is what governs it.
       (let ((fleet-commander-model nil) (fleet-commander-variant nil))
         (fleet-test-write-config :models "{\"default\": {\"model\": \"fake/other\", \"variant\": \"low\"}}")
+        (should (equal (fleet-core-commander-model (fleet-store-get store "fleets" fid)) (cons nil nil)))
+        (fleet-test-write-config :models "{\"default\": \"fake/model\", \"commander\": {\"model\": \"fake/other\", \"variant\": \"low\"}, \"lieutenant\": \"fake/model\"}")
         (should (equal (fleet-core-commander-model (fleet-store-get store "fleets" fid)) (cons "fake/other" "low")))
         (funcall start)
         (should (equal (plist-get (funcall commander-rt) :model) "fake/other"))
@@ -307,6 +309,8 @@ defcustom, else the ECA default) is what each commander start launches with."
         ;; a variant defcustom alone overrides only the variant
         (let ((fleet-commander-variant "high"))
           (should (equal (fleet-core-commander-model (fleet-store-get store "fleets" fid)) (cons "fake/other" "high"))))
+        ;; a fleet with a parent reads the lieutenant selection instead
+        (should (equal (fleet-core-commander-model (list :parent-id "some-root")) (cons "fake/model" nil)))
         (delete-file (fleet-config-file)))
       ;; No pin: the defcustoms now apply to an existing fleet too (previously only at creation).
       (let ((fleet-commander-model "fake/other") (fleet-commander-variant "low"))
@@ -368,6 +372,24 @@ file without touching them, and refuses on a lieutenant."
       (should (equal (plist-get (funcall by-name "frontend") :charter) "UI and a11y"))
       (should (funcall by-name "backend"))
       (should (= 2 (length (fleet-core-lieutenants store rid))))
+      ;; The owner's `lieutenant' selection beats the root's pin for entries
+      ;; without a model of their own; an entry model still wins.
+      (fleet-test-write-config :models "{\"lieutenant\": {\"model\": \"fake/other\", \"variant\": \"low\"}}"
+                               :fleets "{\"workshop\": {\"lieutenants\": {\"frontend\": {\"charter\": \"UI and a11y\"}, \"backend\": {\"charter\": \"data\", \"model\": \"fake/model\"}}}}")
+      (let ((r (fleet-core-ensure-lieutenants store rid)))
+        (should (equal (sort (mapcar (lambda (f) (plist-get f :name)) (plist-get r :updated)) #'string<) '("backend" "frontend"))))
+      (should (equal (plist-get (funcall by-name "frontend") :commander-model) "fake/other"))
+      (should (equal (plist-get (funcall by-name "frontend") :commander-variant) "low"))
+      (should (equal (plist-get (funcall by-name "backend") :commander-model) "fake/model"))
+      ;; An unpinned root and no lieutenant selection leave the lieutenant
+      ;; unpinned too: its start follows the ECA default rather than freezing
+      ;; today's default into a pin.
+      (let ((bare (fleet-core-create-fleet store "bare")))
+        (fleet-test-write-config :fleets "{\"bare\": {\"lieutenants\": {\"a\": {\"charter\": \"x\"}}}}")
+        (fleet-core-ensure-lieutenants store (plist-get bare :id))
+        (let ((a (fleet-store-fleet-by-name store "a" (plist-get bare :id))))
+          (should-not (plist-get a :commander-model))
+          (should (equal (fleet-core-commander-model a) (cons nil nil)))))
       ;; Malformed section: refused with the reason, nothing changed.
       (fleet-test-write-config :fleets "{\"workshop\": {\"lieutenants\": {\"x\": {}}}}")
       (fleet-test-should-fail 'invalid-fleet-config (fleet-core-ensure-lieutenants store rid))

@@ -79,6 +79,22 @@
       (should (equal (fleet-policy-models p) '("or/grok")))
       (should (string-match-p "Ask first: \\*\\*every task\\*\\*" (fleet-policy-describe p))))))
 
+(ert-deftest fleet-policy-supervisor-selections-are-separate-from-the-operator-default ()
+  "`default' routes operators; `commander' and `lieutenant' each name one
+optional selection for the supervisors, and all of them count as referenced
+models for the catalog check."
+  (fleet-test-with-roots
+    (fleet-policy-test-write "{\"default\": \"or/grok\", \"commander\": {\"model\": \"an/fable\", \"variant\": \"high\"}, \"lieutenant\": \"oa/astra\"}")
+    (let ((p (fleet-policy-load)))
+      (should (equal (fleet-policy-supervisor p "commander") (cons "an/fable" "high")))
+      (should (equal (fleet-policy-supervisor p "lieutenant") (cons "oa/astra" nil)))
+      (should (equal (plist-get (fleet-policy-default p) :model) "or/grok"))
+      (should (equal (fleet-policy-models p) '("or/grok" "an/fable" "oa/astra"))))
+    (fleet-policy-test-write "{\"default\": \"or/grok\"}")
+    (let ((p (fleet-policy-load)))
+      (should-not (fleet-policy-supervisor p "commander"))
+      (should-not (fleet-policy-supervisor p "lieutenant")))))
+
 (ert-deftest fleet-policy-refuses-malformed-files-with-a-reason ()
   (fleet-test-with-roots
     (cl-flet ((invalid (json)
@@ -98,6 +114,9 @@
       (should (string-match-p "unknown key difficulty in rules\\[0\\]" (invalid "{\"rules\": [{\"when\": \"x\", \"difficulty\": \"hard\", \"use\": \"a/b\"}]}")))
       (should (string-match-p "use\\[0\\] needs a non-empty model" (invalid "{\"rules\": [{\"when\": \"x\", \"use\": [{\"variant\": \"high\"}]}]}")))
       (should (string-match-p "unknown key modle in default" (invalid "{\"default\": {\"modle\": \"a/b\"}}")))
+      (should (string-match-p "commander needs a non-empty model" (invalid "{\"commander\": {\"variant\": \"high\"}}")))
+      (should (string-match-p "lieutenant must be a model id or an object" (invalid "{\"lieutenant\": 3}")))
+      (should (string-match-p "unknown key operator in the models section" (invalid "{\"operator\": \"a/b\"}")))
       (should (string-match-p "fallback must be an object" (invalid "{\"fallback\": [\"a/b\"]}")))
       ;; ({} parses to nil, so an empty object is indistinguishable from an absent key and passes.)
       (should (string-match-p "rules must be an array" (invalid "{\"rules\": \"a/b\"}")))

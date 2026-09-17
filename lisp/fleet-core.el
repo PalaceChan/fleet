@@ -134,8 +134,10 @@ A commander runtime whose fleet has a parent is a lieutenant; the stored
 
 (defun fleet-core-ensure-lieutenants (store fleet-id)
   "Apply the owner's configured lieutenants of root FLEET-ID (docs/lieutenants.md §3).
-Creates missing lieutenants (model/variant from the entry, else the root's
-commander pin) and records changed charters or pins.  Never removes,
+Creates missing lieutenants (model/variant from the entry, else the policy's
+`lieutenant' selection, else the root's own pin, else unpinned so the start
+resolves it — see `fleet-core-commander-model') and records changed charters
+or pins.  Never removes,
 detaches or reparents: a lieutenant absent from the file is left alone.
 Returns (:created (ROW...) :updated (ROW...) :unconfigured (ROW...)).
 Signals `invalid-fleet-config' when the fleets section is malformed."
@@ -144,7 +146,12 @@ Signals `invalid-fleet-config' when the fleets section is malformed."
                        (when (plist-get fleet :parent-id)
                          (fleet-fail 'nested-lieutenant "Only a root fleet has lieutenants" :fleet (fleet-core-fleet-selector store fleet)))
                        (fleet-config-lieutenants (plist-get fleet :name))))
-         (pin (fleet-core-commander-model fleet))
+         ;; What a lieutenant without its own entry model is pinned to: the
+         ;; owner's lieutenant selection, else the root's persisted pin.  Not
+         ;; the root's *effective* model, which would freeze the ECA default
+         ;; of the moment into a pin.
+         (pin (or (fleet-policy-supervisor (fleet-core-model-policy) "lieutenant")
+                  (cons (plist-get fleet :commander-model) (plist-get fleet :commander-variant))))
          created updated)
     (dolist (c configured)
       (let* ((model (or (plist-get c :model) (car pin)))
@@ -172,8 +179,8 @@ Signals `invalid-fleet-config' when the fleets section is malformed."
 (cl-defun fleet-core-set-commander-model (store fleet-id &key model variant)
   "Pin FLEET-ID's commander to MODEL/VARIANT; return the updated fleet row.
 Nil MODEL clears the pin (the next commander uses `fleet-commander-model',
-else the owner policy's default, else the ECA default; see
-`fleet-core-commander-model'); nil VARIANT clears the variant.  Takes effect at the
+else the owner policy's `commander'/`lieutenant' selection, else the ECA
+default; see `fleet-core-commander-model'); nil VARIANT clears the variant.  Takes effect at the
 next commander start: a live commander keeps the model it was launched with."
   (let ((fleet (fleet-core-fleet store fleet-id)))
     (fleet-core-assert-model store model)
@@ -189,15 +196,15 @@ next commander start: a live commander keeps the model it was launched with."
 (defun fleet-core-commander-model (fleet)
   "Effective (MODEL . VARIANT) the next commander of FLEET launches with.
 The fleet's pin wins, else `fleet-commander-model'/`fleet-commander-variant',
-else the owner policy's `default' (the same one operators fall back to, so
-one file governs the whole fleet); nil means the ECA default.  The
-variant follows whichever source supplied the model."
+else the owner policy's `commander' selection (`lieutenant' for a fleet
+with a parent); nil means the ECA default.  The policy `default' is for
+operators and is never consulted here.  The variant follows whichever
+source supplied the model."
   (let ((pinned (or (plist-get fleet :commander-model) fleet-commander-model)))
     (if pinned
         (cons pinned (or (plist-get fleet :commander-variant) fleet-commander-variant))
-      (let ((d (plist-get (fleet-core-model-policy) :default)))
-        (cons (plist-get d :model)
-              (or (plist-get fleet :commander-variant) fleet-commander-variant (plist-get d :variant)))))))
+      (let ((s (fleet-policy-supervisor (fleet-core-model-policy) (if (plist-get fleet :parent-id) "lieutenant" "commander"))))
+        (cons (car s) (or (plist-get fleet :commander-variant) fleet-commander-variant (cdr s)))))))
 
 (defun fleet-core-fleet (store ref)
   "Fleet row by id, active root name, or `root/child' selector REF.

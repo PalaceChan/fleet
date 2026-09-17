@@ -80,7 +80,7 @@ Nil means `config.json' under the Fleet config root (see
 (defconst fleet-config--top-keys '(:version :models :fleets))
 (defconst fleet-config--fleet-keys '(:lieutenants))
 (defconst fleet-config--lieutenant-keys '(:charter :model :variant))
-(defconst fleet-policy--top-keys '(:version :default :ask_first :fallback :rules))
+(defconst fleet-policy--top-keys '(:version :default :commander :lieutenant :ask_first :fallback :rules))
 (defconst fleet-policy--rule-keys '(:when :use :why))
 (defconst fleet-policy--selection-keys '(:model :variant))
 
@@ -186,6 +186,10 @@ structural problem."
         (unless (stringp a) (fleet-policy--fail file "ask_first must be a list of model ids (or \"*\")")))
       (list :file file
             :default (and (plist-get raw :default) (fleet-policy--selection file "default" (plist-get raw :default)))
+            ;; Supervisors are not routed by rules: one optional selection
+            ;; each, else the ECA default.  `default' is for operators only.
+            :commander (and (plist-get raw :commander) (fleet-policy--selection file "commander" (plist-get raw :commander)))
+            :lieutenant (and (plist-get raw :lieutenant) (fleet-policy--selection file "lieutenant" (plist-get raw :lieutenant)))
             :ask-first (fleet-policy--list ask)
             :fallback (cl-loop for (k v) on fallback by #'cddr
                                collect (cons (substring (symbol-name k) 1)
@@ -280,13 +284,21 @@ counts as a model under the wildcard."
   "Selection (:model :variant) POLICY names as the fallback for MODEL, or nil."
   (and policy model (cdr (assoc model (plist-get policy :fallback)))))
 
+(defun fleet-policy-supervisor (policy role)
+  "POLICY's selection for ROLE (\"commander\" or \"lieutenant\") as (MODEL . VARIANT), or nil."
+  (when-let* ((s (plist-get policy (if (equal role "lieutenant") :lieutenant :commander))))
+    (cons (plist-get s :model) (plist-get s :variant))))
+
 (defun fleet-policy-models (policy)
   "Every model id POLICY refers to, deduplicated.
-Covers the default, rule selections, listed ask-first entries (not the
-wildcard) and both sides of each fallback."
+Covers the default, the commander and lieutenant selections, rule
+selections, listed ask-first entries (not the wildcard) and both sides of
+each fallback."
   (let ((ids nil))
     (cl-flet ((add (m) (when (and m (not (equal m fleet-policy-ask-first-wildcard)) (not (member m ids))) (push m ids))))
       (add (plist-get (plist-get policy :default) :model))
+      (add (plist-get (plist-get policy :commander) :model))
+      (add (plist-get (plist-get policy :lieutenant) :model))
       (dolist (r (plist-get policy :rules)) (dolist (s (plist-get r :use)) (add (plist-get s :model))))
       (dolist (m (plist-get policy :ask-first)) (add m))
       (dolist (f (plist-get policy :fallback)) (add (car f)) (add (plist-get (cdr f) :model))))

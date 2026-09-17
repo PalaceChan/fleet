@@ -157,8 +157,11 @@ change as their regression tests; the open ones are recorded as evidence.
   refusals; ECA's schema refusals never reach it (see [integration notes](eca-compatibility.md)).
 - **Closed — superseded failed operations kept raising attention:** `fleet-core-open-failed-operations`
   drops failures settled by a later same-kind success or by archiving the task/fleet; doctor uses it.
-- **Closed — commander ignored the owner policy default:** an unpinned commander now falls back to
-  `models.default` before the ECA default (`fleet-core-commander-model`).
+- **Closed — no owner-file selection for supervisors:** the commander ran on the ECA default while
+  operators followed `models.default`, with no way to say otherwise short of a per-fleet pin. The owner
+  wanted `default` to stay operator-only and supervisors to keep following the ECA default unless named,
+  so the policy gained optional `commander` and `lieutenant` selections (`fleet-policy-supervisor`;
+  `fleet-core-commander-model` reads them after the pin and the defcustom).
 - **Considered, not adopted — refuse `owner_approved` without `model`:** the dropped `model` produced a
   policy-default task that the commander then retasked. A guard matching model names inside
   `model_reason` would interpret free text the schema promises never to interpret; a strict "approved

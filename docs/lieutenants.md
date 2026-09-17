@@ -72,6 +72,8 @@ The `models` object is the unchanged model policy; `fleets` declares lieutenants
   "version": 1,
   "models": {
     "default": {"model": "openrouter/…"},
+    "commander": {"model": "…", "variant": "high"},
+    "lieutenant": "…",
     "rules": [{"when": "…", "use": [{"model": "…"}]}],
     "ask_first": [],
     "fallback": {}
@@ -90,7 +92,9 @@ The `models` object is the unchanged model policy; `fleets` declares lieutenants
 
 Rules: fleet and lieutenant names follow the usual name grammar; `charter` is required non-blank prose
 (the commander routes by reading it, Fleet never interprets it); `model`/`variant` optionally pin the
-lieutenant's commander (default: the root's commander pin); unknown keys, nested `lieutenants`, and
+lieutenant's commander (else `models.lieutenant`, else the root's own pin, else unpinned: the ECA
+default at each start). `models.default` routes operators only; `models.commander` is the root
+commander's selection when the fleet is not pinned. Unknown keys, nested `lieutenants`, and
 non-object values are refused with the file's path and the offending key. A broken `fleets` section
 does not break model policy loading and vice versa: each section is validated on its own and the error
 is reported where it matters (root start for `fleets`, task creation for `models`).
