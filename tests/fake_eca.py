@@ -178,6 +178,15 @@ def run_prompt(msg):
         content(chat_id, "assistant", {"type": "toolCalled", "id": tid, "name": "spawn_agent", "server": "eca", "arguments": {},
                                        "outputs": [{"type": "text", "text": "child done"}], "details": {"type": "subagent", "subagentChatId": child},
                                        "totalTimeMs": 5})
+    if "TOOLFAIL" in text:
+        # ECA rejects a tool call before any server sees it: the refusal text
+        # is only in the outputs of an errored toolCalled.
+        tid = "call_f1"
+        content(chat_id, "assistant", {"type": "toolCallRun", "id": tid, "name": "fleet__fleet_task_create", "server": "fleet", "manualApproval": False,
+                                       "arguments": {"name": "x"}, "details": {}})
+        content(chat_id, "assistant", {"type": "toolCalled", "id": tid, "name": "fleet__fleet_task_create", "server": "fleet", "arguments": {"name": "x"},
+                                       "outputs": [{"type": "text", "text": "Error: missing required params: `brief`"}, {"type": "text", "text": "x" * 1000}],
+                                       "error": True, "details": {}, "totalTimeMs": 21})
     if "SLOW" in text:
         n = 0
         while not _state["stop"].wait(0.05):

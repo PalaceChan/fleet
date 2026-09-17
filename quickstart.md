@@ -31,7 +31,8 @@ systemd-owned process; **Emacs** owns state, scheduling and the dashboard.
      )
    ```
 
-   **Models.** Without any of the above, commanders and operators run on the ECA default model. Once one
+   **Models.** Without any of the above, commanders and operators run on the `default` of your owner model
+   policy (`~/.config/fleet/config.json`, `models.default`), and without that on the ECA default model. Once one
    Fleet runtime has started, Fleet knows ECA's model catalog: `M-x fleet-new` then offers completion for the
    commander's model and variant (accept the default with RET) — both when creating a fleet and whenever it
    starts a commander for an existing one (resume, or a fleet whose commander was stopped), where RET keeps
@@ -88,8 +89,8 @@ systemd-owned process; **Emacs** owns state, scheduling and the dashboard.
    }
    ```
 
-   The policy `default` takes precedence over `fleet-operator-model`; the commander's own model is still the
-   fleet pin / `fleet-commander-model`. `model_source` on the event is `explicit`, `policy-default`, `config`
+   The policy `default` takes precedence over `fleet-operator-model`; the commander's own model is the
+   fleet pin, else `fleet-commander-model`, else the same policy `default`. `model_source` on the event is `explicit`, `policy-default`, `config`
    or `eca-default`; `model_reason` is the commander's stated ground, recorded verbatim.
 
    **Lieutenants.** The `fleets` section declares, per root fleet, long-lived domain supervisors between

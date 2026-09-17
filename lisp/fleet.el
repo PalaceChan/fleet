@@ -504,13 +504,18 @@ Each check reports its evidence."
           (when (equal (plist-get (plist-get (plist-get json :toolCall) :approval) :byDefault) "allow")
             (insert "  note: toolCall.approval.byDefault=allow — full autonomous shell access is your explicit choice\n")))
         (when fleet-supervisor--store
-          (let ((store fleet-supervisor--store))
-            (insert (format "\n## Store\nschema %d, snapshot revision %d, %d fleet(s), %d running operation(s), %d failed operation(s)\n"
+          (let* ((store fleet-supervisor--store)
+                 (running (fleet-store-query store "SELECT * FROM operations WHERE state = 'running' ORDER BY updated_at DESC"))
+                 (failed (fleet-core-open-failed-operations store))
+                 (all-failed (fleet-store-scalar store "SELECT COUNT(*) FROM operations WHERE state = 'failed'")))
+            (insert (format "\n## Store\nschema %d, snapshot revision %d, %d fleet(s), %d running operation(s), %d failed operation(s)%s\n"
                             (fleet-store--current-version store) (fleet-store-snapshot-revision store)
                             (fleet-store-scalar store "SELECT COUNT(*) FROM fleets WHERE lifecycle <> 'archived'")
-                            (fleet-store-scalar store "SELECT COUNT(*) FROM operations WHERE state = 'running'")
-                            (fleet-store-scalar store "SELECT COUNT(*) FROM operations WHERE state = 'failed'")))
-            (dolist (op (fleet-store-query store "SELECT * FROM operations WHERE state IN ('running','failed') ORDER BY updated_at DESC LIMIT 20"))
+                            (length running) (length failed)
+                            ;; A retried teardown or a destroyed fleet leaves its failure in the
+                            ;; journal; say how many are history rather than raising them again.
+                            (if (> all-failed (length failed)) (format " (%d superseded, kept in history)" (- all-failed (length failed))) "")))
+            (dolist (op (seq-take (append running failed) 20))
               (insert (format "  op %s %s step=%s state=%s%s\n" (fleet-paths-short-id (plist-get op :id)) (plist-get op :kind) (plist-get op :step) (plist-get op :state)
                               (if (plist-get op :error) (format " error=%s" (plist-get op :error)) ""))))
             (insert "\n## Runtimes (nonterminal; units inspected asynchronously)\n")

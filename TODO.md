@@ -42,8 +42,10 @@ existing-server procedure. Source work, native acceptance, and live activation a
     that owns its own operators, context and inbox; routine operator traffic stays out of the
     commander's context and the fleet scales.
   - **Status:** implemented and covered by the deterministic suite (schema v3, `config.json`,
-    `fleet_delegate`/`fleet_report`/`fleet_lieutenant_replace`, nested dashboard). **Next: the live
-    rehearsal** scripted in the tracker; nothing has run against native ECA yet.
+    `fleet_delegate`/`fleet_report`/`fleet_lieutenant_replace`, nested dashboard). The shared paths ran
+    natively on 2026-09-17 with a zero-lieutenant fleet (two parallel change tasks, three wake cycles,
+    teardown, destroy); findings in [known gaps](docs/known-gaps.md#native-observations-zero-lieutenant-run-2026-09-17).
+    **Next: the live rehearsal** of the lieutenant paths scripted in the tracker.
   - **Plan, decisions and step-by-step tracker:** [docs/lieutenants.md](docs/lieutenants.md). Check this
     box only when that document's tracker is complete or its remainder has been moved back here.
     L02 (context-size hint in wake messages) is proposed there and waits for an owner decision.
@@ -267,6 +269,20 @@ reprioritizes it. An easy label is not a reason to implement unsolicited UI or p
   - **Done if selected:** first produce a bounded design/decision on desired enforcement and limitations;
     any implementation needs separate scope and must not misrepresent same-UID execution as isolation.
   - **Evidence:** [study policy option](docs/known-gaps.md#optional-or-deferred-work).
+
+- [ ] **D09 — List and prune orphaned retained refs** · **easy**
+  - **Payoff:** `refs/fleet/retained/<task>` from fleets whose store was deleted stop accumulating in the
+    owner's clones.
+  - **Done if selected:** an explicit owner command lists retained refs in a repository with no task row in
+    the store and deletes only on confirmation; never automatic, never for tasks that still exist.
+  - **Evidence:** [zero-lieutenant run](docs/known-gaps.md#native-observations-zero-lieutenant-run-2026-09-17).
+
+- [ ] **D10 — Make a requested stop read as one** · **easy**
+  - **Payoff:** a normal teardown does not look like a crash in `systemctl`/journal (`Result=exit-code`) or
+    in the runtime row (`connection_state=lost`).
+  - **Done if selected:** the transient unit treats the ECA server's SIGTERM exit as success, or the
+    verdict/observation path records a distinct closed state; stop verdicts and fail-closed tests unchanged.
+  - **Evidence:** [zero-lieutenant run](docs/known-gaps.md#native-observations-zero-lieutenant-run-2026-09-17).
 
 ## Not TODOs — preserve these decisions
 

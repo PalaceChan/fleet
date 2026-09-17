@@ -912,8 +912,12 @@ Expose compact tools with precise enums rather than a large family of aliases:
   - **Inputs/result summary:** Scoped fleet/task snapshot, states, pending operations, artifacts, attention.
 
 - **Tool:** `fleet_task_create`
-  - **Inputs/result summary:** Task name/kind; complete brief text; repo/base/ownership/delivery where
-    applicable; dependencies/resource claims. Validates and produces ready task or structured refusal.
+  - **Inputs/result summary:** Task name/kind; complete brief text, inline (`brief`) or read from a file
+    under the caller's fleet directory (`brief_path`, exactly one of the two); repo/base/ownership/delivery
+    where applicable; dependencies/resource claims. An omitted delivery follows the repository
+    (`remote-review` with a remote, else `local-ready`); `remote-review` without a remote is refused at
+    creation rather than at teardown. Validates and produces ready task (with `delivery_source`) or
+    structured refusal.
 
 - **Tool:** `fleet_task_start`
   - **Inputs/result summary:** Ready/suspended task, expected revision; returns operation ID.

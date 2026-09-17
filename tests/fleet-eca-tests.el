@@ -314,6 +314,28 @@ dropped, leaving the message stuck and the lane busy forever."
     (should (null (fleet-eca-conn-pending-approvals conn)))
     (should (memq 'tool-finished (fleet-eca-test-kinds)))))
 
+(ert-deftest fleet-eca-failed-tool-call-keeps-its-output ()
+  "Live run 2026-09-17: twelve refused fleet_task_create calls left only
+`error: true' in the transcript; the reason lived in ECA's chat cache.  A
+failed call's outputs are kept, clipped; a successful call's are not."
+  (fleet-eca-test-with-conn conn
+    (fleet-eca-test-submit conn "TOOLFAIL")
+    (should (fleet-eca-test-wait-kind 'turn-idle-observed))
+    (let* ((ev (cl-find-if (lambda (e) (eq (plist-get e :kind) 'tool-finished)) fleet-eca-test--events))
+           (rows (mapcar #'fleet-store-unjson (split-string (fleet-paths-read-file (fleet-eca-conn-transcript-file conn)) "\n" t)))
+           (row (cl-find-if (lambda (r) (equal (plist-get r :kind) "called")) rows)))
+      (should (eq t (plist-get ev :error)))
+      (should (string-prefix-p "Error: missing required params: `brief`" (plist-get ev :output)))
+      (should (<= (length (plist-get ev :output)) 601))
+      (should (eq t (plist-get row :error)))
+      (should (string-match-p "missing required params" (plist-get row :output)))))
+  (fleet-eca-test-with-conn conn
+    (fleet-eca-test-submit conn "SUBAGENT")
+    (should (fleet-eca-test-wait-kind 'turn-idle-observed))
+    (let ((ev (cl-find-if (lambda (e) (eq (plist-get e :kind) 'tool-finished)) fleet-eca-test--events)))
+      (should-not (plist-get ev :error))
+      (should-not (plist-get ev :output)))))
+
 (ert-deftest fleet-eca-subagent-child-cannot-finish-parent ()
   (fleet-eca-test-with-conn conn
     (fleet-eca-test-submit conn "SUBAGENT")

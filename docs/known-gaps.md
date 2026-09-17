@@ -138,6 +138,48 @@ Source: [`fleet-core.el`](../lisp/fleet-core.el), [`fleet-rpc.el`](../lisp/fleet
   [`fleet-telemetry.el`](../lisp/fleet-telemetry.el) totals may undercount; absent usage is not proof of zero
   cost. **Close with:** provider-shape fixtures and clear unknown-versus-zero telemetry semantics.
 
+## Native observations, zero-lieutenant run (2026-09-17)
+
+First native run of the post-lieutenants merge (schema v3, `config.json`, fresh store): one root fleet, two
+parallel `change` tasks on a repository with no remote, both delivered `local-ready`, both verified and
+archived; three wake cycles, retention refs, `fleet-destroy`. The closed items below were fixed in the same
+change as their regression tests; the open ones are recorded as evidence.
+
+- **Closed — arguments lost to a long `brief`:** the commander's model dropped `model` and `delivery` from
+  `fleet_task_create` whenever the inline `brief` ran to several KB, and dropped `brief` when it kept the
+  rest (ECA refused those before the MCP server saw them). `brief_path` (`fleet-rpc--brief-text`) lets the
+  brief travel as a file under the fleet directory; the commander doctrine prefers it.
+- **Closed — silent `remote-review` on a remote-less repository:** the fixed default delivery contract was
+  discovered only by the teardown evidence gate. `fleet-core-create-task` now judges it at admission
+  (`fleet-git-remotes-now`; `delivery-needs-remote`; `delivery_source` on the event and result).
+- **Closed — refused tool calls without a reason:** `toolCalled` with `error: true` now keeps its outputs
+  text (clipped) in the transcript and `tool-finished` event. Fleet's RPC layer already journals its own
+  refusals; ECA's schema refusals never reach it (see [integration notes](eca-compatibility.md)).
+- **Closed — superseded failed operations kept raising attention:** `fleet-core-open-failed-operations`
+  drops failures settled by a later same-kind success or by archiving the task/fleet; doctor uses it.
+- **Closed — commander ignored the owner policy default:** an unpinned commander now falls back to
+  `models.default` before the ECA default (`fleet-core-commander-model`).
+- **Considered, not adopted — refuse `owner_approved` without `model`:** the dropped `model` produced a
+  policy-default task that the commander then retasked. A guard matching model names inside
+  `model_reason` would interpret free text the schema promises never to interpret; a strict "approved
+  implies model named" rule would make approving the default awkward for no remaining cause once briefs
+  travel by file. Revisit only if a defaulted model under `owner_approved` recurs.
+- **Open — `runtimes.main_pid` is the `systemd-run --wait` wrapper (child of Emacs), not the unit's
+  `MainPID`.** Verdicts rest on `control_group`/`invocation_id`, so this is a naming question; keep it in
+  mind when reading `main_pid` in evidence (F02).
+- **Open — a stopped operator unit ends `ActiveState=failed`, `Result=exit-code`** (`eca server` exits
+  non-zero on SIGTERM) and its runtime row reads `connection_state=lost` after a *requested* stop. The stop
+  verdict is correct and `--collect` reaps the unit; only the wording invites misreading a normal teardown
+  as a crash. A `SuccessExitStatus` on the transient unit or a `closed` connection state would remove the
+  ambiguity.
+- **Open — autonomous archive of a verified `local-ready` task:** the commander verified artifacts,
+  requested teardown and archived without asking the user (worktree removed, branch kept, user told what
+  remained). Consistent with doctrine; whether the owner wants a confirmation step for `local-ready` is an
+  owner decision, not a defect.
+- **Open — stale `refs/fleet/retained/*`:** the development clone carries retained refs from rehearsal
+  fleets whose store was deleted. Harmless; an owner-side listing/prune of retained refs with no task in
+  the store is D09.
+
 ## Optional or deferred work
 
 - A human `fleet-retask` command is absent; core/RPC retask exists. Add only if prioritized, preserving

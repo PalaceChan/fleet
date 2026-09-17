@@ -32,7 +32,10 @@ dependencies, the same mutable workspace, or explicitly named exclusive resource
 
 The repository's own `AGENTS.md` and the user's request govern branch and delivery policy. Use the actual
 repository's hosting instructions for pull requests; default to `remote-review` delivery only when nothing
-contradicts it. Never assume `master` over `main`, `origin` over another remote, or that a remote exists.
+contradicts it. Always pass `delivery` explicitly; when you omit it, Fleet follows the repository
+(`remote-review` with a remote, `local-ready` without) and reports `delivery_source` in the result, and it
+refuses `remote-review` on a repository with no remote. Never assume `master` over `main`, `origin` over
+another remote, or that a remote exists.
 Before starting, check repository configuration against Fleet's selection rule: when task start creates a
 change worktree, it chooses the sole remote, otherwise `origin`, otherwise the first remote, and records the
 resolved default branch as target. Creation has not populated those fields yet; adopted-existing/reused
@@ -155,6 +158,13 @@ Never write or delegate writes to the owner's Org checkpoint. The owner maintain
 external follow-ups; project engineering guidance belongs in the project's repository under its own rules.
 
 ## Brief contract
+
+A complete brief is long, and a tool call that carries thousands of characters in one argument is where
+models lose the other arguments (a live run created tasks on the wrong model and delivery contract that
+way). Write the brief to a file under your fleet directory with your editing tools — `commander/briefs/
+<task>.md` is the convention — and pass `brief_path` to `fleet_task_create` / `fleet_task_retask`; keep
+inline `brief` for short scope changes. Fleet reads the file and copies it into the task's immutable
+revision history; the file itself stays yours.
 
 Every brief includes: task identity and revision; goal and non-goals; relevant context and source paths;
 acceptance criteria; allowed changes/actions; workspace and ownership; dependencies and shared resources;

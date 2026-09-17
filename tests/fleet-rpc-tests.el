@@ -88,6 +88,45 @@
           (should (equal "stale-runtime" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_snapshot" tok2))))
           (should (equal "unauthenticated" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_snapshot" "never-issued")))))))))
 
+(ert-deftest fleet-rpc-brief-path-reads-a-file-under-the-fleet-directory ()
+  "Live run 2026-09-17: a commander could not fit a 6k brief and the other
+arguments into one tool call.  brief_path keeps the call small; the file must
+be the commander's own (under its fleet directory) and exactly one of the two
+forms is accepted."
+  (fleet-rpc-test-with
+    (let* ((fid (fleet-core-test-fleet store)) (cid (fleet-sup-test-commander store fid))
+           (ctok (fleet-rpc-test-token cid))
+           (root (plist-get (fleet-store-get store "fleets" fid) :artifact-root))
+           (rel "commander/briefs/parser.md")
+           (file (expand-file-name rel root))
+           (outside (expand-file-name "outside-brief.md" fleet-test--roots)))
+      (fleet-sup-test-settle)
+      (make-directory (file-name-directory file) t)
+      (fleet-test-write file (concat fleet-test-brief "\nfrom file\n"))
+      (fleet-test-write outside fleet-test-brief)
+      ;; neither form: refused by Fleet (the schema no longer hard-requires brief, so the refusal is ours and logged)
+      (should (equal "invalid-request" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_task_create" ctok (list :name "parser" :kind "study" :model_reason "test default") "k0"))))
+      ;; both forms: refused
+      (should (equal "invalid-request" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_task_create" ctok (list :name "parser" :kind "study" :model_reason "test default" :brief fleet-test-brief :brief_path rel) "k1"))))
+      ;; a file outside the fleet directory, or missing: refused, nothing created
+      (should (equal "invalid-request" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_task_create" ctok (list :name "parser" :kind "study" :model_reason "test default" :brief_path outside) "k2"))))
+      (should (equal "invalid-request" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_task_create" ctok (list :name "parser" :kind "study" :model_reason "test default" :brief_path "commander/briefs/nope.md") "k3"))))
+      (should (= 0 (fleet-store-scalar store "SELECT COUNT(*) FROM tasks WHERE fleet_id = ?" fid)))
+      (should (= 4 (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'tool-call' AND payload LIKE '%\"outcome\":\"refused\"%'")))
+      ;; relative to the fleet directory: the brief is the file's text, copied into the task's revision
+      (let* ((r (fleet-rpc-test-req "fleet_task_create" ctok (list :name "parser" :kind "study" :model_reason "test default" :brief_path rel) "k4"))
+             (tid (plist-get (plist-get r :result) :task-id)))
+        (should tid)
+        (should (string-match-p "from file" (fleet-paths-read-file (fleet-core-brief-file store (fleet-store-get store "tasks" tid)))))
+        (should (file-exists-p file))
+        ;; absolute path under the fleet directory works the same for a retask
+        (fleet-test-write file (concat fleet-test-brief "\nsecond scope\n"))
+        (let ((r2 (fleet-rpc-test-req "fleet_task_retask" ctok (list :task_id tid :brief_path file) "k5")))
+          (should (= 2 (plist-get (plist-get r2 :result) :brief-revision)))
+          (should (string-match-p "second scope" (fleet-paths-read-file (fleet-core-brief-file store (fleet-store-get store "tasks" tid))))))
+        ;; retask with neither form only changes model/variant (empty scope) and is still accepted
+        (should (plist-get (fleet-rpc-test-req "fleet_task_retask" ctok (list :task_id tid :variant "low") "k6") :result))))))
+
 (ert-deftest fleet-rpc-commander-flow-create-start-events-ack ()
   (fleet-rpc-test-with
     (let* ((fid (fleet-core-test-fleet store)) (cid (fleet-sup-test-commander store fid))

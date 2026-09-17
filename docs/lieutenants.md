@@ -7,8 +7,10 @@ This document is both the design of the lieutenant feature and its **work tracke
 **L01** points here. Check boxes only with the same evidence standard as `TODO.md`: tests at the owning
 layer, exact results reported.
 
-**Status and next step.** The implementation is merged and covered by the deterministic suite; nothing
-has run against native ECA yet. The next step is the **live rehearsal** in §8 (L01.8), owner-authorized
+**Status and next step.** The implementation is merged and covered by the deterministic suite. The paths
+shared with ordinary fleets (v3 store, `config.json`, dispatch, wakes, teardown, destroy) ran natively on
+2026-09-17 with a zero-lieutenant fleet; the lieutenant-only paths (`fleet_delegate`, `fleet_report`,
+relayed approvals, `fleet_lieutenant_replace`) have not. The next step is the **live rehearsal** in §8 (L01.8), owner-authorized
 because it spends model turns: it decides whether the remaining items move back to `TODO.md` or this
 file stays as the feature's reference. Before the first live use on a host that ran the old code:
 restart Emacs (the loaded Lisp and the owner lease predate this feature), delete stale

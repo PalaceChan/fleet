@@ -255,6 +255,13 @@
       ;; single local branch, no remote: it is the default; nothing is assumed
       (should (equal (fleet-git-test-sync fleet-git-default-branch repo nil) "trunk"))
       (should (null (fleet-git-test-sync fleet-git-remotes repo)))
+      ;; the synchronous admission query agrees, and answers nil outside a repository
+      (should (null (fleet-git-remotes-now repo)))
+      (should (null (fleet-git-remotes-now (expand-file-name "not-a-repo" fleet-test--roots))))
+      (fleet-git-test-git repo "remote" "add" "mirror" "/dev/null")
+      (should (equal '("mirror") (fleet-git-remotes-now repo)))
+      (should (equal '("mirror") (fleet-git-test-sync fleet-git-remotes repo)))
+      (fleet-git-test-git repo "remote" "remove" "mirror")
       (fleet-git-test-git repo "worktree" "add" "-q" "-b" "ready" wt base)
       (fleet-git-test-git wt "config" "user.email" "t@e") (fleet-git-test-git wt "config" "user.name" "T")
       (let ((tip (fleet-git-test-commit wt "c.txt" "c\n" "ready work")))

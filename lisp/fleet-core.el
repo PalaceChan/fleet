@@ -172,7 +172,8 @@ Signals `invalid-fleet-config' when the fleets section is malformed."
 (cl-defun fleet-core-set-commander-model (store fleet-id &key model variant)
   "Pin FLEET-ID's commander to MODEL/VARIANT; return the updated fleet row.
 Nil MODEL clears the pin (the next commander uses `fleet-commander-model',
-else the ECA default); nil VARIANT clears the variant.  Takes effect at the
+else the owner policy's default, else the ECA default; see
+`fleet-core-commander-model'); nil VARIANT clears the variant.  Takes effect at the
 next commander start: a live commander keeps the model it was launched with."
   (let ((fleet (fleet-core-fleet store fleet-id)))
     (fleet-core-assert-model store model)
@@ -187,10 +188,16 @@ next commander start: a live commander keeps the model it was launched with."
 
 (defun fleet-core-commander-model (fleet)
   "Effective (MODEL . VARIANT) the next commander of FLEET launches with.
-The fleet's pin wins, else `fleet-commander-model'/`fleet-commander-variant';
-nil means the ECA default."
-  (cons (or (plist-get fleet :commander-model) fleet-commander-model)
-        (or (plist-get fleet :commander-variant) fleet-commander-variant)))
+The fleet's pin wins, else `fleet-commander-model'/`fleet-commander-variant',
+else the owner policy's `default' (the same one operators fall back to, so
+one file governs the whole fleet); nil means the ECA default.  The
+variant follows whichever source supplied the model."
+  (let ((pinned (or (plist-get fleet :commander-model) fleet-commander-model)))
+    (if pinned
+        (cons pinned (or (plist-get fleet :commander-variant) fleet-commander-variant))
+      (let ((d (plist-get (fleet-core-model-policy) :default)))
+        (cons (plist-get d :model)
+              (or (plist-get fleet :commander-variant) fleet-commander-variant (plist-get d :variant)))))))
 
 (defun fleet-core-fleet (store ref)
   "Fleet row by id, active root name, or `root/child' selector REF.
@@ -307,8 +314,9 @@ The operator's model is settled by `fleet-core-select-operator-model': the
 commander's MODEL/VARIANT (chosen under the owner's policy rules, with
 MODEL-REASON saying why) wins, else the policy default, else the
 defcustoms.  OWNER-APPROVED asserts the user agreed where the policy asks
-first.  The returned row carries an extra `:model-source' key."
-  (let ((fleet (fleet-core-fleet store fleet-id)) (selection nil))
+first.  The returned row carries extra `:model-source' and
+`:delivery-source' keys (\"explicit\", \"default\", \"default-no-remote\")."
+  (let ((fleet (fleet-core-fleet store fleet-id)) (selection nil) (delivery-source nil))
     (fleet-paths-assert-name name "task")
     (unless (member kind fleet-core-task-kinds) (fleet-fail 'invalid-task "Unknown task kind" :kind kind))
     (setq selection (fleet-core-select-operator-model store :model model :variant variant :model-reason model-reason
@@ -325,6 +333,20 @@ first.  The returned row carries an extra `:model-source' key."
         (fleet-fail 'invalid-task "Repository must live under the development root" :repo repo :root (fleet-paths-development-root)))
       (when (and delivery (not (member delivery fleet-core-delivery-modes)))
         (fleet-fail 'invalid-task "Unknown delivery mode" :delivery delivery))
+      ;; remote-review is a promise to push for review.  A repository with
+      ;; no remote cannot keep it, and teardown would only discover that
+      ;; after the work is done.  Judge the contract here: refuse an
+      ;; explicit remote-review, and let an omitted delivery follow the
+      ;; repository rather than a fixed default.
+      (let ((remotes (fleet-git-remotes-now repo)))
+        (cond
+         (delivery
+          (when (and (equal delivery "remote-review") (null remotes))
+            (fleet-fail 'delivery-needs-remote "remote-review delivery needs a remote to push to; this repository has none (use local-ready or integrated)"
+                        :repo repo :delivery delivery))
+          (setq delivery-source "explicit"))
+         (remotes (setq delivery "remote-review" delivery-source "default"))
+         (t (setq delivery "local-ready" delivery-source "default-no-remote"))))
       (when (and (memq workspace-mode '(adopt-branch adopt-worktree)) (not adopt-path))
         (fleet-fail 'invalid-task "Adoption needs the branch or worktree to adopt")))
     (dolist (d dependencies)
@@ -360,7 +382,7 @@ first.  The returned row carries an extra `:model-source' key."
                                   :branch (pcase workspace-mode ('adopt-branch adopt-path) ('adopt-worktree nil) (_ branch))
                                   :branch-ownership (pcase workspace-mode ((or 'adopt-branch 'adopt-worktree) "adopted") (_ (and (equal kind "change") "fleet")))
                                   :base-ref base-ref
-                                  :delivery-mode (and (equal kind "change") (or delivery "remote-review"))
+                                  :delivery-mode (and (equal kind "change") delivery)
                                   :model (plist-get selection :model)
                                   :variant (plist-get selection :variant)
                                   :created-at now :updated-at now))
@@ -371,6 +393,10 @@ first.  The returned row carries an extra `:model-source' key."
                               (list :id (fleet-paths-uuid) :fleet-id fleet-id :kind "resource" :key r :task-id id :created-at now)))
         (fleet-store-append-event store :fleet-id fleet-id :task-id id :kind "task-created" :actor actor
                                   :payload (list :name name :kind kind :context-paths (vconcat context-paths)
+                                                 ;; Delivery and its provenance: a defaulted contract must be
+                                                 ;; visible as such when it later refuses a teardown.
+                                                 :delivery (and (equal kind "change") delivery)
+                                                 :delivery-source (and (equal kind "change") delivery-source)
                                                  ;; The routing judgement is not a column: the choice and
                                                  ;; the commander's stated reason are what stay auditable.
                                                  :model (plist-get selection :model) :variant (plist-get selection :variant)
@@ -380,7 +406,8 @@ first.  The returned row carries an extra `:model-source' key."
       (fleet-core-publish-brief store id brief :note "initial brief")
       (fleet-store-transaction store
         (fleet-store-update store "tasks" id (fleet-store-touch (list :lifecycle "ready"))))
-      (append (fleet-store-get store "tasks" id) (list :model-source (plist-get selection :source))))))
+      (append (fleet-store-get store "tasks" id) (list :model-source (plist-get selection :source)
+                                                         :delivery-source delivery-source)))))
 
 ;;;; Brief revisions (design §7.3)
 
@@ -839,6 +866,29 @@ Return the count of emitted events."
 (defun fleet-core-task-operation-running-p (store task-id)
   "Non-nil when TASK-ID has a running lifecycle operation."
   (> (fleet-store-scalar store "SELECT COUNT(*) FROM operations WHERE task_id = ? AND state = 'running' AND kind <> 'brief-publish'" task-id) 0))
+
+(defconst fleet-core--open-failed-operations-sql
+  "SELECT o.* FROM operations o
+     LEFT JOIN tasks t ON t.id = o.task_id
+     LEFT JOIN fleets f ON f.id = o.fleet_id
+    WHERE o.state = 'failed'
+      AND COALESCE(t.lifecycle, '') <> 'archived'
+      AND COALESCE(f.lifecycle, '') <> 'archived'
+      AND NOT EXISTS (SELECT 1 FROM operations o2
+                       WHERE o2.kind = o.kind AND o2.state = 'done'
+                         AND o2.created_at > o.created_at
+                         AND COALESCE(o2.task_id, '') = COALESCE(o.task_id, '')
+                         AND COALESCE(o2.fleet_id, '') = COALESCE(o.fleet_id, ''))
+    ORDER BY o.updated_at DESC"
+  "Failed operations that still describe something unresolved.")
+
+(defun fleet-core-open-failed-operations (store)
+  "Failed operations of STORE that are still worth a human's attention.
+A failure is superseded, and so omitted, once a later operation of the
+same kind on the same task (or fleet) reached `done', or the task or fleet
+it belonged to is archived.  The rows stay in the journal as history; this
+only decides what doctor and dashboards should keep raising."
+  (fleet-store-query store fleet-core--open-failed-operations-sql))
 
 ;;;; Runtimes: launch and stop primitives
 

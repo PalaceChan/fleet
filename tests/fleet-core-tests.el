@@ -49,6 +49,81 @@ exist)."
         (fleet-test-should-fail 'invalid-task (fleet-core-create-task store fid :name "x" :kind "weird" :brief fleet-test-brief))
         (fleet-test-should-fail 'invalid-task (fleet-core-create-task store fid :name "x" :kind "change" :brief fleet-test-brief :repo "/nonexistent"))))))
 
+(ert-deftest fleet-core-delivery-follows-the-repository-and-refuses-impossible-review ()
+  "Live run 2026-09-17: a commander whose create call lost `delivery' got the
+fixed default remote-review on a repository with no remote; teardown refused
+the contract only after the work was done.  Judge it at creation instead."
+  (fleet-test-with-fakes
+    (let* ((local (fleet-git-test-repo "local-only"))
+           (hosted (fleet-git-test-repo "hosted"))
+           (bare (expand-file-name "hosted.git" fleet-development-root))
+           (fid (fleet-core-test-fleet store "fl")))
+      (fleet-git-test-git hosted "init" "-q" "--bare" bare)
+      (fleet-git-test-git hosted "remote" "add" "origin" bare)
+      ;; no remote: omitted delivery follows the repository
+      (let ((task (fleet-core-create-task store fid :name "a" :kind "change" :brief fleet-test-brief :repo local)))
+        (should (equal "local-ready" (plist-get task :delivery-mode)))
+        (should (equal "default-no-remote" (plist-get task :delivery-source)))
+        (let ((ev (fleet-store-query1 store "SELECT payload FROM events WHERE task_id = ? AND kind = 'task-created'" (plist-get task :id))))
+          (should (equal "local-ready" (plist-get (fleet-store-unjson (plist-get ev :payload)) :delivery)))
+          (should (equal "default-no-remote" (plist-get (fleet-store-unjson (plist-get ev :payload)) :delivery-source)))))
+      ;; no remote: an explicit promise to push is refused now, not at teardown
+      (fleet-test-should-fail 'delivery-needs-remote
+                              (fleet-core-create-task store fid :name "b" :kind "change" :brief fleet-test-brief :repo local :delivery "remote-review"))
+      (should (equal "integrated"
+                     (plist-get (fleet-core-create-task store fid :name "c" :kind "change" :brief fleet-test-brief :repo local :delivery "integrated") :delivery-mode)))
+      ;; with a remote: the review default and the explicit choice both stand
+      (let ((task (fleet-core-create-task store fid :name "d" :kind "change" :brief fleet-test-brief :repo hosted)))
+        (should (equal "remote-review" (plist-get task :delivery-mode)))
+        (should (equal "default" (plist-get task :delivery-source))))
+      (should (equal "explicit"
+                     (plist-get (fleet-core-create-task store fid :name "e" :kind "change" :brief fleet-test-brief :repo hosted :delivery "remote-review") :delivery-source)))
+      ;; studies carry no delivery contract at all
+      (let ((study (fleet-core-create-task store fid :name "s" :kind "study" :brief fleet-test-brief :repo local)))
+        (should-not (plist-get study :delivery-mode))
+        (should-not (plist-get study :delivery-source))))))
+
+(ert-deftest fleet-core-open-failed-operations-drop-superseded-failures ()
+  "Live run 2026-09-17: a teardown refused on evidence, retried successfully
+after a merge, kept showing in doctor after the fleet was destroyed.  History
+keeps the row; attention does not."
+  (fleet-test-with-fakes
+    (let* ((fid (fleet-core-test-fleet store "fl"))
+           (t1 (plist-get (fleet-core-test-study store fid "one") :id))
+           (t2 (plist-get (fleet-core-test-study store fid "two") :id))
+           (ids (lambda () (mapcar (lambda (o) (plist-get o :id)) (fleet-core-open-failed-operations store))))
+           (fail (lambda (kind tid)
+                   (let ((op (fleet-core-operation-begin store kind :fleet-id fid :task-id tid)))
+                     (fleet-core-operation-finish store op :state "failed" :error "nope")
+                     ;; created_at has millisecond resolution; keep later ops strictly later
+                     (sleep-for 0.01)
+                     op))))
+      (let ((a (funcall fail "task-teardown" t1))
+            (b (funcall fail "task-teardown" t2))
+            (c (funcall fail "runtime-stop" t2)))
+        (should (equal (sort (copy-sequence (list a b c)) #'string<) (sort (funcall ids) #'string<)))
+        ;; a later teardown of t1 succeeds: its failure is history
+        (let ((ok (fleet-core-operation-begin store "task-teardown" :fleet-id fid :task-id t1)))
+          (fleet-core-operation-finish store ok :state "done"))
+        (should (equal (sort (copy-sequence (list b c)) #'string<) (sort (funcall ids) #'string<)))
+        ;; a later *different* kind on t2 does not settle its teardown failure
+        (let ((ok (fleet-core-operation-begin store "brief-publish" :fleet-id fid :task-id t2)))
+          (fleet-core-operation-finish store ok :state "done"))
+        (should (member b (funcall ids)))
+        ;; archiving t2 settles everything about it
+        (fleet-store-transaction store
+          (fleet-store-update store "tasks" t2 (fleet-store-touch (list :lifecycle "archived"))))
+        (should-not (funcall ids))
+        ;; a fleet-level failure with no task is settled by archiving the fleet
+        (let ((d (fleet-core-operation-begin store "fleet-retire" :fleet-id fid)))
+          (fleet-core-operation-finish store d :state "failed" :error "rename")
+          (should (equal (list d) (funcall ids)))
+          (fleet-store-transaction store
+            (fleet-store-update store "fleets" fid (fleet-store-touch (list :lifecycle "archived"))))
+          (should-not (funcall ids))
+          ;; every failure is still in the journal
+          (should (= 4 (fleet-store-scalar store "SELECT COUNT(*) FROM operations WHERE state = 'failed'"))))))))
+
 (ert-deftest fleet-core-eca-overlay-disables-ask-user-for-operators-only ()
   "Operators and lieutenants lose ask_user (their question channels are
 needs-decision and fleet_report); the commander keeps it."
@@ -220,6 +295,19 @@ defcustom, else the ECA default) is what each commander start launches with."
         (should (equal (fleet-core-commander-model (fleet-store-get store "fleets" fid)) (cons nil nil)))
         (funcall start)
         (should (equal (plist-get (funcall commander-rt) :model) "fake/model")))
+      ;; No pin, no defcustom, but an owner policy: its default governs the
+      ;; commander too (live run 2026-09-17: the commander ran on ECA's
+      ;; default while every operator followed config.json).
+      (let ((fleet-commander-model nil) (fleet-commander-variant nil))
+        (fleet-test-write-config :models "{\"default\": {\"model\": \"fake/other\", \"variant\": \"low\"}}")
+        (should (equal (fleet-core-commander-model (fleet-store-get store "fleets" fid)) (cons "fake/other" "low")))
+        (funcall start)
+        (should (equal (plist-get (funcall commander-rt) :model) "fake/other"))
+        (should (equal (plist-get (funcall commander-rt) :variant) "low"))
+        ;; a variant defcustom alone overrides only the variant
+        (let ((fleet-commander-variant "high"))
+          (should (equal (fleet-core-commander-model (fleet-store-get store "fleets" fid)) (cons "fake/other" "high"))))
+        (delete-file (fleet-config-file)))
       ;; No pin: the defcustoms now apply to an existing fleet too (previously only at creation).
       (let ((fleet-commander-model "fake/other") (fleet-commander-variant "low"))
         (funcall start)

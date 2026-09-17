@@ -267,6 +267,11 @@ fleet-supervisor.")
 
 (defun fleet-eca--clip (s n) "Clip string S to N chars." (if (> (length s) n) (concat (substring s 0 n) "…") s))
 
+(defun fleet-eca--outputs-text (outputs)
+  "Concatenate the text parts of a tool call's OUTPUTS vector."
+  (string-trim (mapconcat (lambda (o) (or (and (equal (plist-get o :type) "text") (plist-get o :text)) ""))
+                          (append outputs nil) "\n")))
+
 ;;;; Start
 
 (cl-defun fleet-eca-start (&key runtime-id owner-epoch role fleet-id task-id display-name
@@ -829,14 +834,20 @@ not be charged to the new turn."
            (fleet-eca--tool-phase conn id content 'running)
            (fleet-eca--emit conn 'tool-running :tool-id id :name (plist-get content :name) :server (plist-get content :server))))
         ("toolCalled"
-         (let ((id (plist-get content :id)))
+         (let* ((id (plist-get content :id)) (failed (eq t (plist-get content :error)))
+                ;; A failed call's output is the only record of *why* it
+                ;; failed (ECA's own argument check, an MCP refusal, a shell
+                ;; error).  Keep a clipped copy; successful outputs stay in
+                ;; the chat, they are not Fleet's evidence.
+                (output (and failed (fleet-eca--clip (fleet-eca--outputs-text (plist-get content :outputs)) 600))))
            (fleet-eca--turn-output conn)
            (setf (fleet-eca-conn-pending-approvals conn) (delete id (fleet-eca-conn-pending-approvals conn)))
            (setf (fleet-eca-conn-active-tools conn) (assoc-delete-all id (fleet-eca-conn-active-tools conn)))
-           (fleet-eca--transcript conn (list :role "tool" :kind "called" :tool-id id :name (plist-get content :name)
-                                             :error (eq t (plist-get content :error)) :ms (plist-get content :totalTimeMs)))
+           (fleet-eca--transcript conn (append (list :role "tool" :kind "called" :tool-id id :name (plist-get content :name)
+                                                     :error failed :ms (plist-get content :totalTimeMs))
+                                               (and output (list :output output))))
            (fleet-eca--emit conn 'tool-finished :tool-id id :name (plist-get content :name)
-                            :error (eq t (plist-get content :error)) :ms (plist-get content :totalTimeMs))))
+                            :error failed :ms (plist-get content :totalTimeMs) :output output)))
         ("toolCallRejected"
          (let ((id (plist-get content :id)))
            (fleet-eca--turn-output conn)
@@ -958,8 +969,11 @@ Refuses when REQUEST-ID does not match the exact pending item."
   (let ((entries (last (split-string (or (fleet-paths-read-file file) "") "\n" t) lines)))
     (mapconcat (lambda (line)
                  (let ((e (ignore-errors (fleet-store-unjson line))))
-                   (if e (format "[%s] %s: %s" (plist-get e :at) (plist-get e :role)
-                                 (or (plist-get e :text) (plist-get e :name) (plist-get e :kind)))
+                   (if e (format "[%s] %s: %s%s" (plist-get e :at) (plist-get e :role)
+                                 (or (plist-get e :text) (plist-get e :name) (plist-get e :kind))
+                                 (if (eq t (plist-get e :error))
+                                     (format " FAILED%s" (if (plist-get e :output) (concat ": " (plist-get e :output)) ""))
+                                   ""))
                      line)))
                entries "\n")))
 

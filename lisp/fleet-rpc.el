@@ -221,6 +221,27 @@ Checks required keys, types and enums."
 
 (defun fleet-rpc--lst (v) "Vector V as list." (append v nil))
 
+(defun fleet-rpc--brief-text (store actor params)
+  "Brief text for PARAMS: inline `brief' or the file named by `brief_path'.
+A brief is the largest argument a commander emits, and the live run showed
+a model dropping other arguments to fit it into one call.  `brief_path'
+lets the commander write the brief with its editing tools instead; the
+file must lie under its own fleet's artifact root (relative paths resolve
+there), is read inside Emacs and is otherwise left alone.  Returns nil
+when neither is given, so callers decide whether that is allowed."
+  (let ((brief (plist-get params :brief)) (path (plist-get params :brief_path)))
+    (cond
+     ((and path (not (string-blank-p (or brief ""))))
+      (fleet-fail 'invalid-request "pass brief or brief_path, not both"))
+     (path
+      (let* ((root (plist-get (fleet-core-fleet store (plist-get actor :fleet-id)) :artifact-root))
+             (file (expand-file-name path root)))
+        (unless (fleet-paths-contains-p root file)
+          (fleet-fail 'invalid-request "brief_path must lie under your fleet directory" :brief-path path :root root))
+        (or (fleet-paths-read-file file)
+            (fleet-fail 'invalid-request "brief_path is missing or unreadable" :brief-path file))))
+     (t brief))))
+
 (defun fleet-rpc--run (store actor operation key params)
   "Execute OPERATION for authenticated ACTOR."
   (let ((fid (plist-get actor :fleet-id)) (logical (plist-get actor :logical)))
@@ -244,7 +265,9 @@ Checks required keys, types and enums."
          (mutation params
                    (lambda ()
                      (let ((task (fleet-core-create-task store fid
-                                                         :name (plist-get params :name) :kind (plist-get params :kind) :brief (plist-get params :brief)
+                                                         :name (plist-get params :name) :kind (plist-get params :kind)
+                                                         :brief (or (fleet-rpc--brief-text store actor params)
+                                                                    (fleet-fail 'invalid-request "brief or brief_path required" :operation "fleet_task_create"))
                                                          :repo (plist-get params :repo) :base-ref (plist-get params :base_ref) :branch (plist-get params :branch)
                                                          :delivery (plist-get params :delivery)
                                                          :workspace-mode (intern (or (plist-get params :workspace_mode) "new"))
@@ -260,7 +283,8 @@ Checks required keys, types and enums."
                        (fleet-supervisor--changed fid)
                        (list :task-id (plist-get task :id) :name (plist-get task :name) :lifecycle (plist-get task :lifecycle)
                              :brief-revision (plist-get task :brief-revision) :entity-revision (plist-get task :entity-revision)
-                             :model (plist-get task :model) :variant (plist-get task :variant) :model-source (plist-get task :model-source))))))
+                             :model (plist-get task :model) :variant (plist-get task :variant) :model-source (plist-get task :model-source)
+                             :delivery (plist-get task :delivery-mode) :delivery-source (plist-get task :delivery-source))))))
         ("fleet_task_start"
          (fleet-rpc--task-in-fleet store actor (plist-get params :task_id))
          (unless key (fleet-fail 'invalid-request "idempotency_key required"))
@@ -269,7 +293,8 @@ Checks required keys, types and enums."
         ("fleet_task_retask"
          (fleet-rpc--task-in-fleet store actor (plist-get params :task_id))
          (mutation params (lambda ()
-                            (let ((r (fleet-core-retask store (plist-get params :task_id) (plist-get params :brief) :expected-revision (plist-get params :expected_revision)
+                            (let ((r (fleet-core-retask store (plist-get params :task_id) (or (fleet-rpc--brief-text store actor params) "")
+                                                        :expected-revision (plist-get params :expected_revision)
                                                         :note (plist-get params :note) :actor logical
                                                         :model (plist-get params :model) :variant (plist-get params :variant)
                                                         :owner-approved (eq (plist-get params :owner_approved) t)

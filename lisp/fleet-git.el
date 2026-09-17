@@ -157,6 +157,20 @@ branch when there is exactly one.  Never assumes master over main."
   "CALLBACK gets the list of remote names of REPO (possibly empty)."
   (fleet-git-run repo '("remote") (lambda (r) (funcall callback (and (fleet-git-ok-p r) (split-string (fleet-git-out r) "\n" t))))))
 
+(defun fleet-git-remotes-now (repo)
+  "Remote names of REPO, or nil, answered synchronously.
+`git remote' only reads the local config, so this is the one query
+admission checks may make before a transaction: a task's delivery contract
+has to be judged while the request is still refusable, not at teardown.
+Errors (not a repository, git missing) yield nil like an empty remote list;
+the caller decides whether that matters."
+  (condition-case nil
+      (let ((default-directory (file-name-as-directory repo)))
+        (with-temp-buffer
+          (and (eql 0 (call-process fleet-git-executable nil (list (current-buffer) nil) nil "remote"))
+               (split-string (buffer-string) "\n" t))))
+    (error nil)))
+
 ;;;; Workspace creation
 
 (cl-defun fleet-git-create-worktree (&key repo path branch base-oid callback)
