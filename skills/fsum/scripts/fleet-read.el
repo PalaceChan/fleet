@@ -30,6 +30,16 @@
 (require 'cl-lib)
 (require 'subr-x)
 
+;; Installed Fleet functions (lisp/fleet-core.el, fleet-store.el, fleet-policy.el,
+;; fleet-dashboard.el).  Declared, not required: this file never loads Fleet.
+(declare-function fleet-core-fleet "fleet-core" (store ref))
+(declare-function fleet-store-get "fleet-store" (store table id))
+(declare-function fleet-store-lieutenants "fleet-store" (store fleet-id))
+(declare-function fleet-store-snapshot "fleet-store" (store &optional fleet-id))
+(declare-function fleet-config-lieutenants "fleet-policy" (fleet-name))
+(declare-function fleet-dashboard-commander-status "fleet-dashboard" (fleet))
+(declare-function fleet-dashboard-task-projection "fleet-dashboard" (task fleet))
+
 (defconst fleet-read-schema 1 "Version of the evidence plist shape returned by `fleet-read-bearings'.")
 
 (defconst fleet-read-detail-limit 600 "Free text longer than this many characters is abbreviated.")
@@ -93,7 +103,8 @@ Non-strings are returned as is."
 ;;;; Root selection
 
 (defun fleet-read--selector-row (store selector)
-  "Fleet row for SELECTOR (id, root name or root/child) via the installed resolver, or nil."
+  "Fleet row for SELECTOR (id, root name or root/child), or nil.
+Uses the installed resolver so selector semantics stay Fleet's own."
   (condition-case nil
       (fleet-core-fleet store selector)
     (error nil)))
@@ -144,7 +155,7 @@ conflict, not a switch; lieutenants and archived fleets are refused."
             :pending-approvals (length approvals)))))
 
 (defun fleet-read--commander-label (fleet)
-  "Dashboard's commander label for enriched FLEET when available, else the raw lifecycle."
+  "Dashboard's commander label for enriched FLEET, else the raw lifecycle."
   (cond
    ((fboundp 'fleet-dashboard-commander-status)
     (car (ignore-errors (fleet-dashboard-commander-status fleet))))
@@ -325,8 +336,9 @@ Returns a plist: :schema :observed-at :revision :root :caller :config :members
                           :tasks (apply #'+ (mapcar (lambda (m) (length (plist-get m :tasks))) members)))))))
 
 (defun fleet-read--jsonable (v)
-  "V with lists turned into vectors and nil into :null so `json-serialize' cannot
-mistake a list of plists for an alist (the same reason Fleet's store encoder does it)."
+  "V with lists turned into vectors and nil into :null for `json-serialize'.
+A list of plists would otherwise be mistaken for an alist (Fleet's store
+encoder vectorizes for the same reason)."
   (cond ((null v) :null)
         ((eq v t) t)
         ((and (consp v) (keywordp (car v)))

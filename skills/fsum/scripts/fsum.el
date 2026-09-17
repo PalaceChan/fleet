@@ -229,8 +229,9 @@ Next-step cell before qualifiers."
 ;;;; Needs you / synthesis
 
 (defun fsum--needs-you (bearings)
-  "Bullets for what genuinely needs the user: human-authority decisions, native
-prompts only a human can answer, lost runtimes and supervisors without a session."
+  "Bullets for what genuinely needs the user.
+Human-authority decisions, native prompts only a human can answer, lost
+runtimes and lieutenants without a session; commander-authority work is not."
   (let (items)
     (dolist (m (plist-get bearings :members))
       (let ((owner (fsum--owner m)) (c (plist-get m :commander)))

@@ -64,7 +64,8 @@ Byte-compile check (same server): `(byte-compile-file "/path/to/skills/fsum/scri
 
 ## Caveats
 
-- Output of `emacsclient --eval` is an Elisp string literal; `SKILL.md` shows the unescape step.
+- Output of `emacsclient --eval` is an Elisp string literal with `\n` escapes; `SKILL.md` shows the
+  decode step.
 - Observation is sequential reads, not an atomic census; the heading's time and the `Coverage` notes say
   what was and was not seen.
 - No historical comparison, trend, or "since last summary" store — by design.

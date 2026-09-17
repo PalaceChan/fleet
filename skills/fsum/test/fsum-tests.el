@@ -55,7 +55,8 @@
                       :external-jobs nil :dependencies nil :messages-recent nil)))
 
 (defun fsum-test--rt (lifecycle &rest props)
-  "Runtime row with LIFECYCLE and PROPS (a credential hash is present to prove it is dropped)."
+  "Runtime row with LIFECYCLE and PROPS.
+A credential hash is present to prove the reader drops it."
   (append props (list :id (concat "rt-" lifecycle) :lifecycle lifecycle :turn-state "idle" :connection-state "ready"
                       :credential-hash "SECRET-HASH" :model "test/model" :pending-question nil :pending-approvals nil
                       :active-tool nil)))
@@ -65,8 +66,9 @@
   (list :id id :question question :authority authority :state "open" :created-at "2026-09-17T10:30:00.000Z"))
 
 (cl-defun fsum-test--basic-fixture (&key root child rows config (store 'fake-store store-p) fail-snapshots config-error)
-  "Root `workshop' (live commander), sibling root `other', lieutenant `frontend' (live).
-ROOT and CHILD are extra enriched plists for workshop/frontend; the rest override wholesale."
+  "Root `workshop' (live), sibling root `other', lieutenant `frontend' (live).
+ROOT and CHILD are extra enriched plists for workshop/frontend; the other
+keys override wholesale."
   (append (when store-p (list :store store))
           (list :rows (or rows (list (fsum-test--fleet fsum-test--root-id "workshop" :commander-runtime-id "rt-ready")
                                      (fsum-test--fleet fsum-test--other-id "other")
@@ -78,7 +80,8 @@ ROOT and CHILD are extra enriched plists for workshop/frontend; the rest overrid
                 :config-error config-error)))
 
 (defun fsum-test--children-fixture ()
-  "Declared: frontend backend docs.  Existing: frontend (live), backend (stopped commander), legacy (unconfigured, no commander)."
+  "Declared: frontend backend docs.
+Existing: frontend (live), backend (stopped), legacy (unconfigured, none)."
   (let ((backend-id "44444444-4444-4444-4444-444444444444") (legacy-id "55555555-5555-5555-5555-555555555555"))
     (list :rows (list (fsum-test--fleet fsum-test--root-id "workshop" :commander-runtime-id "rt-ready")
                       (fsum-test--fleet fsum-test--child-id "frontend" :parent-id fsum-test--root-id :charter "UI work")
@@ -120,8 +123,8 @@ ROOT and CHILD are extra enriched plists for workshop/frontend; the rest overrid
                                                :running-operations nil :open-requests nil :tasks nil)))))))
 
 (defmacro fsum-test-with-fixture (fixture &rest body)
-  "Run BODY with the Fleet read API faked over FIXTURE and the mutation spy armed.
-After BODY, assert that no denylisted function ran and only allowlisted reads were used."
+  "Run BODY with the Fleet read API faked over FIXTURE and the spy armed.
+Afterwards assert no denylisted function ran and only allowlisted reads."
   (declare (indent 1))
   `(let* ((fx ,fixture)
           (fleet-supervisor--store (if (plist-member fx :store) (plist-get fx :store) 'fake-store))
@@ -158,7 +161,7 @@ After BODY, assert that no denylisted function ran and only allowlisted reads we
   (cl-find name (plist-get b :members) :key (lambda (m) (plist-get m :name)) :test #'equal))
 
 (defun fsum-test--md (&rest args)
-  "Rendered bearings for `fleet-read-bearings' ARGS (default: the workshop session)."
+  "Rendered bearings for `fleet-read-bearings' ARGS (default: workshop)."
   (fsum-render (apply #'fleet-read-bearings (or args (list :session-fleet-id fsum-test--root-id)))))
 
 ;;;; Fail closed

@@ -57,13 +57,15 @@ Take the fleet id and runtime id from the **`## Your fleet`** section of your bo
 
    With an explicit selector: add `:selector "FLEET"` (keep `:session-fleet-id`).
 
-3. `emacsclient` prints the result as an Elisp string literal: outer double quotes, `\"` for quotes,
-   `\\` for backslashes, newlines literal. Strip and unescape before showing it, e.g.
+3. `emacsclient` prints the result as an Elisp string literal: outer double quotes, `\n` for newlines,
+   `\"` for quotes, `\\` for backslashes. Those escapes are Python-compatible, so decode before showing:
 
    ```bash
    emacsclient --eval '(fsum-bearings :session-fleet-id "UUID" :runtime-id "RUNTIME")' \
-     | sed -e '1s/^"//' -e '$s/"$//' -e 's/\\"/"/g' -e 's/\\\\/\\/g'
+     | python3 -c 'import ast, sys; print(ast.literal_eval(sys.stdin.read().strip()))'
    ```
+
+   If the call itself errors, `emacsclient` prints `*ERROR*: …` instead of a string; show that as is.
 
 4. Evidence instead of prose: `(fleet-read-bearings-json :session-fleet-id "UUID")` returns the same
    observation as JSON (`schema` 1: `root`, `caller`, `config`, `members`, `requests`, `diagnostics`,
