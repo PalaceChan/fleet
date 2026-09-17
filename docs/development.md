@@ -40,6 +40,7 @@ All Lisp is under [`lisp/`](../lisp/); tests under [`tests/`](../tests/).
 | Turn/tool/wake telemetry | `fleet-telemetry.el` | `fleet-telemetry-tests.el`; quickstart timeline/stats |
 | Commander/operator instructions and task-kind briefs | [`prompts/`](../prompts/) | boot construction in `fleet-core.el`; core/native suites |
 | Integrated runtime acceptance | `tests/fleet-native-tests.el` | opt-in, paid/live-host boundary in [testing](testing.md) |
+| Commander skills (`/fsum` read-only bearings; read helper shared with `/frev`) | [`skills/fsum/`](../skills/fsum/README.md): `scripts/fleet-read.el`, `scripts/fsum.el` — skill-local Elisp over installed read functions, no `lisp/` changes | `skills/fsum/test/fsum-tests.el` (faked store, mutation spy; disposable server only) |
 
 `fleet-core.el` implements lifecycle policy but delegates systemd and Git evidence to their owners.
 `fleet-rpc.el` translates snake_case tool arguments to Lisp plists and emits deliberately compact views;

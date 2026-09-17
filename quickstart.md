@@ -190,6 +190,17 @@ brief and report, `w` for the files. Send scope changes to the commander. Use `s
 only after `v` tells you what would be interrupted. A pending native permission prompt is answered in the
 operator's own chat (`RET`), not by a message.
 
+## Quick bearings: `/fsum`
+
+Type `/fsum` in the root commander's chat (once the [fsum skill](skills/fsum/README.md) is wired into your
+ECA skills directory) for one screen of read-only bearings: a supervisor table (commander and lieutenants,
+session live/stopped/parked, pending events), a work table with moving work first, and a **Needs you**
+list limited to human-authority decisions, native approvals and lost sessions. `/fsum FLEET` names a root
+explicitly and refuses if it is not the session's fleet. It reads the store Fleet already has open in this
+Emacs and nothing else: no acks, sends, starts, Git or GitHub probes. If Fleet is not started it says so
+instead of starting it. Labels are conservative — "Working (reported; idle now)" is a status, not proof of
+execution; "Reported done · verification pending" until the commander verifies.
+
 ## When a task finishes
 
 The operator publishes `done` with registered artifacts; the commander verifies the actual files/branch and
