@@ -327,6 +327,16 @@ when neither is given, so callers decide whether that is allowed."
                                   (list :task-id (plist-get r :task-id) :operation-id (plist-get r :operation-id) :state "stopping-runtime")
                                 (list :task-id (plist-get r :id) :brief-revision (plist-get r :brief-revision) :lifecycle (plist-get r :lifecycle)
                                       :model (plist-get r :model) :variant (plist-get r :variant)))))))
+        ("fleet_task_delivery"
+         (fleet-rpc--task-in-fleet store actor (plist-get params :task_id))
+         (mutation params (lambda ()
+                            (let ((task (fleet-core-set-delivery store (plist-get params :task_id) (plist-get params :delivery)
+                                                                 :note (plist-get params :note) :actor logical
+                                                                 :owner-approved (eq (plist-get params :owner_approved) t)
+                                                                 :expected-revision (plist-get params :expected_revision))))
+                              (fleet-supervisor--changed fid)
+                              (list :task-id (plist-get task :id) :delivery (plist-get task :delivery-mode) :remote (plist-get task :remote)
+                                    :entity-revision (plist-get task :entity-revision))))))
         ("fleet_message_send"
          (let ((task (fleet-rpc--task-in-fleet store actor (plist-get params :task_id))))
            (unless key (fleet-fail 'invalid-request "idempotency_key required"))

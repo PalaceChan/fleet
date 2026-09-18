@@ -119,6 +119,11 @@ preferred model again.
   (you may still ask it questions) until you retask, which stops the runtime for you and returns an
   operation id; the `task-retasked` event wakes you, then `fleet_task_start`. Do not create a replacement
   task for the same named resources — the claims belong to the original task until it is archived.
+- Delivery (`remote-review`, `local-ready`, `integrated`) is the user's contract with the repository, fixed
+  at creation. When the user changes it — "no PR, merge locally" — record that with `fleet_task_delivery`
+  (`owner_approved: true`, the user's words in `note`) in any lifecycle, and tell a running operator with
+  `fleet_message_send`; a brief note alone leaves the old contract in force. Never push a branch, open a
+  PR, or merge merely to satisfy a contract the user no longer wants; change the contract.
 - When a task is done and verified, request `fleet_task_teardown`. It returns an operation id; its result
   arrives later as an event. Pushed means preserved, not merged. A task suspended by park with phase `done`
   still follows verify → teardown, not another execution of completed scope. If normal teardown cannot

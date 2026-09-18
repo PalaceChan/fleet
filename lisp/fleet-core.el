@@ -580,6 +580,47 @@ actionable so the commander learns the task can be started."
                                                  :selection-changed (and selection t))
                                   :actionable (and op t))))))
 
+(defun fleet-core-pick-remote (remotes)
+  "The remote a task pushes to among REMOTES: the only one, else origin, else the first."
+  (cond ((null remotes) nil) ((= 1 (length remotes)) (car remotes)) ((member "origin" remotes) "origin") (t (car remotes))))
+
+(cl-defun fleet-core-set-delivery (store task-id delivery &key note actor owner-approved expected-revision)
+  "Change TASK-ID's delivery contract to DELIVERY on the owner's word.
+
+Live run 2026-09-17: the owner switched from review-by-PR to merging
+locally while a task was in flight; only the brief text could follow, the
+row kept `remote-review', and teardown of the finished task refused until
+the commander pushed a branch nobody wanted.  Delivery is the owner's
+contract with the repository, so OWNER-APPROVED is required, the task may
+be in any lifecycle short of closing/archived, and no runtime is stopped:
+the operator's prompt named the old mode, so the commander tells it.
+
+A local mode clears the task's remote so cleanup evidence judges the tip
+against the local target branch; `remote-review' needs a remote now, as at
+creation, and records it.  Returns the updated task row."
+  (let* ((task (fleet-core-task store task-id))
+         (from (plist-get task :delivery-mode)))
+    (fleet-store-check-revision store "tasks" task-id expected-revision)
+    (unless (equal (plist-get task :kind) "change")
+      (fleet-fail 'invalid-task "Only change tasks have a delivery contract" :kind (plist-get task :kind)))
+    (unless (member delivery fleet-core-delivery-modes)
+      (fleet-fail 'invalid-task "Unknown delivery mode" :delivery delivery))
+    (when (member (plist-get task :lifecycle) '("closing" "archived"))
+      (fleet-fail 'task-closed "Task is closing or archived" :lifecycle (plist-get task :lifecycle)))
+    (unless owner-approved
+      (fleet-fail 'delivery-needs-approval "Delivery is the owner's contract; change it only on the user's explicit word (owner_approved)"
+                  :task-id task-id :from from :to delivery))
+    (let ((remote (and (equal delivery "remote-review")
+                       (or (fleet-core-pick-remote (fleet-git-remotes-now (plist-get task :repo-path)))
+                           (fleet-fail 'delivery-needs-remote "remote-review delivery needs a remote to push to; this repository has none (use local-ready or integrated)"
+                                       :repo (plist-get task :repo-path) :delivery delivery)))))
+      (fleet-store-transaction store
+        (fleet-store-update store "tasks" task-id (fleet-store-touch (list :delivery-mode delivery :remote remote)))
+        (fleet-store-append-event store :fleet-id (plist-get task :fleet-id) :task-id task-id :kind "task-delivery-changed" :actor actor
+                                  :payload (list :from from :to delivery :delivery-source "explicit" :remote remote
+                                                 :note note :owner-approved t)))
+      (fleet-store-get store "tasks" task-id))))
+
 ;;;; Operator status, decisions, waits, artifacts, external jobs
 
 (defun fleet-core-runtime-authorized (store runtime-id &optional task-id)
@@ -1262,7 +1303,7 @@ Then create or adopt the worktree."
     (fleet-git-remotes
      repo
      (lambda (remotes)
-       (let ((remote (cond ((null remotes) nil) ((= 1 (length remotes)) (car remotes)) ((member "origin" remotes) "origin") (t (car remotes)))))
+       (let ((remote (fleet-core-pick-remote remotes)))
          (fleet-git-default-branch
           repo remote
           (lambda (default)

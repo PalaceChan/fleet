@@ -217,7 +217,18 @@ no cleanup evidence."
         (should (eq t (plist-get (plist-get (fleet-rpc-test-req "fleet_cleanup_evidence" ctok (list :task_id change)) :result) :dirty)))
         ;; cleaned up => clean
         (delete-directory (expand-file-name "pkg" ws) t)
-        (should-not (plist-get (plist-get (fleet-rpc-test-req "fleet_cleanup_evidence" otok nil) :result) :dirty))))))
+        (should-not (plist-get (plist-get (fleet-rpc-test-req "fleet_cleanup_evidence" otok nil) :result) :dirty))
+        ;; 2026-09-17: the owner's delivery change travels through fleet_task_delivery, commander only,
+        ;; owner_approved required by schema and honoured by core; the operator never sees the tool
+        (should-not (member "fleet_task_delivery"
+                            (mapcar (lambda (tl) (plist-get tl :name)) (append (plist-get (plist-get (fleet-rpc-test-req "tools_list" otok) :result) :tools) nil))))
+        (should (equal "invalid-request" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_task_delivery" ctok (list :task_id change :delivery "integrated") "dl1"))))
+        (should (equal "delivery-needs-approval" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_task_delivery" ctok (list :task_id change :delivery "integrated" :owner_approved :false) "dl2"))))
+        (should (equal "delivery-needs-remote" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_task_delivery" ctok (list :task_id change :delivery "remote-review" :owner_approved t) "dl3"))))
+        (should (equal "invalid-task" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_task_delivery" ctok (list :task_id study :delivery "integrated" :owner_approved t) "dl4"))))
+        (let ((r (plist-get (fleet-rpc-test-req "fleet_task_delivery" ctok (list :task_id change :delivery "integrated" :owner_approved t :note "owner: merge locally") "dl5") :result)))
+          (should (equal "integrated" (plist-get r :delivery)))
+          (should (equal "integrated" (plist-get (fleet-store-get store "tasks" change) :delivery-mode))))))))
 
 (ert-deftest fleet-rpc-retask-failed-task-with-live-runtime-returns-operation ()
   "The commander's fleet_task_retask on a failed task whose operator is idle

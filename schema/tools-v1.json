@@ -51,6 +51,12 @@
       "inputSchema": {"type": "object", "required": ["idempotency_key", "task_id"], "properties": {"idempotency_key": {"type": "string"}, "task_id": {"type": "string"}, "brief": {"type": "string", "description": "New scope text; may be empty or omitted when only model/variant change on a task that is not done. Pass at most one of brief or brief_path."}, "brief_path": {"type": "string", "description": "New scope read from a file under your fleet directory (relative paths resolve there); preferred for long briefs."}, "note": {"type": "string"}, "expected_revision": {"type": "integer"}, "model": {"type": "string", "description": "Exact ECA model id from the catalog for the next operator, or \"default\" to return to the owner's default. Only on the user's request."}, "variant": {"type": "string", "description": "Variant for the next operator (e.g. low/medium/high/xhigh/max where supported), or \"default\". Only on the user's request."}, "owner_approved": {"type": "boolean", "description": "True only after the user agreed to (or named) the ask-first model."}}, "additionalProperties": false}
     },
     {
+      "name": "fleet_task_delivery",
+      "roles": ["commander", "lieutenant"],
+      "description": "Change a change task's delivery contract (remote-review | local-ready | integrated) on the user's explicit word; owner_approved is required. Works in any lifecycle short of closing/archived and stops nothing: if an operator is running, tell it with fleet_message_send. A local mode clears the task's remote so teardown judges the tip against the local target branch; remote-review needs a remote to exist. Use this instead of pushing a branch to satisfy a contract the user no longer wants.",
+      "inputSchema": {"type": "object", "required": ["idempotency_key", "task_id", "delivery", "owner_approved"], "properties": {"idempotency_key": {"type": "string"}, "task_id": {"type": "string"}, "delivery": {"type": "string", "enum": ["remote-review", "local-ready", "integrated"]}, "owner_approved": {"type": "boolean", "description": "True only after the user asked for this delivery mode."}, "note": {"type": "string", "description": "The user's words or your one-line reason; recorded on the event."}, "expected_revision": {"type": "integer"}}, "additionalProperties": false}
+    },
+    {
       "name": "fleet_message_send",
       "roles": ["commander", "lieutenant"],
       "description": "Queue a message to an operator's chat. Records queued/accepted/rejected/delivery-unknown truthfully; never a terminal fact about the task.",
