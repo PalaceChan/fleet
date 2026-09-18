@@ -116,9 +116,11 @@
 ;;;; JSON out
 
 (defun frev--jsonable (v)
-  "V with lists as vectors and nil as :null, for `json-serialize'."
+  "V with lists as vectors, nil as :null and :false kept, for `json-serialize'.
+Callers that mean JSON false must say :false; nil is absence."
   (cond ((null v) :null)
         ((eq v t) t)
+        ((eq v :false) :false)
         ((and (consp v) (keywordp (car v)))
          (cl-loop for (k val) on v by #'cddr append (list k (frev--jsonable val))))
         ((consp v) (apply #'vector (mapcar #'frev--jsonable v)))
@@ -146,9 +148,9 @@ Return \"ok\" or \"error\" so an `emacsclient' caller sees a one-word verdict."
   (declare (indent 1))
   `(condition-case err
        (progn (frev--write-json ,out (append (list :ok t) (progn ,@body))) "ok")
-     (frev-error (frev--write-json ,out (list :ok nil :code (symbol-name (frev-error-code err)) :message (frev-error-message err))) "error")
-     (fleet-read-error (frev--write-json ,out (list :ok nil :code (symbol-name (fleet-read-error-code err)) :message (fleet-read-error-message err))) "error")
-     (error (frev--write-json ,out (list :ok nil :code "error" :message (error-message-string err))) "error")))
+     (frev-error (frev--write-json ,out (list :ok :false :code (symbol-name (frev-error-code err)) :message (frev-error-message err))) "error")
+     (fleet-read-error (frev--write-json ,out (list :ok :false :code (symbol-name (fleet-read-error-code err)) :message (fleet-read-error-message err))) "error")
+     (error (frev--write-json ,out (list :ok :false :code "error" :message (error-message-string err))) "error")))
 
 ;;;; Collect
 
