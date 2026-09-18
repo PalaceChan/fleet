@@ -41,6 +41,7 @@ All Lisp is under [`lisp/`](../lisp/); tests under [`tests/`](../tests/).
 | Commander/operator instructions and task-kind briefs | [`prompts/`](../prompts/) | boot construction in `fleet-core.el`; core/native suites |
 | Integrated runtime acceptance | `tests/fleet-native-tests.el` | opt-in, paid/live-host boundary in [testing](testing.md) |
 | Commander skills (`/fsum` read-only bearings; read helper shared with `/frev`) | [`skills/fsum/`](../skills/fsum/README.md): `scripts/fleet-read.el`, `scripts/fsum.el` — skill-local Elisp over installed read functions, no `lisp/` changes | `skills/fsum/test/fsum-tests.el` (faked store, mutation spy; disposable server only) |
+| Commander skill `/frev` (fresh browser review; Send-round notice via `fleet-supervisor-send` on the bound runtime) | [`skills/frev/`](../skills/frev/README.md): `scripts/frev.el` (bridge over fsum's reader; no `lisp/` changes), `app/` (stdlib Python loopback server + CLI), `app/static/` (UI, safe Markdown) | `skills/frev/test/frev-tests.el` (faked store, send spy; disposable server only), `test_*.py` + `md.test.mjs` (no Emacs), `ui_cdp.mjs` (headless Chromium, optional) |
 
 `fleet-core.el` implements lifecycle policy but delegates systemd and Git evidence to their owners.
 `fleet-rpc.el` translates snake_case tool arguments to Lisp plists and emits deliberately compact views;
