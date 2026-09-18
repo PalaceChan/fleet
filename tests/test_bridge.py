@@ -3,6 +3,7 @@
 import fcntl
 import json
 import os
+import select
 import socket
 import subprocess
 import sys
@@ -88,6 +89,11 @@ class McpClient:
     def read(self):
         line = self.proc.stdout.readline()
         return json.loads(line)
+
+    def read_within(self, timeout):
+        """Read one reply, or return None if none arrives within `timeout` seconds (never hangs)."""
+        ready, _, _ = select.select([self.proc.stdout], [], [], timeout)
+        return self.read() if ready else None
 
     def close(self):
         self.proc.stdin.close()
@@ -191,6 +197,55 @@ class BridgeMcpTests(unittest.TestCase):
         self.assertEqual(c.read()["error"]["code"], -32700)
         c.send("ping")
         self.assertEqual(c.read()["result"], {})
+        c.close()
+
+    def test_oversized_unterminated_input_is_rejected_before_newline(self):
+        c = McpClient(self.env)
+        limit = 1024 * 1024
+        # A request just under the bound, delivered in several chunks with no
+        # newline yet, must not be rejected: the bound is on the line, not the chunk.
+        c.raw(b"{" + b" " * (limit - 8))
+        time.sleep(0.1)
+        self.assertIsNone(c.read_within(0.3))
+        # Crossing the bound while still unterminated triggers the error at once.
+        c.raw(b" " * 64)
+        r = c.read_within(3)
+        self.assertIsNotNone(r, "no rejection before newline: bound is not enforced incrementally")
+        self.assertEqual(r["error"]["code"], -32700)
+        self.assertEqual(r["error"]["message"], "message too large")
+        self.assertIsNone(r["id"])
+        # Further bytes of the same rejected line are swallowed silently: no second error.
+        c.raw(b"y" * (2 * limit))
+        self.assertIsNone(c.read_within(0.5))
+        # The rejected line ends at the next newline; framing resumes right after it.
+        c.raw(b"tail\n")
+        c.send("ping")
+        self.assertEqual(c.read_within(3)["result"], {})
+        c.close()
+
+    def test_oversized_unterminated_input_then_eof_terminates_cleanly(self):
+        c = McpClient(self.env)
+        c.raw(b"x" * (1024 * 1024 + 1))
+        r = c.read_within(3)
+        self.assertIsNotNone(r)
+        self.assertEqual(r["error"]["code"], -32700)
+        c.proc.stdin.close()
+        # EOF inside the rejected line: exactly one error was emitted, exit is orderly.
+        out, _ = c.proc.communicate(timeout=5)
+        self.assertEqual(out, b"")
+        self.assertEqual(c.proc.returncode, 0)
+
+    def test_large_valid_request_split_across_chunks_is_not_truncated(self):
+        c = McpClient(self.env)
+        pad = "p" * (900 * 1024)
+        msg = (json.dumps({"jsonrpc": "2.0", "id": 7, "method": "ping", "params": {"pad": pad}}) + "\n").encode()
+        for i in range(0, len(msg), 200 * 1024):
+            c.raw(msg[i:i + 200 * 1024])
+            time.sleep(0.05)
+        r = c.read_within(3)
+        self.assertEqual(r, {"jsonrpc": "2.0", "id": 7, "result": {}})
+        c.send("ping")
+        self.assertEqual(c.read_within(3)["result"], {})
         c.close()
 
     def test_disconnected_fleet_reports_retryable_error(self):

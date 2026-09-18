@@ -211,11 +211,16 @@ before adding automatic retries, and F12 before migration/restore or frequent li
     in a process filter. Preserve single-pass cleanup evidence semantics.
   - **Start:** `fleet-rpc--sync-evidence` and Git callbacks; [wait evidence](docs/known-gaps.md#authority-and-interface).
 
-- [ ] **F17 — Bound unterminated bridge input incrementally** · **easy**
+- [x] **F17 — Bound unterminated bridge input incrementally** · **easy**
   - **Payoff:** malformed input cannot grow buffers without reaching the advertised line-size check.
-  - **Done:** enforce the bound as chunks arrive, before a newline; test split frames, oversized
-    unterminated input and normal framed requests with explicit error/termination behavior.
-  - **Start:** `bridge/fleet_bridge.py`, `tests/test_bridge.py`; [framing evidence](docs/known-gaps.md#authority-and-interface).
+  - **Done:** `McpServer.serve` rejects an unterminated line with `-32700 "message too large"` as soon as
+    it exceeds `MAX_REQUEST_BYTES`, then discards bytes up to the next newline and resumes framing; EOF
+    inside a rejected line exits 0 after that single error. Tests: `test_bridge.py`
+    `test_oversized_unterminated_input_is_rejected_before_newline`,
+    `test_oversized_unterminated_input_then_eof_terminates_cleanly`,
+    `test_large_valid_request_split_across_chunks_is_not_truncated` (plus the pre-existing
+    `test_split_frames_malformed_and_oversize`). Branch `fleet/fleet/F17-bridge-input-bound`.
+  - **Evidence:** [bridge README](bridge/README.md#socket-protocol).
 
 ## 5. Deferred or optional — owner selection required
 

@@ -176,6 +176,10 @@ class McpServer:
     def serve(self):
         stdin = sys.stdin.buffer
         buf = b""
+        # True while inside a line already rejected as too large: its remaining
+        # bytes are dropped up to the next newline so the buffer stays bounded
+        # by MAX_REQUEST_BYTES plus one read chunk, even if no newline ever comes.
+        discarding = False
         while True:
             chunk = stdin.read1(65536)
             if not chunk:
@@ -183,6 +187,9 @@ class McpServer:
             buf += chunk
             while b"\n" in buf:
                 line, buf = buf.split(b"\n", 1)
+                if discarding:
+                    discarding = False
+                    continue
                 line = line.strip()
                 if not line:
                     continue
@@ -201,6 +208,14 @@ class McpServer:
                     self.handle(msg)
                 else:
                     self.error(None, -32600, "invalid request")
+            # Incremental bound: an unterminated line is rejected as soon as it
+            # exceeds the limit, not once its newline finally arrives.
+            if discarding:
+                buf = b""
+            elif len(buf) > MAX_REQUEST_BYTES:
+                self.error(None, -32700, "message too large")
+                buf = b""
+                discarding = True
 
 
 # -------------------------------------------------------------------- lease

@@ -91,9 +91,9 @@ Source: [`fleet-core.el`](../lisp/fleet-core.el), [`fleet-rpc.el`](../lisp/fleet
 - **RPC evidence wait:** `fleet-rpc--sync-evidence` uses `accept-process-output` from request dispatch;
   it is a re-entrant synchronous wait, despite the async-only design/comment. **Close with:** deferred
   replies and concurrent/cancellation tests, or an explicitly reviewed bounded design.
-- **Bridge input bound:** the MCP reader checks its size limit only after finding a newline; unterminated
-  input can exceed that bound. **Close with:** incremental size enforcement and chunked oversized-input
-  tests. The bridge CLI can send mutations; it is not intrinsically a read-only diagnostic interface.
+- **Bridge CLI authority:** the bridge CLI can send mutations; it is not intrinsically a read-only
+  diagnostic interface. (The former unterminated-input bound gap is closed: the MCP reader now rejects a
+  line incrementally once it exceeds 1 MiB, see F17 and `tests/test_bridge.py`.)
 
 ## Verification and diagnostics
 

@@ -36,6 +36,8 @@ or send health-check messages as an inspection side effect. See [recovery](../do
 
 See [`schema/rpc-v1.json`](../schema/rpc-v1.json): one JSON object per line, `protocolVersion: 1`, `id`,
 `operation`, `credential`, optional `idempotencyKey`, `params`. The implementation authenticates
-`tools_list` too, despite the schema's credential exception. The MCP reader enforces the 1 MiB bound on
-complete lines, not incrementally on unterminated input. Interface/role/bounds discrepancies are tracked
+`tools_list` too, despite the schema's credential exception. The MCP reader enforces the 1 MiB line bound
+incrementally: an unterminated line is rejected with a `-32700 "message too large"` error as soon as it
+crosses the bound, its remaining bytes are discarded up to the next newline, and framing then resumes;
+EOF inside a rejected line exits cleanly. Interface/role/bounds discrepancies are tracked
 in [known gaps](../docs/known-gaps.md#authority-and-interface); do not treat schema prose as enforcement.
