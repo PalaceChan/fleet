@@ -79,6 +79,15 @@
         (should (equal "invalid-request" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_status" otok '(:phase "flying")))))
         (should (equal "invalid-request" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_status" otok '(:detail "no phase")))))
         (should (equal "invalid-request" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_status" otok '(:phase "working" :bogus 1)))))
+        ;; 2026-09-17: every operator first sent the decision fields at the top level and was
+        ;; refused with "unexpected parameter :question"; that shape now folds under `decision'.
+        (let ((r (fleet-rpc-test-req "fleet_status" otok '(:phase "needs-decision" :detail "flat" :question "A or B?" :options ["A" "B"] :recommendation "A" :authority "human"))))
+          (should (plist-get (plist-get r :result) :decision-id))
+          (let ((d (fleet-store-get store "decisions" (plist-get (plist-get r :result) :decision-id))))
+            (should (equal "A or B?" (plist-get d :question)))
+            (should (equal "human" (plist-get d :authority)))))
+        ;; ...but only when `decision' is absent; a mixed shape is still a schema error
+        (should (equal "invalid-request" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_status" otok '(:phase "needs-decision" :decision (:question "q") :question "q2")))))
         ;; commander sibling control through another fleet's task is refused
         (let* ((f2 (fleet-core-test-fleet store "other")) (t3 (plist-get (fleet-core-test-study store f2 "three") :id)))
           (should (equal "forbidden" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_task_start" ctok (list :task_id t3) "s1")))))

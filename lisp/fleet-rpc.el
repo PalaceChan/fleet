@@ -184,8 +184,30 @@ Records OUTCOME, CODE and the duration since STARTED; PARAMS give the task."
     (when (and idempotency-key (plist-get params :idempotency_key)
                (not (equal idempotency-key (plist-get params :idempotency_key))))
       (fleet-fail 'invalid-request "idempotency key differs between envelope and arguments"))
+    (setq params (fleet-rpc--normalize operation params))
     (fleet-rpc--validate params tool)
     (fleet-rpc--run store actor operation key params)))
+
+(defconst fleet-rpc--decision-keys '(:question :options :recommendation :authority)
+  "Keys of a `fleet_status' decision object.")
+
+(defun fleet-rpc--normalize (operation params)
+  "Fold known argument-shape slips in PARAMS for OPERATION into the schema shape.
+Every operator in the 2026-09-17 live run first published `needs-decision'
+with `question', `options' and `authority' at the top level rather than under
+`decision', was refused, and retried nested.  When `decision' is absent and
+any of those keys are present at the top level, move them under `decision';
+nothing else changes, so validation and recording see one shape."
+  (if (and (equal operation "fleet_status")
+           (not (plist-member params :decision))
+           (cl-some (lambda (k) (plist-member params k)) fleet-rpc--decision-keys))
+      (let (decision rest)
+        (cl-loop for (k v) on params by #'cddr
+                 do (if (memq k fleet-rpc--decision-keys)
+                        (setq decision (plist-put decision k v))
+                      (setq rest (append rest (list k v)))))
+        (append rest (list :decision decision)))
+    params))
 
 (defun fleet-rpc--validate (params tool)
   "Minimal structural validation of PARAMS against TOOL's inputSchema.
