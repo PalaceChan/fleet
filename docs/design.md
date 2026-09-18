@@ -943,7 +943,15 @@ Expose compact tools with precise enums rather than a large family of aliases:
 
 - **Tool:** `fleet_decision_resolve`
   - **Inputs/result summary:** Commander within scope, otherwise human; exact decision ID, answer, authority,
-    expected revision. Resolves the decision separately from sending its answer.
+    expected revision. Resolves the decision separately from sending its answer. A human-authority decision
+    is refused unless the commander relays the user's chat answer with `owner_approved`; the row then records
+    human authority by relay (`decision-resolved` carries `authority`).
+
+- **Tool:** `fleet_task_delivery`
+  - **Inputs/result summary:** Commander only; task ID, new delivery mode, `owner_approved` (required), note,
+    expected revision. Changes a change task's delivery contract in any lifecycle short of closing/archived
+    without stopping anything; a local mode clears the task's remote so cleanup evidence judges the tip
+    against the local target, `remote-review` needs a remote now. Emits `task-delivery-changed` (from/to).
 
 - **Tool:** `fleet_external_job`
   - **Inputs/result summary:** Register/update job identity, system, owner, state, cancel/continue policy,
