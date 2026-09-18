@@ -838,12 +838,19 @@ path that became unreadable or empty since verification counts as changed."
     (list :ok t :decision-id decision-id :task-id (plist-get d :task-id))))
 
 (cl-defun fleet-core-external-job (store &key runtime-id job-id system job-ref state completion-source deadline cancel-policy disposition)
-  "Register or update an external job for RUNTIME-ID's task."
+  "Register or update an external job for RUNTIME-ID's task.
+An existing JOB-ID is updated only when the row belongs to the caller's task
+and fleet; any other job is refused with `forbidden' before any mutation, so
+one operator cannot rewrite another task's record by supplying its id."
   (let* ((rt (fleet-core-runtime-authorized store runtime-id))
          (tid (plist-get rt :task-id)) (now (fleet-paths-now))
          (existing (and job-id (fleet-store-get store "external_jobs" job-id)))
          (id (or job-id (fleet-paths-uuid))))
     (unless (member state '("running" "completed" "failed" "cancelled" "unknown")) (fleet-fail 'invalid-job "Unknown job state" :state state))
+    (when (and existing
+               (not (and (equal (plist-get existing :task-id) tid)
+                         (equal (plist-get existing :fleet-id) (plist-get rt :fleet-id)))))
+      (fleet-fail 'forbidden "External job belongs to another task" :job-id job-id :task-id tid))
     (fleet-store-transaction store
       (if existing
           (fleet-store-update store "external_jobs" id (fleet-store-touch (list :state state :disposition disposition :deadline (or deadline (plist-get existing :deadline)))))

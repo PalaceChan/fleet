@@ -71,11 +71,12 @@ existing-server procedure. Source work, native acceptance, and live activation a
     document an explicit owner-authorized recovery path without guessed identity or lock deletion.
   - **Start:** `lisp/fleet-supervisor.el`; [evidence gaps](docs/known-gaps.md#fail-closed-evidence).
 
-- [ ] **F04 — Enforce external-job ownership on updates** · **easy**
+- [x] **F04 — Enforce external-job ownership on updates** · **easy**
   - **Payoff:** one operator cannot corrupt another task's external-job record by supplying its ID.
-  - **Done:** check existing job ownership at the core mutation boundary; test allowed same-task updates
-    and forbidden cross-task/cross-fleet updates with no partial mutation or misleading success event.
-  - **Start:** `lisp/fleet-core.el`, RPC tests; [authority gap](docs/known-gaps.md#authority-and-interface).
+  - **Done:** `fleet-core-external-job` refuses `forbidden` before the transaction unless the existing job's
+    task and fleet match the caller; tests `fleet-core-external-job-updates-are-owned-by-the-registering-task`
+    and `fleet-rpc-external-job-refuses-another-tasks-job-id` cover same-task update, cross-task/cross-fleet
+    refusal, unchanged row and no event on refusal. The `fleet_operation` cross-task read stays F15.
 
 - [ ] **F05 — Complete actionable doctor preflight checks** · **medium**
   - **Payoff:** broken dependencies produce useful diagnostics instead of mysterious launch failures.

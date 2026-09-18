@@ -727,6 +727,43 @@ then fleet_status :artifacts) and the commander had to verify two rows."
         (fleet-core-artifact-register store :runtime-id rt :kind "report" :external-ref "file:///elsewhere/report.md")
         (should (= 2 (fleet-store-scalar store "SELECT COUNT(*) FROM artifacts WHERE task_id = ?" tid)))))))
 
+(ert-deftest fleet-core-external-job-updates-are-owned-by-the-registering-task ()
+  "F04: an operator may update its own external job, but supplying another
+task's (or another fleet's) job id is refused at the mutation boundary with no
+partial write and no success event."
+  (fleet-test-with-fakes
+    (let* ((fid (fleet-core-test-fleet store "alpha"))
+           (t1 (plist-get (fleet-core-test-study store fid "one") :id))
+           (t2 (plist-get (fleet-core-test-study store fid "two") :id))
+           (f2 (fleet-core-test-fleet store "beta"))
+           (t3 (plist-get (fleet-core-test-study store f2 "three") :id)))
+      (fleet-core-test-start store t1) (fleet-core-test-start store t2) (fleet-core-test-start store t3)
+      (let* ((rt1 (fleet-core-test-runtime store t1)) (rt2 (fleet-core-test-runtime store t2)) (rt3 (fleet-core-test-runtime store t3))
+             (jid (plist-get (fleet-core-external-job store :runtime-id rt1 :system "ci" :job-ref "run/1" :state "running" :deadline "2026-01-01T00:00:00Z") :job-id))
+             (events (lambda () (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'external-job'"))))
+        (should (= 1 (funcall events)))
+        ;; same task: update is allowed, keeps the recorded deadline and emits one event
+        (should (equal jid (plist-get (fleet-core-external-job store :runtime-id rt1 :job-id jid :state "completed" :disposition "merged") :job-id)))
+        (let ((row (fleet-store-get store "external_jobs" jid)))
+          (should (equal "completed" (plist-get row :state)))
+          (should (equal "merged" (plist-get row :disposition)))
+          (should (equal "2026-01-01T00:00:00Z" (plist-get row :deadline)))
+          (should (equal t1 (plist-get row :task-id))))
+        (should (= 2 (funcall events)))
+        ;; another task in the same fleet, and a task in another fleet, are refused before any write
+        (let ((before (fleet-store-get store "external_jobs" jid)))
+          (dolist (rt (list rt2 rt3))
+            (let ((err (fleet-test-should-fail 'forbidden (fleet-core-external-job store :runtime-id rt :job-id jid :state "failed" :disposition "abandoned" :deadline "2030-01-01T00:00:00Z"))))
+              (should (equal jid (plist-get (fleet-error-evidence err) :job-id)))))
+          (should (equal before (fleet-store-get store "external_jobs" jid)))
+          (should (= 2 (funcall events)))
+          (should (= 0 (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'external-job' AND task_id IN (?, ?)" t2 t3)))
+          (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM external_jobs"))))
+        ;; an unknown id from another task still registers a fresh job owned by the caller
+        (let ((r (fleet-core-external-job store :runtime-id rt2 :job-id "own-choice" :system "ci" :job-ref "run/2" :state "running")))
+          (should (equal "own-choice" (plist-get r :job-id)))
+          (should (equal t2 (plist-get (fleet-store-get store "external_jobs" "own-choice") :task-id))))))))
+
 (ert-deftest fleet-core-operator-roots-cover-task-dir-repo-and-worktree ()
   "Rehearsal 1 bug E: ECA forces approval for paths outside its workspace
 roots, so the roots must cover the task dir (progress/report), the studied

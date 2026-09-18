@@ -105,6 +105,28 @@
           (should (equal "stale-runtime" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_snapshot" tok2))))
           (should (equal "unauthenticated" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_snapshot" "never-issued")))))))))
 
+(ert-deftest fleet-rpc-external-job-refuses-another-tasks-job-id ()
+  "F04: over the socket, an operator naming a sibling task's job id gets
+`forbidden'; the sibling's record and its events are untouched, while the
+owner's own update succeeds."
+  (fleet-rpc-test-with
+    (let* ((fid (fleet-core-test-fleet store))
+           (t1 (plist-get (fleet-core-test-study store fid "one") :id))
+           (t2 (plist-get (fleet-core-test-study store fid "two") :id)))
+      (fleet-core-test-start store t1) (fleet-core-test-start store t2)
+      (let* ((tok1 (fleet-rpc-test-token (fleet-core-test-runtime store t1)))
+             (tok2 (fleet-rpc-test-token (fleet-core-test-runtime store t2)))
+             (r (fleet-rpc-test-req "fleet_external_job" tok1 '(:system "ci" :job_ref "run/1" :state "running") "j1"))
+             (jid (plist-get (plist-get r :result) :job-id)))
+        (should jid)
+        (let ((before (fleet-store-get store "external_jobs" jid))
+              (events (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'external-job'")))
+          (should (equal "forbidden" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_external_job" tok2 (list :job_id jid :state "cancelled") "j2"))))
+          (should (equal before (fleet-store-get store "external_jobs" jid)))
+          (should (= events (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'external-job'"))))
+        (should (eq t (plist-get (plist-get (fleet-rpc-test-req "fleet_external_job" tok1 (list :job_id jid :state "completed") "j3") :result) :ok)))
+        (should (equal "completed" (plist-get (fleet-store-get store "external_jobs" jid) :state)))))))
+
 (ert-deftest fleet-rpc-brief-path-reads-a-file-under-the-fleet-directory ()
   "Live run 2026-09-17: a commander could not fit a 6k brief and the other
 arguments into one tool call.  brief_path keeps the call small; the file must

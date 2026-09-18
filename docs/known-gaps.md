@@ -62,11 +62,10 @@ Source: [`fleet-core.el`](../lisp/fleet-core.el), [`fleet-rpc.el`](../lisp/fleet
 [`tools-v1.json`](../schema/tools-v1.json), [`rpc-v1.json`](../schema/rpc-v1.json),
 [`fleet_bridge.py`](../bridge/fleet_bridge.py).
 
-- **External-job cross-task update:** `fleet-core-external-job` authorizes the caller runtime but updates
-  an existing `job-id` without checking that job's task/fleet ownership. **Close with:** ownership checks
-  at the mutation boundary and cross-task/cross-fleet refusal tests. Unsandboxed execution does not excuse
-  a tool-level scope violation. `fleet_operation` also permits operator reads of operations across the same
-  fleet; decide and test whether that visibility is intentional or must be task-scoped.
+- **Operation reads across tasks:** `fleet_operation` permits operator reads of operations across the
+  same fleet; decide and test whether that visibility is intentional or must be task-scoped (F15).
+  Unsandboxed execution does not excuse a tool-level scope violation. (External-job updates are now
+  task/fleet-owned at the core mutation boundary; see F04.)
 - **Human-authority decisions:** core requires human authority, but RPC supplies commander authority and
   there is no public human decision-resolution command. Native question answers and chat messages do not
   resolve the durable `decisions` row. **Close with:** an explicit human-authorized UI/API and end-to-end
