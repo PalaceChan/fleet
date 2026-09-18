@@ -205,6 +205,26 @@ Emacs and nothing else: no acks, sends, starts, Git or GitHub probes. If Fleet i
 instead of starting it. Labels are conservative — "Working (reported; idle now)" is a status, not proof of
 execution; "Reported done · verification pending" until the commander verifies.
 
+## Executive review in the browser: `/frev`
+
+Type `/frev` in the root commander's chat (with the [frev skill](skills/frev/README.md) and `fsum` wired
+into your ECA skills directory) for a **fresh** review session: the commander collects the same read-only
+evidence as `/fsum`, authors a compact review (workstreams, choices, asks) and opens a local page. Stay in
+the browser: **Needs you** comes first; pick options, add comments per item, type messages (`Enter` queues,
+`Shift+Enter` newline, `Ctrl+Enter` sends). Nothing leaves the page until you press **Send round**; the
+badge says `Draft · N queued, not sent` until then and your draft survives a reload.
+
+**Send** saves the round and automatically queues one short notice on the commander's lane — you do not
+return to the chat to say "sent". The commander handles it with normal Fleet tools, publishes the next
+revision with a disposition per input (`applied` / `noted` / `needs-clarification` / `waiting` / `declined`),
+and the page updates by itself within seconds. **End** closes the session (with any queued items); it grants
+no approval and cancels no work. A later `/frev` is always a new session — there is no resume.
+
+What the notice does *not* do: it is not a wake. A parked fleet, a stopped runtime, a replaced commander or
+a half-typed message in the commander's composer make it **hold** (the page says why and offers **Retry
+notify**; your round is saved either way). A busy commander receives it when its lane frees. Human-only
+decisions are recorded in the round, not resolved by the browser.
+
 ## When a task finishes
 
 The operator publishes `done` with registered artifacts; the commander verifies the actual files/branch and

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>frev — executive review</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <a class="skip" href="#composer">Skip to composer</a>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">◆</span>
+      <span class="title" id="top-title">frev</span>
+      <span class="meta" id="top-meta"></span>
+    </div>
+    <div class="topbar-actions">
+      <span class="badge" id="state-badge" role="status" aria-live="polite">loading…</span>
+      <button type="button" class="ghost" id="check-updates" title="Check for a new revision now (no model call)">Check for updates</button>
+      <button type="button" class="ghost" id="theme-toggle" title="Theme: auto / light / dark" aria-label="Toggle theme">◐</button>
+      <button type="button" class="ghost" id="rail-toggle" aria-expanded="true" aria-controls="rail" title="Show or hide the conversation rail">Rail</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="report" id="report" aria-label="Review">
+      <div class="report-inner" id="report-inner">
+        <p class="muted">Loading the review…</p>
+      </div>
+    </section>
+
+    <aside class="rail" id="rail" aria-label="Conversation">
+      <div class="rail-head">
+        <h2>Conversation</h2>
+        <span class="muted small" id="rail-meta"></span>
+      </div>
+      <div class="timeline" id="timeline" aria-live="polite"></div>
+      <div class="queue" id="queue" aria-label="Queued, not sent"></div>
+      <div class="notify" id="notify" role="status" aria-live="polite"></div>
+      <form class="composer" id="composer" autocomplete="off">
+        <label class="sr-only" for="composer-text">Message to the commander</label>
+        <textarea id="composer-text" rows="3" placeholder="Message the commander… Enter queues, Shift+Enter for a new line, Ctrl+Enter sends the round"></textarea>
+        <div class="composer-actions">
+          <span class="hint" id="composer-hint">Enter queues · Shift+Enter newline · Ctrl/⌘+Enter sends</span>
+          <div class="buttons">
+            <button type="button" class="ghost" id="end-button">End session</button>
+            <button type="submit" class="ghost" id="queue-button">Queue</button>
+            <button type="button" class="primary" id="send-button">Send round</button>
+          </div>
+        </div>
+      </form>
+    </aside>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <dialog id="confirm" class="confirm">
+    <form method="dialog">
+      <h3 id="confirm-title">Confirm</h3>
+      <p id="confirm-text"></p>
+      <div class="buttons">
+        <button type="submit" value="cancel" class="ghost">Cancel</button>
+        <button type="submit" value="ok" class="primary" id="confirm-ok">OK</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/static/md.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
