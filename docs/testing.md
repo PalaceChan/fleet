@@ -81,6 +81,26 @@ emacsclient --alternate-editor=false --socket-name="${TEST_SOCKET:?Confirm the d
       summary)))'
 ```
 
+### Sharing the daemon with a fleet run
+
+When operators and the owner use one `fleet-test` daemon during a live fleet run, its death costs a
+round-trip to the owner (only the owner may start one). Observed 2026-09-17: an operator byte-compiled
+its file through the daemon, the eval wedged, `kill -USR2` entered the debugger's recursive edit, and the
+recovery attempt killed the server; ERT then waited on the owner. Rules for a shared daemon:
+
+- **Never byte-compile, `checkdoc`, or `package-*` through the daemon.** Load sources with `load`, run
+  ERT, and nothing else. Byte compilation belongs in `emacs -Q --batch` on a checkout, which these
+  instructions do not run either; leave it to the owner.
+- **Run targeted selectors** (`(fleet-test-run-all root "^fleet-rpc-")`, a single test name), one at a
+  time, each wrapped in `timeout` on the client so a wedge is visible rather than waited on.
+- **Wedge recovery, once:** `kill -USR2 <daemon pid>` then immediately
+  `emacsclient --socket-name=fleet-test --eval '(top-level)'` with a short `timeout`. If a trivial eval
+  still times out, stop: report the daemon dead and ask the owner for a fresh one. A second `USR2` has
+  terminated the server before.
+- Reloads are cheap but not free of state: the runner reloads every source, resets the cached tool
+  schema, and re-registers tests; fake commanders and lease helpers from earlier runs still linger.
+  After two or three targeted runs, prefer asking for a fresh daemon over debugging a hang.
+
 Keep the `emacsclient` exit status: do not pipe it through an unchecked formatter. An unexpected ERT
 result, empty selection, or malformed summary signals an error to the client. Successful output still
 needs review for skipped tests; it is not native acceptance.

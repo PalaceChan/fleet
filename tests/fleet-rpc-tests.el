@@ -79,6 +79,23 @@
         (should (equal "invalid-request" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_status" otok '(:phase "flying")))))
         (should (equal "invalid-request" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_status" otok '(:detail "no phase")))))
         (should (equal "invalid-request" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_status" otok '(:phase "working" :bogus 1)))))
+        ;; 2026-09-17: every operator first sent the decision fields at the top level and was
+        ;; refused with "unexpected parameter :question"; that shape now folds under `decision'.
+        (let ((r (fleet-rpc-test-req "fleet_status" otok '(:phase "needs-decision" :detail "flat" :question "A or B?" :options ["A" "B"] :recommendation "A" :authority "human"))))
+          (should (plist-get (plist-get r :result) :decision-id))
+          (let* ((did (plist-get (plist-get r :result) :decision-id))
+                 (d (fleet-store-get store "decisions" did)))
+            (should (equal "A or B?" (plist-get d :question)))
+            (should (equal "human" (plist-get d :authority)))
+            ;; human authority: refused as a commander ruling, accepted as a relay of the owner's answer
+            (should (equal "forbidden" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_decision_resolve" ctok (list :decision_id did :answer "A") "h1"))))
+            (should (eq t (plist-get (plist-get (fleet-rpc-test-req "fleet_decision_resolve" ctok (list :decision_id did :answer "A" :owner_approved t) "h2") :result) :ok)))
+            (let ((d2 (fleet-store-get store "decisions" did)))
+              (should (equal "resolved" (plist-get d2 :state)))
+              (should (eq t (plist-get (fleet-store-unjson (plist-get d2 :evidence)) :owner-relayed))))
+            (should (equal "human" (plist-get (fleet-store-unjson (plist-get (car (fleet-store-query store "SELECT * FROM events WHERE kind = 'decision-resolved' ORDER BY seq DESC LIMIT 1")) :payload)) :authority)))))
+        ;; ...but only when `decision' is absent; a mixed shape is still a schema error
+        (should (equal "invalid-request" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_status" otok '(:phase "needs-decision" :decision (:question "q") :question "q2")))))
         ;; commander sibling control through another fleet's task is refused
         (let* ((f2 (fleet-core-test-fleet store "other")) (t3 (plist-get (fleet-core-test-study store f2 "three") :id)))
           (should (equal "forbidden" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_task_start" ctok (list :task_id t3) "s1")))))
@@ -200,7 +217,18 @@ no cleanup evidence."
         (should (eq t (plist-get (plist-get (fleet-rpc-test-req "fleet_cleanup_evidence" ctok (list :task_id change)) :result) :dirty)))
         ;; cleaned up => clean
         (delete-directory (expand-file-name "pkg" ws) t)
-        (should-not (plist-get (plist-get (fleet-rpc-test-req "fleet_cleanup_evidence" otok nil) :result) :dirty))))))
+        (should-not (plist-get (plist-get (fleet-rpc-test-req "fleet_cleanup_evidence" otok nil) :result) :dirty))
+        ;; 2026-09-17: the owner's delivery change travels through fleet_task_delivery, commander only,
+        ;; owner_approved required by schema and honoured by core; the operator never sees the tool
+        (should-not (member "fleet_task_delivery"
+                            (mapcar (lambda (tl) (plist-get tl :name)) (append (plist-get (plist-get (fleet-rpc-test-req "tools_list" otok) :result) :tools) nil))))
+        (should (equal "invalid-request" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_task_delivery" ctok (list :task_id change :delivery "integrated") "dl1"))))
+        (should (equal "delivery-needs-approval" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_task_delivery" ctok (list :task_id change :delivery "integrated" :owner_approved :false) "dl2"))))
+        (should (equal "delivery-needs-remote" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_task_delivery" ctok (list :task_id change :delivery "remote-review" :owner_approved t) "dl3"))))
+        (should (equal "invalid-task" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_task_delivery" ctok (list :task_id study :delivery "integrated" :owner_approved t) "dl4"))))
+        (let ((r (plist-get (fleet-rpc-test-req "fleet_task_delivery" ctok (list :task_id change :delivery "integrated" :owner_approved t :note "owner: merge locally") "dl5") :result)))
+          (should (equal "integrated" (plist-get r :delivery)))
+          (should (equal "integrated" (plist-get (fleet-store-get store "tasks" change) :delivery-mode))))))))
 
 (ert-deftest fleet-rpc-retask-failed-task-with-live-runtime-returns-operation ()
   "The commander's fleet_task_retask on a failed task whose operator is idle

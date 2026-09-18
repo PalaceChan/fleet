@@ -19,6 +19,10 @@
     ;; Force fresh definitions so reload semantics are exercised.
     (dolist (f (directory-files lisp t "\\.el\\'"))
       (load f nil t))
+    ;; The tool schema is parsed once and cached in a defvar, which `load'
+    ;; leaves alone.  On a reused daemon a schema edit was invisible until
+    ;; the cache was cleared by hand; forget it with every reload.
+    (when (boundp 'fleet-rpc--tools) (setq fleet-rpc--tools nil))
     (dolist (f (directory-files tests t "-tests\\.el\\'"))
       (load f nil t))
     (let* ((stats (ert-run-tests-batch (or selector t)))

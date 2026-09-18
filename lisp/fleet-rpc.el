@@ -184,8 +184,30 @@ Records OUTCOME, CODE and the duration since STARTED; PARAMS give the task."
     (when (and idempotency-key (plist-get params :idempotency_key)
                (not (equal idempotency-key (plist-get params :idempotency_key))))
       (fleet-fail 'invalid-request "idempotency key differs between envelope and arguments"))
+    (setq params (fleet-rpc--normalize operation params))
     (fleet-rpc--validate params tool)
     (fleet-rpc--run store actor operation key params)))
+
+(defconst fleet-rpc--decision-keys '(:question :options :recommendation :authority)
+  "Keys of a `fleet_status' decision object.")
+
+(defun fleet-rpc--normalize (operation params)
+  "Fold known argument-shape slips in PARAMS for OPERATION into the schema shape.
+Every operator in the 2026-09-17 live run first published `needs-decision'
+with `question', `options' and `authority' at the top level rather than under
+`decision', was refused, and retried nested.  When `decision' is absent and
+any of those keys are present at the top level, move them under `decision';
+nothing else changes, so validation and recording see one shape."
+  (if (and (equal operation "fleet_status")
+           (not (plist-member params :decision))
+           (cl-some (lambda (k) (plist-member params k)) fleet-rpc--decision-keys))
+      (let (decision rest)
+        (cl-loop for (k v) on params by #'cddr
+                 do (if (memq k fleet-rpc--decision-keys)
+                        (setq decision (plist-put decision k v))
+                      (setq rest (append rest (list k v)))))
+        (append rest (list :decision decision)))
+    params))
 
 (defun fleet-rpc--validate (params tool)
   "Minimal structural validation of PARAMS against TOOL's inputSchema.
@@ -305,6 +327,16 @@ when neither is given, so callers decide whether that is allowed."
                                   (list :task-id (plist-get r :task-id) :operation-id (plist-get r :operation-id) :state "stopping-runtime")
                                 (list :task-id (plist-get r :id) :brief-revision (plist-get r :brief-revision) :lifecycle (plist-get r :lifecycle)
                                       :model (plist-get r :model) :variant (plist-get r :variant)))))))
+        ("fleet_task_delivery"
+         (fleet-rpc--task-in-fleet store actor (plist-get params :task_id))
+         (mutation params (lambda ()
+                            (let ((task (fleet-core-set-delivery store (plist-get params :task_id) (plist-get params :delivery)
+                                                                 :note (plist-get params :note) :actor logical
+                                                                 :owner-approved (eq (plist-get params :owner_approved) t)
+                                                                 :expected-revision (plist-get params :expected_revision))))
+                              (fleet-supervisor--changed fid)
+                              (list :task-id (plist-get task :id) :delivery (plist-get task :delivery-mode) :remote (plist-get task :remote)
+                                    :entity-revision (plist-get task :entity-revision))))))
         ("fleet_message_send"
          (let ((task (fleet-rpc--task-in-fleet store actor (plist-get params :task_id))))
            (unless key (fleet-fail 'invalid-request "idempotency_key required"))
@@ -341,10 +373,21 @@ when neither is given, so callers decide whether that is allowed."
          (mutation params (lambda ()
                             (let ((d (fleet-store-get store "decisions" (plist-get params :decision_id))))
                               (unless (and d (equal (plist-get d :fleet-id) fid)) (fleet-fail 'forbidden "Decision is not in your fleet"))
-                              (prog1 (fleet-core-decision-resolve store :decision-id (plist-get params :decision_id) :answer (plist-get params :answer)
-                                                                  :actor logical :authority "commander" :expected-revision (plist-get params :expected_revision)
-                                                                  :evidence (and (plist-get params :evidence) (list :text (plist-get params :evidence))))
-                                (fleet-supervisor--changed fid))))))
+                              ;; Live run 2026-09-17: three human-authority decisions stayed open forever
+                              ;; because the owner answered in chat and no tool could carry that answer
+                              ;; into the row.  As with ask-first models, the commander relays the owner's
+                              ;; answer with owner_approved; the row records the relay, not a commander ruling.
+                              (let ((relayed (eq (plist-get params :owner_approved) t)))
+                                (when (and relayed (not (equal (plist-get actor :role) "commander")))
+                                  (fleet-fail 'forbidden "Only the commander relays the owner's answer" :role (plist-get actor :role)))
+                                (prog1 (fleet-core-decision-resolve store :decision-id (plist-get params :decision_id) :answer (plist-get params :answer)
+                                                                    :actor logical :authority (if relayed "human" "commander")
+                                                                    :expected-revision (plist-get params :expected_revision)
+                                                                    :evidence (let ((text (plist-get params :evidence)))
+                                                                                (and (or text relayed)
+                                                                                     (append (and text (list :text text))
+                                                                                             (and relayed (list :owner-relayed t))))))
+                                  (fleet-supervisor--changed fid)))))))
         ("fleet_external_job"
          (mutation params (lambda ()
                             (fleet-core-external-job store :runtime-id (plist-get actor :runtime-id) :job-id (plist-get params :job_id) :system (plist-get params :system)

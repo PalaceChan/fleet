@@ -936,6 +936,66 @@ a root with lieutenants or open requests cannot be retired."
           (should (equal (plist-get (fleet-store-get store "tasks" tid) :lifecycle) "archived"))
           (should (= 0 (fleet-store-scalar store "SELECT COUNT(*) FROM resource_claims WHERE task_id = ?" tid))))))))
 
+(ert-deftest fleet-core-delivery-change-lets-teardown-judge-the-owner-s-contract ()
+  "Live run 2026-09-17 (frev-skill): the owner switched from review-by-PR to
+merging locally while the task was in flight.  Only the brief could follow,
+the row kept remote-review, and teardown of the finished, locally merged task
+refused until the commander pushed a branch nobody wanted.  The owner's word
+now changes the contract itself, and a local mode is judged against the
+local target."
+  (fleet-test-with-fakes
+    (let* ((repo (fleet-git-test-repo "hosted2"))
+           (bare (expand-file-name "hosted2.git" fleet-development-root))
+           (fid (fleet-core-test-fleet store "fl")))
+      (fleet-git-test-git repo "init" "-q" "--bare" bare)
+      (fleet-git-test-git repo "remote" "add" "origin" bare)
+      (fleet-git-test-git repo "push" "-q" "-u" "origin" "main")
+      (let* ((task (fleet-core-create-task store fid :name "feat" :kind "change" :brief fleet-test-brief :repo repo :delivery "remote-review"))
+             (tid (plist-get task :id))
+             (study (fleet-core-test-study store fid "s")))
+        ;; the contract is the owner's: no approval, no change; studies have none
+        (fleet-test-should-fail 'delivery-needs-approval (fleet-core-set-delivery store tid "integrated" :actor "c"))
+        (fleet-test-should-fail 'invalid-task (fleet-core-set-delivery store (plist-get study :id) "integrated" :actor "c" :owner-approved t))
+        (fleet-test-should-fail 'invalid-task (fleet-core-set-delivery store tid "by-carrier-pigeon" :actor "c" :owner-approved t))
+        (fleet-core-test-start store tid)
+        (let* ((task (fleet-store-get store "tasks" tid))
+               (ws (plist-get task :workspace-path))
+               (rt (fleet-core-test-runtime store tid)))
+          (should (equal "origin" (plist-get task :remote)))
+          (fleet-git-test-git ws "config" "user.email" "t@e") (fleet-git-test-git ws "config" "user.name" "T")
+          (let ((tip (fleet-git-test-commit ws "work.txt" "w\n" "work")))
+            ;; the owner merges locally; nothing is pushed
+            (fleet-git-test-git repo "merge" "-q" "--ff-only" "fleet/fl/feat")
+            (should (equal tip (fleet-git-test-git repo "rev-parse" "main")))
+            (fleet-core-task-status store :runtime-id rt :phase "done" :artifacts '((:kind "branch" :external-ref "fleet/fl/feat")))
+            (fleet-core-artifact-verify store :artifact-id (plist-get (fleet-store-query1 store "SELECT id FROM artifacts WHERE task_id = ?" tid) :id) :actor "c" :accepted t)
+            ;; under remote-review the unpushed tip is refused, exactly as live
+            (let ((op (fleet-test-wait-op store (plist-get (fleet-core-teardown-task store tid) :operation-id) 30)))
+              (should (equal (plist-get op :state) "failed"))
+              (should (string-match-p "delivery contract remote-review not satisfied" (plist-get op :error))))
+            (should (equal (plist-get (fleet-store-get store "tasks" tid) :lifecycle) "active"))
+            ;; the owner's word changes the contract on the done task; the remote is cleared
+            (let ((row (fleet-core-set-delivery store tid "integrated" :actor "c" :owner-approved t :note "owner: merge locally, no PR")))
+              (should (equal "integrated" (plist-get row :delivery-mode)))
+              (should-not (plist-get row :remote))
+              (should (equal "done" (plist-get row :phase))))
+            (let ((ev (fleet-store-unjson (plist-get (fleet-store-query1 store "SELECT payload FROM events WHERE task_id = ? AND kind = 'task-delivery-changed'" tid) :payload))))
+              (should (equal "remote-review" (plist-get ev :from)))
+              (should (equal "integrated" (plist-get ev :to)))
+              (should (eq t (plist-get ev :owner-approved))))
+            ;; judged against local main, the merged tip is integrated by ancestry
+            (let ((op (fleet-test-wait-op store (plist-get (fleet-core-teardown-task store tid) :operation-id) 30)))
+              (should (equal (plist-get op :state) "done"))
+              (should (eq t (plist-get (fleet-store-unjson (plist-get op :evidence)) :integrated-ancestry))))
+            (should (equal (plist-get (fleet-store-get store "tasks" tid) :lifecycle) "archived"))
+            ;; archived: the contract is history
+            (fleet-test-should-fail 'task-closed (fleet-core-set-delivery store tid "local-ready" :actor "c" :owner-approved t))))
+        ;; remote-review still needs a remote to promise
+        (let* ((local (fleet-git-test-repo "local2"))
+               (t2 (fleet-core-create-task store fid :name "loc" :kind "change" :brief fleet-test-brief :repo local)))
+          (fleet-test-should-fail 'delivery-needs-remote (fleet-core-set-delivery store (plist-get t2 :id) "remote-review" :actor "c" :owner-approved t))
+          (should (equal "local-ready" (plist-get (fleet-core-set-delivery store (plist-get t2 :id) "local-ready" :actor "c" :owner-approved t) :delivery-mode))))))))
+
 (ert-deftest fleet-core-close-archives-what-teardown-never-admits ()
   "openclaw 2026-09-13: a failed task and unverifiable done tasks left a parked
 fleet unretirable.  A human close archives them; it never stops or deletes."
