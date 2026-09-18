@@ -88,8 +88,8 @@
     {
       "name": "fleet_decision_resolve",
       "roles": ["commander", "lieutenant"],
-      "description": "Resolve an operator's open decision with an answer under your authority (human-authority decisions must be escalated). Delivering the answer to the operator is a separate fleet_message_send.",
-      "inputSchema": {"type": "object", "required": ["idempotency_key", "decision_id", "answer"], "properties": {"idempotency_key": {"type": "string"}, "decision_id": {"type": "string"}, "answer": {"type": "string"}, "expected_revision": {"type": "integer"}, "evidence": {"type": "string"}}, "additionalProperties": false}
+      "description": "Resolve an operator's open decision with an answer. Commander-authority decisions you answer yourself. A human-authority decision is refused unless you relay the user's own answer from chat with owner_approved: true; the row then records human authority by relay. Delivering the answer to the operator is a separate fleet_message_send.",
+      "inputSchema": {"type": "object", "required": ["idempotency_key", "decision_id", "answer"], "properties": {"idempotency_key": {"type": "string"}, "decision_id": {"type": "string"}, "answer": {"type": "string", "description": "The durable answer; when relaying, the user's answer in substance."}, "expected_revision": {"type": "integer"}, "evidence": {"type": "string"}, "owner_approved": {"type": "boolean", "description": "True only when the user answered this exact question in chat and you are relaying it. Commander only."}}, "additionalProperties": false}
     },
     {
       "name": "fleet_external_job",

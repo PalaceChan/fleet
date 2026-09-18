@@ -363,10 +363,21 @@ when neither is given, so callers decide whether that is allowed."
          (mutation params (lambda ()
                             (let ((d (fleet-store-get store "decisions" (plist-get params :decision_id))))
                               (unless (and d (equal (plist-get d :fleet-id) fid)) (fleet-fail 'forbidden "Decision is not in your fleet"))
-                              (prog1 (fleet-core-decision-resolve store :decision-id (plist-get params :decision_id) :answer (plist-get params :answer)
-                                                                  :actor logical :authority "commander" :expected-revision (plist-get params :expected_revision)
-                                                                  :evidence (and (plist-get params :evidence) (list :text (plist-get params :evidence))))
-                                (fleet-supervisor--changed fid))))))
+                              ;; Live run 2026-09-17: three human-authority decisions stayed open forever
+                              ;; because the owner answered in chat and no tool could carry that answer
+                              ;; into the row.  As with ask-first models, the commander relays the owner's
+                              ;; answer with owner_approved; the row records the relay, not a commander ruling.
+                              (let ((relayed (eq (plist-get params :owner_approved) t)))
+                                (when (and relayed (not (equal (plist-get actor :role) "commander")))
+                                  (fleet-fail 'forbidden "Only the commander relays the owner's answer" :role (plist-get actor :role)))
+                                (prog1 (fleet-core-decision-resolve store :decision-id (plist-get params :decision_id) :answer (plist-get params :answer)
+                                                                    :actor logical :authority (if relayed "human" "commander")
+                                                                    :expected-revision (plist-get params :expected_revision)
+                                                                    :evidence (let ((text (plist-get params :evidence)))
+                                                                                (and (or text relayed)
+                                                                                     (append (and text (list :text text))
+                                                                                             (and relayed (list :owner-relayed t))))))
+                                  (fleet-supervisor--changed fid)))))))
         ("fleet_external_job"
          (mutation params (lambda ()
                             (fleet-core-external-job store :runtime-id (plist-get actor :runtime-id) :job-id (plist-get params :job_id) :system (plist-get params :system)

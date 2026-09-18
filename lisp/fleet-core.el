@@ -793,7 +793,7 @@ path that became unreadable or empty since verification counts as changed."
     (fleet-store-transaction store
       (fleet-store-update store "decisions" decision-id (fleet-store-touch (list :state "resolved" :answer answer :resolved-by actor :evidence (and evidence (fleet-store-json evidence)))))
       (fleet-store-append-event store :fleet-id (plist-get d :fleet-id) :task-id (plist-get d :task-id) :kind "decision-resolved" :actor actor
-                                :payload (list :decision-id decision-id :answer answer)))
+                                :payload (list :decision-id decision-id :answer answer :authority authority)))
     (list :ok t :decision-id decision-id :task-id (plist-get d :task-id))))
 
 (cl-defun fleet-core-external-job (store &key runtime-id job-id system job-ref state completion-source deadline cancel-policy disposition)

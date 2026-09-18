@@ -83,9 +83,17 @@
         ;; refused with "unexpected parameter :question"; that shape now folds under `decision'.
         (let ((r (fleet-rpc-test-req "fleet_status" otok '(:phase "needs-decision" :detail "flat" :question "A or B?" :options ["A" "B"] :recommendation "A" :authority "human"))))
           (should (plist-get (plist-get r :result) :decision-id))
-          (let ((d (fleet-store-get store "decisions" (plist-get (plist-get r :result) :decision-id))))
+          (let* ((did (plist-get (plist-get r :result) :decision-id))
+                 (d (fleet-store-get store "decisions" did)))
             (should (equal "A or B?" (plist-get d :question)))
-            (should (equal "human" (plist-get d :authority)))))
+            (should (equal "human" (plist-get d :authority)))
+            ;; human authority: refused as a commander ruling, accepted as a relay of the owner's answer
+            (should (equal "forbidden" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_decision_resolve" ctok (list :decision_id did :answer "A") "h1"))))
+            (should (eq t (plist-get (plist-get (fleet-rpc-test-req "fleet_decision_resolve" ctok (list :decision_id did :answer "A" :owner_approved t) "h2") :result) :ok)))
+            (let ((d2 (fleet-store-get store "decisions" did)))
+              (should (equal "resolved" (plist-get d2 :state)))
+              (should (eq t (plist-get (fleet-store-unjson (plist-get d2 :evidence)) :owner-relayed))))
+            (should (equal "human" (plist-get (fleet-store-unjson (plist-get (car (fleet-store-query store "SELECT * FROM events WHERE kind = 'decision-resolved' ORDER BY seq DESC LIMIT 1")) :payload)) :authority)))))
         ;; ...but only when `decision' is absent; a mixed shape is still a schema error
         (should (equal "invalid-request" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_status" otok '(:phase "needs-decision" :decision (:question "q") :question "q2")))))
         ;; commander sibling control through another fleet's task is refused
