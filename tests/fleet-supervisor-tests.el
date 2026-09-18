@@ -272,6 +272,36 @@ commander, and the stored pending list must clear when the tool proceeds."
         (should (null (funcall pending)))
         (should (null (plist-get (fleet-store-get store "runtimes" rid) :pending-approvals)))))))
 
+(ert-deftest fleet-supervisor-records-fleet-calls-eca-refused-before-forwarding ()
+  "Live run 2026-09-17: a commander dropped name/kind/idempotency_key from a
+fleet_task_create; ECA refused it against the inputSchema and Fleet never saw
+the call, so telemetry counted one refusal fewer than the transcript.  Such a
+refusal is now a tool-call event from source eca; Fleet's own refusals and
+native tool failures are not double-counted."
+  (fleet-sup-test-with
+    (let* ((fid (fleet-core-test-fleet store)) (_cid (fleet-sup-test-commander store fid))
+           (tid (plist-get (fleet-core-test-study store fid) :id)))
+      (fleet-sup-test-settle)
+      (fleet-core-test-start store tid)
+      (let* ((rid (fleet-core-test-runtime store tid)) (conn (fleet-eca-conn rid))
+             (count (lambda () (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'tool-call' AND source = 'eca' AND runtime_id = ?" rid))))
+        ;; ECA's schema refusal of a Fleet tool: recorded with the reason
+        (fleet-eca--emit conn 'tool-finished :tool-id "c1" :name "fleet_task_create" :error t :ms 23
+                         :output "INVALID_ARGS: missing required params: `idempotency_key`, `name`, `kind`")
+        (should (= 1 (funcall count)))
+        (let ((p (fleet-store-unjson (plist-get (fleet-store-query1 store "SELECT payload FROM events WHERE kind = 'tool-call' AND source = 'eca'") :payload))))
+          (should (equal "fleet_task_create" (plist-get p :operation)))
+          (should (equal "refused" (plist-get p :outcome)))
+          (should (equal "eca-invalid-args" (plist-get p :code)))
+          (should (equal "operator" (plist-get p :role)))
+          (should (string-match-p "`name`" (plist-get p :output))))
+        ;; a Fleet-side refusal already has its RPC event; a native tool failure is not a Fleet call
+        (fleet-eca--emit conn 'tool-finished :tool-id "c2" :name "fleet_status" :error t :ms 1
+                         :output "{\"error\": {\"code\": \"invalid-request\", \"message\": \"unexpected parameter :question\"}}")
+        (fleet-eca--emit conn 'tool-finished :tool-id "c3" :name "shell_command" :error t :ms 5 :output "missing required params: `command`")
+        (fleet-eca--emit conn 'tool-finished :tool-id "c4" :name "fleet_snapshot" :error nil :ms 2)
+        (should (= 1 (funcall count)))))))
+
 (ert-deftest fleet-supervisor-enqueue-blocked-by-busy-draft-parked-paused ()
   (fleet-sup-test-with
     (let* ((fid (fleet-core-test-fleet store)) (cid (fleet-sup-test-commander store fid))

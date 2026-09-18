@@ -250,6 +250,33 @@ Returns nil when nothing changes so callers can append it unconditionally."
     (fleet-store-exec store "UPDATE runtimes SET observation_revision = observation_revision + 1 WHERE id = ?" rid)
     (fleet-store-update store "runtimes" rid (fleet-store-touch (append (list :last-activity-at (fleet-paths-now)) plist)))))
 
+(defun fleet-supervisor--eca-refusal-p (name output)
+  "Non-nil when a failed call NAME with OUTPUT was refused by ECA, not by Fleet.
+ECA validates arguments against the MCP inputSchema and answers a call
+missing a required parameter itself; it never reaches the socket (see
+docs/eca-compatibility.md).  Fleet's own refusals travel back as a JSON
+object with an `error' key, so the two are told apart by the text."
+  (and (stringp name) (string-prefix-p "fleet_" name)
+       (stringp output)
+       (or (string-match-p "missing required params" output)
+           (string-prefix-p "INVALID_ARGS" output))))
+
+(defun fleet-supervisor--record-eca-refusal (store rt ev)
+  "Append a `tool-call' event for a Fleet tool call ECA refused before forwarding.
+Live run 2026-09-17: a commander dropped `name', `kind' and the idempotency
+key from a fleet_task_create; ECA refused it and the store never saw the
+call, so the transcript showed one error more than telemetry counted.  The
+RPC layer records every call it receives; this records the ones it cannot."
+  (when (and (plist-get ev :error)
+             (fleet-supervisor--eca-refusal-p (plist-get ev :name) (plist-get ev :output)))
+    (fleet-store-transaction store
+      (fleet-store-append-event store :fleet-id (plist-get rt :fleet-id) :task-id (plist-get rt :task-id) :runtime-id (plist-get rt :id)
+                                :kind "tool-call" :source "eca"
+                                :payload (list :operation (plist-get ev :name) :role (fleet-core-effective-role store rt)
+                                               :outcome "refused" :code "eca-invalid-args"
+                                               :ms (or (plist-get ev :ms) 0) :phase nil
+                                               :output (plist-get ev :output))))))
+
 (defun fleet-supervisor--handle (store rt ev)
   "Dispatch EV for runtime RT."
   (let ((rid (plist-get rt :id)) (fid (plist-get rt :fleet-id)) (tid (plist-get rt :task-id)) (kind (plist-get ev :kind)))
@@ -292,8 +319,10 @@ Returns nil when nothing changes so callers can append it unconditionally."
       ((or 'tool-running 'tool-preparing)
        (fleet-supervisor--observe store rid (append (list :active-tool (fleet-store-json (list :id (plist-get ev :tool-id) :name (plist-get ev :name) :since (plist-get ev :at))))
                                                     (fleet-supervisor--approval-cleared rt (plist-get ev :tool-id)))))
-      ('tool-finished (fleet-supervisor--observe store rid (append (list :active-tool nil)
-                                                                   (fleet-supervisor--approval-cleared rt (plist-get ev :tool-id)))))
+      ('tool-finished
+       (fleet-supervisor--observe store rid (append (list :active-tool nil)
+                                                    (fleet-supervisor--approval-cleared rt (plist-get ev :tool-id))))
+       (fleet-supervisor--record-eca-refusal store rt ev))
       ((or 'tool-approved-by-fleet 'tool-rejected-by-fleet)
        (fleet-supervisor--observe store rid (fleet-supervisor--approval-cleared rt (plist-get ev :tool-id))))
       ('tool-approval-required
