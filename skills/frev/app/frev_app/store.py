@@ -305,7 +305,9 @@ class Session:
             meta = self.meta()
             head = int(meta.get("head", 0))
             state = meta.get("state", "authoring")
-            review = self.revision(head) if head > 0 else {}
+            if head == 0:
+                raise StoreError("no-revision", "nothing has been published yet", 409)
+            review = self.revision(head)
             schema.validate_submission_or_raise(submission, review)
             path = self.submission_path(submission["id"])
             if path.exists():
@@ -318,8 +320,6 @@ class Session:
             kind = submission.get("kind", "feedback")
             if state == "ended":
                 raise StoreError("session-ended", "the session has ended; run /frev again for a fresh one", 409)
-            if head == 0:
-                raise StoreError("no-revision", "nothing has been published yet", 409)
             if submission["revision"] != head:
                 raise StoreError("stale-revision", f"the round targets revision {submission['revision']} but {head} is current; review the update, then Send again",
                                  409, head=head)

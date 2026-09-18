@@ -306,7 +306,7 @@ def ensure_server(namespace: str, *, spawn: bool = True, wait: float = 8.0) -> d
     if st["state"] == "running":
         return st["record"]
     if not spawn:
-        raise store.StoreError("server-not-running", f"no verified frev server for namespace {namespace} ({st['state']})", 503, status=st["state"])
+        raise store.StoreError("server-not-running", f"no verified frev server for namespace {namespace} ({st['state']})", 503, server_state=st["state"])
     if st["state"] == "stale":
         try:
             record_path(namespace).unlink()
@@ -318,9 +318,12 @@ def ensure_server(namespace: str, *, spawn: bool = True, wait: float = 8.0) -> d
     os.chmod(log_path.parent, 0o700)
     entry = Path(__file__).resolve().parent.parent / "frev.py"
     with open(log_path, "a", encoding="utf-8") as log:
-        subprocess.Popen([sys.executable, "-B", str(entry), "serve", "--namespace", namespace],
-                         stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True,
-                         env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+        child = subprocess.Popen([sys.executable, "-B", str(entry), "serve", "--namespace", namespace],
+                                 stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True,
+                                 env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+    # The server outlives this process by design; it is not waited for.  Marking the handle
+    # keeps Python from warning about a "still running" child when the handle is collected.
+    child.returncode = 0
     deadline = time.monotonic() + wait
     while time.monotonic() < deadline:
         st = server_status(namespace)
