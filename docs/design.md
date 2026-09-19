@@ -945,7 +945,10 @@ Expose compact tools with precise enums rather than a large family of aliases:
   - **Inputs/result summary:** Commander within scope, otherwise human; exact decision ID, answer, authority,
     expected revision. Resolves the decision separately from sending its answer. A human-authority decision
     is refused unless the commander relays the user's chat answer with `owner_approved`; the row then records
-    human authority by relay (`decision-resolved` carries `authority`).
+    human authority by relay (`decision-resolved` carries `authority`, `resolved-by` and the relay evidence:
+    relaying runtime and fleet). A root commander relays the same way into a human-authority decision of one
+    of its lieutenants' fleets (and nothing else across that boundary); the event is then actionable for the
+    lieutenant's fleet, whose commander delivers (note 21).
 
 - **Tool:** `fleet_task_delivery`
   - **Inputs/result summary:** Commander only; task ID, new delivery mode, `owner_approved` (required), note,
@@ -2200,3 +2203,36 @@ Each was driven by evidence from the installed pair (see `docs/eca-compatibility
     watchdog does not watch an idle runtime that never declared a wait (that is the empty-turn and
     delivery machinery's domain), `fleet_wait` still returns immediately (no long-poll), and a deadline
     already in the past is still accepted because expiring on the next tick is the loudest thing it can do.
+
+21. **The root commander closes a lieutenant's human-authority decisions (lieutenant fleet, 2026-09-19).**
+    A lieutenant's operator raised decisions Fleet classified as human-authority. The lieutenant was refused
+    `owner_approved` (role `lieutenant`), the root commander was refused by fleet scope (the row's
+    `fleet_id` is the lieutenant's), the human's answers travelled by message and report, and ten rows
+    stayed open. Three designs were weighed. **A, adopted: the parent commander resolves into the child
+    fleet.** `fleet_decision_resolve` from a `commander` whose fleet is the decision fleet's `parent_id`,
+    with `owner_approved: true`, on a row whose authority is `human`, is admitted; the lieutenant's
+    commander-authority rows, a lieutenant asserting `owner_approved`, an unrelated root and an operator
+    stay refused. It keeps `owner_approved` to one meaning across roles — *the runtime whose user is the
+    human heard the human answer this exact question* — which a lieutenant, whose user is the commander,
+    can never truthfully say; it puts the assertion in the mouth of the runtime one hop from the human,
+    exactly as for the commander's own fleet; and it needs no new parameter, column or table. The
+    root → child write has precedent (`fleet_delegate` writes the child's lane and `request-opened`,
+    `fleet_lieutenant_replace` its runtime) and is confined to this one row kind. **B, rejected:
+    lieutenant resolves with recorded commander relay.** It mirrors the model-approval precedent (§5 of
+    [lieutenants](lieutenants.md)), but Fleet could verify only that *some* commander message followed
+    the question, not that it carried the human's answer; the reference the lieutenant would pass does
+    not exist in a form it can see (follow-up texts carry no message id and request rows link only the
+    opening message), so it would need text matching against Fleet-generated prefixes or a new
+    `messages.request_id` column; and it makes the flag mean something different by role. The precedent
+    is different in kind: only the lieutenant can create its own tasks, so it *must* carry the flag
+    there, whereas the commander can close a decision row directly. **C, rejected: auto-propagation from
+    a `fleet_delegate` naming the decision id.** It hides a mutation in a message send, parses an id out
+    of prose, and breaks one-fact-per-tool. Two rules were pulled into `fleet-core-decision-resolve` so
+    the fact has one owner: human authority asserted by a runtime actor is a relay and needs relay
+    evidence (`owner-relayed` plus the relaying runtime/fleet, which the row and the payload keep), and
+    the `decision-resolved` event is **actionable** for the decision's fleet whenever the resolver is not
+    that fleet's own commander — the root relaying into a lieutenant, or the human when a direct
+    resolution path exists — because recording the answer and delivering it are separate facts and that
+    fleet's supervisor still has to deliver. The tool result names the lieutenant and says delivery is
+    separate. Direct human resolution (a dashboard/M-x command) remains F08's open remainder; this note
+    fixes only the lieutenant path.

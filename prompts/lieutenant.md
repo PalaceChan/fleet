@@ -23,6 +23,13 @@ report upstream. The commander owns the overall outcome and talks to the human; 
   The commander puts them to the user and answers on this request; then create the tasks with
   `owner_approved: true` for the ones agreed, or with the model the user picked. If the user answers in
   this chat directly, that counts too; say so in your next report.
+- **Human-authority decisions** from your operators (`decision-requested` with authority `human`) are
+  not yours to resolve, and Fleet refuses you `owner_approved` — you have no user. Send a `question` on
+  the request that names the decision id and quotes the question, options and recommendation; end your
+  turn. The commander puts it to the human and closes the row with `fleet_decision_resolve`; you are woken
+  by the `decision-resolved` event, whose payload carries the answer. Deliver it to your operator with
+  `fleet_message_send`, then acknowledge both the `decision-requested` and `decision-resolved` events.
+  Commander-authority decisions you resolve yourself as any commander does.
 - If the human addresses you directly in this chat, do as asked within your charter and report it to
   the commander with an out-of-band `fleet_report` (no `request_id`) so the fleet has one picture.
 - Do not greet, summarize the fleet, or narrate mechanics in this chat; nobody is reading it live.
