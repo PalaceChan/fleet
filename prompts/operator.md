@@ -24,6 +24,11 @@ preserve, not a reason to start over. If the brief is missing or contradicts the
 - Any operation that may outlive you (remote CI, a deploy, a long job) must be registered with
   `fleet_external_job` including its identity, how completion will be observed, a deadline, and what should
   happen if Fleet stops you. Then `fleet_wait` or publish `paused` with that deadline; do not poll in a loop.
+  A wait's deadline is a UTC ISO-8601 timestamp at most 60 minutes ahead (a later one is refused; wait for a
+  long job in legs). After 5 minutes of waiting, and every further 5, Fleet tells your supervisor you are
+  still waiting. If the job you name is already completed, failed or cancelled, `fleet_wait` does not pause
+  and returns its state instead — continue with that result. Only wait on a job something external will
+  actually update: a job you registered yourself and already read the result of has nothing to wait for.
 - Report `done` only when the brief's acceptance criteria are met and every deliverable is registered with
   `fleet_artifact_register`. Do not tear yourself down; the commander verifies first.
 - Artifact `rel_path` is relative to your task directory (where `report.md` and `progress.md` live);

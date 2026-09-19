@@ -65,7 +65,7 @@
     {
       "name": "fleet_status",
       "roles": ["operator"],
-      "description": "Publish your task's semantic phase: working, needs-decision (with decision), blocked, paused (with wait), done (artifacts registered), failed. Terminal phases cannot revert. Artifact rel_path values follow the fleet_artifact_register rules (relative to your task directory; workspace/... is your workspace; must exist).",
+      "description": "Publish your task's semantic phase: working, needs-decision (with decision), blocked, paused (with wait), done (artifacts registered), failed. Terminal phases cannot revert. A paused wait follows the fleet_wait rules: ISO-8601 deadline at most 60 minutes ahead, a long-wait report to your supervisor every 5 minutes, and no pause on an already terminal job_id. Artifact rel_path values follow the fleet_artifact_register rules (relative to your task directory; workspace/... is your workspace; must exist).",
       "inputSchema": {
         "type": "object",
         "required": ["phase"],
@@ -118,7 +118,7 @@
     {
       "name": "fleet_wait",
       "roles": ["operator"],
-      "description": "Declare a bounded wait (reason, deadline, optional external job id, who/how completion is reported). Equivalent to fleet_status paused; a single deadline-expired event follows if nothing supersedes it.",
+      "description": "Declare a bounded wait (reason, deadline, optional external job id, who/how completion is reported). Equivalent to fleet_status paused. The deadline is a UTC ISO-8601 timestamp at most 60 minutes ahead (owner-configurable; a later one is refused with wait-deadline-too-far, a malformed one with invalid-wait): wait for a long job in legs. While you wait, Fleet tells your supervisor after 5 minutes and at every further 5 (runtime-waiting-long), and a single wait-deadline-expired event follows at the deadline if nothing supersedes it. If job_id names one of your external jobs that is already completed, failed or cancelled, nothing is paused: the result carries paused: false with the job's state and disposition — continue with that outcome. Another task's job id is refused (forbidden). Never wait for a completion signal on a job that nothing external will update.",
       "inputSchema": {"type": "object", "required": ["reason", "deadline"], "properties": {"reason": {"type": "string"}, "deadline": {"type": "string"}, "job_id": {"type": "string"}, "completion_report": {"type": "string"}}, "additionalProperties": false}
     },
     {

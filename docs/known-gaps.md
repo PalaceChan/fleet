@@ -74,7 +74,15 @@ Source: [`fleet-core.el`](../lisp/fleet-core.el), [`fleet-rpc.el`](../lisp/fleet
   schemas do not accept `idempotency_key`. Repeated status can create repeated events/decisions. The schema
   overview's blanket statement that every mutation is keyed is too broad. **Close with:** an aligned
   schema/handler/doctrine contract and retry tests. Until then inspect after an uncertain result, don't
-  blindly repeat these calls or invent an unsupported key.
+  blindly repeat these calls or invent an unsupported key. Consequence for the wait watchdog
+  (`fleet-core-watch-waits`, design note 20): it anchors a wait on the task's latest `task-paused` event, so
+  a repeated identical `fleet_wait` restarts the 5-minute clock; the deadline is unaffected.
+- **Waits on unregistered job ids:** `fleet_wait`/`fleet_status paused` judge `job_id` only when it names a
+  row in `external_jobs` (own task: terminal state returns instead of pausing; another task's: `forbidden`).
+  An id nothing was registered under pauses as declared, since Fleet has no record to compare it with, and
+  the row's `state` is the operator's own claim: the 2026-09-19 incident's job still read `running` when
+  the wait was declared, so the terminal-job return would not have caught it; the watchdog would have.
+  **Close with (if wanted):** require registration before a wait names a job, as doctrine already says.
 - **Task scope and delivery parameters:** `context_paths` is recorded at creation but is not wired into
   operator roots/boot context. Brief completeness is a length check, not semantic validation. When task
   start creates a change worktree, `fleet-core--create-change-workspace` chooses the sole remote, otherwise

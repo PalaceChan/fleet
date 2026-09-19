@@ -561,6 +561,17 @@ overlay and charter; the root's boot lists its lieutenants and charters."
         (should (equal "done" (plist-get (fleet-store-get store "tasks" tid) :phase)))
         (should (equal "active" (plist-get (fleet-store-get store "tasks" tid) :lifecycle)))))))
 
+(defun fleet-core-test-iso (secs)
+  "ISO-8601 timestamp SECS seconds after now (negative for the past)."
+  (format-time-string "%Y-%m-%dT%H:%M:%S.%3NZ" (time-add nil (seconds-to-time secs)) t))
+
+(defun fleet-core-test-iso-after (iso secs)
+  "ISO-8601 timestamp SECS whole seconds after the `fleet-paths-now'-style ISO.
+Integer millisecond arithmetic: a float sum can print as .569 for .570 and
+turn an exact threshold into 299.999 s."
+  (let ((ms (if (string-match "\\.\\([0-9]\\{3\\}\\)Z\\'" iso) (string-to-number (match-string 1 iso)) 0)))
+    (format-time-string "%Y-%m-%dT%H:%M:%S.%3NZ" (time-add (date-to-time iso) (cons (+ ms (* secs 1000)) 1000)) t)))
+
 (ert-deftest fleet-core-paused-wait-expires-once ()
   (fleet-test-with-fakes
     (let* ((fid (fleet-core-test-fleet store))
@@ -573,9 +584,165 @@ overlay and charter; the root's boot lists its lieutenants and charters."
         (should (= 1 (fleet-core-expire-waits store)))
         (should (= 0 (fleet-core-expire-waits store)))
         (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'wait-deadline-expired'")))
-        ;; a healthy long wait in the future is untouched
-        (fleet-core-task-status store :runtime-id rt :phase "paused" :wait (list :reason "later" :deadline "2999-01-01T00:00:00.000Z"))
+        ;; a healthy long wait in the future (within the maximum) is untouched
+        (fleet-core-task-status store :runtime-id rt :phase "paused" :wait (list :reason "later" :deadline (fleet-core-test-iso (* 50 60))))
         (should (= 0 (fleet-core-expire-waits store)))))))
+
+(ert-deftest fleet-core-wait-watchdog-reports-long-waits-once-per-threshold ()
+  "openclaw 2026-09-19 (`jev-unblock-policy'): an operator declared a 13-minute
+wait on an external job it had registered itself and nobody would ever
+complete; `task-paused' is not actionable, so the lieutenant learned of it
+only from the human, and Fleet only at the deadline.  The watchdog reports a
+wait at every whole multiple of `fleet-wait-watchdog-sec', once per multiple,
+to the owning fleet, and never after the wait was superseded or expired."
+  (fleet-test-with-fakes
+    (let* ((fleet-wait-watchdog-sec 300)
+           (fid (fleet-core-test-fleet store))
+           (tid (plist-get (fleet-core-test-study store fid) :id)))
+      (fleet-core-test-start store tid)
+      (let* ((rt (fleet-core-test-runtime store tid))
+             (jid (plist-get (fleet-core-external-job store :runtime-id rt :system "openclaw" :job-ref "run/a15" :state "running") :job-id))
+             (deadline (fleet-core-test-iso (* 14 60)))
+             (events (lambda () (fleet-store-query store "SELECT * FROM events WHERE kind = 'runtime-waiting-long' AND task_id = ? ORDER BY seq" tid)))
+             (receipts (lambda () (fleet-store-scalar store "SELECT COUNT(*) FROM event_receipts r JOIN events e ON e.id = r.event_id WHERE e.kind = 'runtime-waiting-long' AND r.fleet_id = ? AND r.state = 'pending'" fid))))
+        (fleet-core-task-status store :runtime-id rt :phase "paused" :detail "waiting: preflight completion event"
+                                :wait (list :reason "preflight completion event" :deadline deadline :job-id jid))
+        (let ((t0 (plist-get (fleet-store-query1 store "SELECT created_at FROM events WHERE kind = 'task-paused' AND task_id = ? ORDER BY seq DESC LIMIT 1" tid) :created-at)))
+          ;; below the threshold: silence
+          (should (= 0 (fleet-core-watch-waits store)))
+          (should (= 0 (fleet-core-watch-waits store (fleet-core-test-iso-after t0 299))))
+          (should (= 0 (length (funcall events))))
+          ;; at the threshold: one actionable event to the owning fleet with the wait's facts
+          (should (= 1 (fleet-core-watch-waits store (fleet-core-test-iso-after t0 300))))
+          (let* ((ev (car (funcall events))) (p (fleet-store-unjson (plist-get ev :payload))))
+            (should (equal fid (plist-get ev :fleet-id)))
+            (should (equal rt (plist-get ev :runtime-id)))
+            (should (eql 1 (plist-get ev :actionable)))
+            (should (equal "preflight completion event" (plist-get p :reason)))
+            (should (equal jid (plist-get p :job-id)))
+            (should (equal "running" (plist-get p :job-state)))
+            (should (equal deadline (plist-get p :deadline)))
+            (should (eql 300 (plist-get p :waited-sec)))
+            (should (eql 300 (plist-get p :threshold-sec)))
+            (should (eql 1 (plist-get p :multiple)))
+            (should (string-match-p "waiting 5 min, deadline .* job .* is running: preflight completion event" (plist-get p :detail))))
+          (should (= 1 (funcall receipts)))
+          ;; the next ticks in the same window repeat nothing
+          (should (= 0 (fleet-core-watch-waits store (fleet-core-test-iso-after t0 330))))
+          (should (= 0 (fleet-core-watch-waits store (fleet-core-test-iso-after t0 599))))
+          (should (= 1 (length (funcall events))))
+          ;; the next multiple is reported once more, then silence again
+          (should (= 1 (fleet-core-watch-waits store (fleet-core-test-iso-after t0 600))))
+          (should (eql 2 (plist-get (fleet-store-unjson (plist-get (cadr (funcall events)) :payload)) :multiple)))
+          (should (= 0 (fleet-core-watch-waits store (fleet-core-test-iso-after t0 610))))
+          ;; a slow tick that skips a multiple reports the current one and does not catch up afterwards
+          (should (= 1 (fleet-core-watch-waits store (fleet-core-test-iso-after t0 1230))))
+          (should (eql 4 (plist-get (fleet-store-unjson (plist-get (car (last (funcall events))) :payload)) :multiple)))
+          (should (= 0 (fleet-core-watch-waits store (fleet-core-test-iso-after t0 1260))))
+          (should (= 3 (length (funcall events))))
+          ;; superseded by a fresh wait: the new wait has its own clock
+          (fleet-core-task-status store :runtime-id rt :phase "paused" :detail "waiting: second leg"
+                                  :wait (list :reason "second leg" :deadline (fleet-core-test-iso (* 20 60))))
+          (let ((t1 (plist-get (fleet-store-query1 store "SELECT created_at FROM events WHERE kind = 'task-paused' AND task_id = ? ORDER BY seq DESC LIMIT 1" tid) :created-at)))
+            (should (= 0 (fleet-core-watch-waits store (fleet-core-test-iso-after t1 299))))
+            (should (= 1 (fleet-core-watch-waits store (fleet-core-test-iso-after t1 300))))
+            (should (equal "second leg" (plist-get (fleet-store-unjson (plist-get (car (last (funcall events))) :payload)) :reason)))
+            (should (= 0 (fleet-core-watch-waits store (fleet-core-test-iso-after t1 301)))))
+          ;; superseded by work: nothing, however long ago the wait was declared
+          (fleet-core-task-status store :runtime-id rt :phase "working" :detail "job finished")
+          (should (= 0 (fleet-core-watch-waits store (fleet-core-test-iso-after t0 36000))))
+          (should (= 4 (length (funcall events))))
+          ;; expired: the deadline event is the last word about that wait
+          (fleet-core-task-status store :runtime-id rt :phase "paused" :detail "waiting: past"
+                                  :wait (list :reason "past" :deadline "2000-01-01T00:00:00.000Z"))
+          (should (= 1 (fleet-core-expire-waits store)))
+          (should (= 0 (fleet-core-watch-waits store (fleet-core-test-iso-after t0 36000))))
+          (should (= 4 (length (funcall events))))
+          ;; a parked fleet's suspended task is not watched, and zero disables the watchdog
+          (fleet-core-task-status store :runtime-id rt :phase "paused" :detail "waiting: again"
+                                  :wait (list :reason "again" :deadline (fleet-core-test-iso (* 20 60))))
+          (let ((fleet-wait-watchdog-sec 0))
+            (should (= 0 (fleet-core-watch-waits store (fleet-core-test-iso-after t0 36000)))))
+          (fleet-store-transaction store (fleet-store-update store "tasks" tid (list :lifecycle "suspended")))
+          (should (= 0 (fleet-core-watch-waits store (fleet-core-test-iso-after t0 36000))))
+          (should (= 4 (length (funcall events)))))))))
+
+(ert-deftest fleet-core-wait-refuses-terminal-jobs-far-deadlines-and-foreign-jobs ()
+  "A wait on one's own external job that is already terminal does not pause:
+the result returns the job's state and disposition so the operator continues
+with the outcome (a superseded wait on a completed job is what the watchdog
+would otherwise have to report).  Deadlines must be ISO-8601 and within
+`fleet-wait-deadline-max-sec'; another task's job id is refused.  No refusal
+writes anything."
+  (fleet-test-with-fakes
+    (let* ((fleet-wait-deadline-max-sec 3600)
+           (fid (fleet-core-test-fleet store "alpha"))
+           (t1 (plist-get (fleet-core-test-study store fid "one") :id))
+           (t2 (plist-get (fleet-core-test-study store fid "two") :id))
+           (f2 (fleet-core-test-fleet store "beta"))
+           (t3 (plist-get (fleet-core-test-study store f2 "three") :id)))
+      (fleet-core-test-start store t1) (fleet-core-test-start store t2) (fleet-core-test-start store t3)
+      (let* ((rt1 (fleet-core-test-runtime store t1)) (rt2 (fleet-core-test-runtime store t2)) (rt3 (fleet-core-test-runtime store t3))
+             (jid (plist-get (fleet-core-external-job store :runtime-id rt1 :system "ci" :job-ref "run/1" :state "running") :job-id))
+             (paused-events (lambda (tid) (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'task-paused' AND task_id = ?" tid)))
+             (soon (fleet-core-test-iso 600)))
+        ;; a running job pauses as declared
+        (let ((r (fleet-core-task-status store :runtime-id rt1 :phase "paused" :detail "waiting: CI" :wait (list :reason "CI" :deadline soon :job-id jid))))
+          (should (equal "paused" (plist-get r :phase)))
+          (should-not (plist-member r :paused))
+          (should (equal "paused" (plist-get (fleet-store-get store "tasks" t1) :phase))))
+        (fleet-core-task-status store :runtime-id rt1 :phase "working" :detail "checking")
+        ;; every terminal state short-circuits; unknown still pauses
+        (dolist (state '("completed" "failed" "cancelled"))
+          (fleet-core-external-job store :runtime-id rt1 :job-id jid :state state :disposition (format "%s-disposition" state))
+          (let* ((before (funcall paused-events t1))
+                 (r (fleet-core-task-status store :runtime-id rt1 :phase "paused" :detail "waiting: CI" :wait (list :reason "CI" :deadline soon :job-id jid))))
+            (should (eq t (plist-get r :ok)))
+            (should (eq :false (plist-get r :paused)))
+            (should (equal t1 (plist-get r :task-id)))
+            (should (equal "working" (plist-get r :phase)))
+            (should (equal jid (plist-get r :job-id)))
+            (should (equal state (plist-get r :job-state)))
+            (should (equal (format "%s-disposition" state) (plist-get r :disposition)))
+            (should (string-match-p (format "already %s" state) (plist-get r :message)))
+            (let ((task (fleet-store-get store "tasks" t1)))
+              (should (equal "working" (plist-get task :phase)))
+              (should (null (plist-get task :wait-deadline))))
+            (should (= before (funcall paused-events t1)))))
+        (fleet-core-external-job store :runtime-id rt1 :job-id jid :state "unknown")
+        (should (equal "paused" (plist-get (fleet-core-task-status store :runtime-id rt1 :phase "paused" :detail "waiting: CI" :wait (list :reason "CI" :deadline soon :job-id jid)) :phase)))
+        (fleet-core-task-status store :runtime-id rt1 :phase "working" :detail "checking")
+        ;; an id no job was registered under is not Fleet's to judge: the wait proceeds as declared
+        (should (equal "paused" (plist-get (fleet-core-task-status store :runtime-id rt1 :phase "paused" :detail "waiting: x" :wait (list :reason "x" :deadline soon :job-id "not-registered")) :phase)))
+        (fleet-core-task-status store :runtime-id rt1 :phase "working" :detail "checking")
+        ;; another task's job (same fleet or another fleet) is refused before any write
+        (fleet-core-external-job store :runtime-id rt1 :job-id jid :state "completed")
+        (dolist (pair (list (cons rt2 t2) (cons rt3 t3)))
+          (let* ((rt (car pair)) (tid (cdr pair))
+                 (before (fleet-store-get store "tasks" tid))
+                 (err (fleet-test-should-fail 'forbidden (fleet-core-task-status store :runtime-id rt :phase "paused" :detail "waiting: theirs" :wait (list :reason "theirs" :deadline soon :job-id jid)))))
+            (should (equal jid (plist-get (fleet-error-evidence err) :job-id)))
+            (should (equal before (fleet-store-get store "tasks" tid)))
+            (should (= 0 (funcall paused-events tid)))))
+        ;; deadline bound: refused with the maximum in evidence, nothing written; exactly the maximum is fine
+        (let* ((before (fleet-store-get store "tasks" t1))
+               (err (fleet-test-should-fail 'wait-deadline-too-far (fleet-core-task-status store :runtime-id rt1 :phase "paused" :detail "waiting: long" :wait (list :reason "long" :deadline (fleet-core-test-iso (+ 3600 120)))))))
+          (should (eql 3600 (plist-get (fleet-error-evidence err) :max-sec)))
+          (should (< 3600 (plist-get (fleet-error-evidence err) :requested-sec)))
+          (should (equal before (fleet-store-get store "tasks" t1)))
+          (should (equal "working" (plist-get (fleet-store-get store "tasks" t1) :phase))))
+        (fleet-test-should-fail 'wait-deadline-too-far (fleet-core-task-status store :runtime-id rt1 :phase "paused" :detail "waiting: long" :wait (list :reason "long" :deadline "2999-01-01T00:00:00.000Z")))
+        (should (equal "paused" (plist-get (fleet-core-task-status store :runtime-id rt1 :phase "paused" :detail "waiting: max" :wait (list :reason "max" :deadline (fleet-core-test-iso 3590))) :phase)))
+        (fleet-core-task-status store :runtime-id rt1 :phase "working" :detail "checking")
+        (let ((fleet-wait-deadline-max-sec 600))
+          (fleet-test-should-fail 'wait-deadline-too-far (fleet-core-task-status store :runtime-id rt1 :phase "paused" :detail "waiting: 11" :wait (list :reason "11" :deadline (fleet-core-test-iso 660)))))
+        ;; not a timestamp: refused (`date-to-time' would have read these as the year 2000)
+        (dolist (bad '("garbage" "in 14 minutes" "2026-09-20" ""))
+          (fleet-test-should-fail 'invalid-wait (fleet-core-task-status store :runtime-id rt1 :phase "paused" :detail "waiting: bad" :wait (list :reason "bad" :deadline bad))))
+        (should (equal "working" (plist-get (fleet-store-get store "tasks" t1) :phase)))
+        ;; a deadline already in the past is accepted and expires on the next tick
+        (should (equal "paused" (plist-get (fleet-core-task-status store :runtime-id rt1 :phase "paused" :detail "waiting: past" :wait (list :reason "past" :deadline (fleet-core-test-iso -60))) :phase)))
+        (should (= 1 (fleet-core-expire-waits store)))))))
 
 (ert-deftest fleet-core-artifact-verification-bound-to-hash-and-revision ()
   (fleet-test-with-fakes

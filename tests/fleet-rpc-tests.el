@@ -127,6 +127,55 @@ owner's own update succeeds."
         (should (eq t (plist-get (plist-get (fleet-rpc-test-req "fleet_external_job" tok1 (list :job_id jid :state "completed") "j3") :result) :ok)))
         (should (equal "completed" (plist-get (fleet-store-get store "external_jobs" jid) :state)))))))
 
+(ert-deftest fleet-rpc-wait-returns-terminal-job-state-and-refuses-bad-deadlines ()
+  "openclaw 2026-09-19: over the socket, `fleet_wait' on one's own external job
+that is already terminal does not pause and answers with the job's state and
+disposition; a deadline beyond the maximum or not ISO-8601 is refused with a
+stable code; another task's job id is `forbidden'.  `fleet_status paused'
+follows the same rules through the same core path."
+  (fleet-rpc-test-with
+    (let* ((fleet-wait-deadline-max-sec 3600)
+           (fid (fleet-core-test-fleet store))
+           (t1 (plist-get (fleet-core-test-study store fid "one") :id))
+           (t2 (plist-get (fleet-core-test-study store fid "two") :id)))
+      (fleet-core-test-start store t1) (fleet-core-test-start store t2)
+      (let* ((tok1 (fleet-rpc-test-token (fleet-core-test-runtime store t1)))
+             (tok2 (fleet-rpc-test-token (fleet-core-test-runtime store t2)))
+             (soon (fleet-core-test-iso 600))
+             (jid (plist-get (plist-get (fleet-rpc-test-req "fleet_external_job" tok1 '(:system "ci" :job_ref "run/1" :state "running") "j1") :result) :job-id)))
+        (should jid)
+        ;; running: pauses as declared
+        (let ((r (plist-get (fleet-rpc-test-req "fleet_wait" tok1 (list :reason "CI run 1" :deadline soon :job_id jid)) :result)))
+          (should (equal "paused" (plist-get r :phase)))
+          (should (equal "paused" (plist-get (fleet-store-get store "tasks" t1) :phase)))
+          (should (equal jid (plist-get (fleet-store-get store "tasks" t1) :wait-job-id))))
+        (fleet-rpc-test-req "fleet_status" tok1 '(:phase "working" :detail "result read"))
+        ;; completed: the tool answers instead of parking the task
+        (should (eq t (plist-get (plist-get (fleet-rpc-test-req "fleet_external_job" tok1 (list :job_id jid :state "completed" :disposition "merged") "j2") :result) :ok)))
+        (let ((r (plist-get (fleet-rpc-test-req "fleet_wait" tok1 (list :reason "CI run 1" :deadline soon :job_id jid)) :result)))
+          (should (eq t (plist-get r :ok)))
+          (should (eq :false (plist-get r :paused)))
+          (should (equal "working" (plist-get r :phase)))
+          (should (equal "completed" (plist-get r :job-state)))
+          (should (equal "merged" (plist-get r :disposition)))
+          (should (string-match-p "already completed" (plist-get r :message))))
+        (should (equal "working" (plist-get (fleet-store-get store "tasks" t1) :phase)))
+        (let ((r (plist-get (fleet-rpc-test-req "fleet_status" tok1 (list :phase "paused" :detail "waiting" :wait (list :reason "CI run 1" :deadline soon :job_id jid))) :result)))
+          (should (eq :false (plist-get r :paused)))
+          (should (equal "completed" (plist-get r :job-state))))
+        (should (equal "working" (plist-get (fleet-store-get store "tasks" t1) :phase)))
+        ;; refusals: deadline bound, malformed deadline, another task's job
+        (should (equal "wait-deadline-too-far" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_wait" tok1 (list :reason "long" :deadline (fleet-core-test-iso (* 2 3600)))))))
+        (should (equal "wait-deadline-too-far" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_status" tok1 (list :phase "paused" :wait (list :reason "long" :deadline (fleet-core-test-iso (* 2 3600))))))))
+        (should (equal "invalid-wait" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_wait" tok1 '(:reason "bad" :deadline "in 14 minutes")))))
+        (should (equal "forbidden" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_wait" tok2 (list :reason "theirs" :deadline soon :job_id jid)))))
+        (should (equal "working" (plist-get (fleet-store-get store "tasks" t1) :phase)))
+        (should-not (equal "paused" (plist-get (fleet-store-get store "tasks" t2) :phase)))
+        (should (= 0 (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'task-paused' AND task_id = ?" t2)))
+        ;; the refusals are visible in telemetry with their codes
+        (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'tool-call' AND payload LIKE '%\"code\":\"invalid-wait\"%'")))
+        (should (= 2 (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'tool-call' AND payload LIKE '%\"code\":\"wait-deadline-too-far\"%'")))))))
+
 (ert-deftest fleet-rpc-brief-path-reads-a-file-under-the-fleet-directory ()
   "Live run 2026-09-17: a commander could not fit a 6k brief and the other
 arguments into one tool call.  brief_path keeps the call small; the file must
