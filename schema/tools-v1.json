@@ -124,7 +124,7 @@
     {
       "name": "fleet_cleanup_evidence",
       "roles": ["commander", "lieutenant", "operator"],
-      "description": "Read-only preservation/ownership/quiescence evidence for a change task's workspace (single Git evidence pass), including the exact dirty paths. Teardown runs this same check and refuses on any tracked, untracked or ignored leftover; operators run it before reporting done and clean up what it lists.",
+      "description": "Read-only preservation/ownership/quiescence evidence for a change task's workspace (single Git evidence pass), including the exact dirty paths. Teardown runs this same check and refuses on any tracked, untracked or ignored leftover; Change operators run it before reporting done and clean up what it lists; study and ops tasks have no workspace and are refused.",
       "inputSchema": {"type": "object", "properties": {"task_id": {"type": "string", "description": "Commander only; operators inspect their own task."}}, "additionalProperties": false}
     },
     {
