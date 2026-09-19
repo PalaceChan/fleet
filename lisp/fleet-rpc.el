@@ -371,23 +371,52 @@ when neither is given, so callers decide whether that is allowed."
                                 (fleet-supervisor--changed fid))))))
         ("fleet_decision_resolve"
          (mutation params (lambda ()
-                            (let ((d (fleet-store-get store "decisions" (plist-get params :decision_id))))
-                              (unless (and d (equal (plist-get d :fleet-id) fid)) (fleet-fail 'forbidden "Decision is not in your fleet"))
+                            (let* ((d (fleet-store-get store "decisions" (plist-get params :decision_id)))
+                                   (relayed (eq (plist-get params :owner_approved) t))
+                                   (mine (and d (equal (plist-get d :fleet-id) fid)))
+                                   (dfleet (and d (not mine) (fleet-store-get store "fleets" (plist-get d :fleet-id))))
+                                   ;; The decision belongs to one of my lieutenants (docs/lieutenants.md §5).
+                                   (lieutenants (and dfleet (equal (plist-get dfleet :parent-id) fid)
+                                                     (equal (plist-get actor :role) "commander")))
+                                   (text (plist-get params :evidence)))
                               ;; Live run 2026-09-17: three human-authority decisions stayed open forever
                               ;; because the owner answered in chat and no tool could carry that answer
                               ;; into the row.  As with ask-first models, the commander relays the owner's
                               ;; answer with owner_approved; the row records the relay, not a commander ruling.
-                              (let ((relayed (eq (plist-get params :owner_approved) t)))
-                                (when (and relayed (not (equal (plist-get actor :role) "commander")))
-                                  (fleet-fail 'forbidden "Only the commander relays the owner's answer" :role (plist-get actor :role)))
-                                (prog1 (fleet-core-decision-resolve store :decision-id (plist-get params :decision_id) :answer (plist-get params :answer)
+                              ;;
+                              ;; Lieutenant fleet 2026-09-19: ten human-authority decisions raised by a
+                              ;; lieutenant's operators stayed open because the lieutenant may not assert
+                              ;; owner_approved (its user is the commander, not the human) and the root
+                              ;; commander was refused by fleet scope.  The root commander — the one runtime
+                              ;; that heard the human — now relays into a lieutenant's *human-authority*
+                              ;; row, and only that: the lieutenant's commander-authority decisions stay its
+                              ;; own.  The resulting event is actionable in the lieutenant's fleet so it is
+                              ;; woken to deliver the answer; recording and delivery remain separate facts.
+                              (cond
+                               ((and lieutenants relayed (equal (plist-get d :authority) "human")))
+                               (lieutenants
+                                (fleet-fail 'forbidden (if relayed
+                                                           "A lieutenant resolves its own commander-authority decisions; answer it on the request instead"
+                                                         "Decision belongs to your lieutenant; only a relay of the human's answer (owner_approved) closes a human-authority decision from here")
+                                            :decision-id (plist-get d :id) :lieutenant (plist-get dfleet :name) :authority (plist-get d :authority)))
+                               ((not mine) (fleet-fail 'forbidden "Decision is not in your fleet")))
+                              (when (and relayed (not (equal (plist-get actor :role) "commander")))
+                                (fleet-fail 'forbidden "Only the root commander relays the human's answer; name the decision id in your question report and the commander closes it"
+                                            :role (plist-get actor :role)))
+                              (let ((r (fleet-core-decision-resolve store :decision-id (plist-get params :decision_id) :answer (plist-get params :answer)
                                                                     :actor logical :authority (if relayed "human" "commander")
                                                                     :expected-revision (plist-get params :expected_revision)
-                                                                    :evidence (let ((text (plist-get params :evidence)))
-                                                                                (and (or text relayed)
-                                                                                     (append (and text (list :text text))
-                                                                                             (and relayed (list :owner-relayed t))))))
-                                  (fleet-supervisor--changed fid)))))))
+                                                                    :evidence (and (or text relayed)
+                                                                                   (append (and text (list :text text))
+                                                                                           (and relayed (list :owner-relayed t :relayed-by-runtime (plist-get actor :runtime-id)
+                                                                                                              :relayed-by-fleet fid))
+                                                                                           (and lieutenants (list :lieutenant-fleet-id (plist-get d :fleet-id)
+                                                                                                                  :lieutenant (plist-get dfleet :name))))))))
+                                (fleet-supervisor--changed (plist-get d :fleet-id))
+                                (if lieutenants
+                                    ;; Delivery is separate and is the lieutenant's: it is woken by this event.
+                                    (append r (list :lieutenant (plist-get dfleet :name) :delivery "separate: the lieutenant is woken by the decision-resolved event and tells its operator"))
+                                  r))))))
         ("fleet_external_job"
          (mutation params (lambda ()
                             (fleet-core-external-job store :runtime-id (plist-get actor :runtime-id) :job-id (plist-get params :job_id) :system (plist-get params :system)
