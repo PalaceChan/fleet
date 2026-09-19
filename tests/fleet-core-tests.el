@@ -667,6 +667,21 @@ to the owning fleet, and never after the wait was superseded or expired."
           (should (= 0 (fleet-core-watch-waits store (fleet-core-test-iso-after t0 36000))))
           (should (= 4 (length (funcall events)))))))))
 
+(ert-deftest fleet-core-wait-watchdog-is-off-by-default ()
+  "The wait watchdog is disabled unless the owner opts in."
+  (fleet-test-with-fakes
+    (let* ((fid (fleet-core-test-fleet store))
+           (tid (plist-get (fleet-core-test-study store fid) :id)))
+      (fleet-core-test-start store tid)
+      (let ((rt (fleet-core-test-runtime store tid)))
+        (fleet-core-task-status
+         store :runtime-id rt :phase "paused" :detail "waiting: CI"
+         :wait (list :reason "CI run" :deadline (fleet-core-test-iso (* 14 60))))
+        (let ((t0 (plist-get (fleet-store-query1 store "SELECT created_at FROM events WHERE kind = 'task-paused' AND task_id = ? ORDER BY seq DESC LIMIT 1" tid) :created-at)))
+          (should (= 0 fleet-wait-watchdog-sec))
+          (should (= 0 (fleet-core-watch-waits store (fleet-core-test-iso-after t0 36000))))
+          (should (= 0 (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'runtime-waiting-long' AND task_id = ?" tid))))))))
+
 (ert-deftest fleet-core-wait-refuses-terminal-jobs-far-deadlines-and-foreign-jobs ()
   "A wait on one's own external job that is already terminal does not pause:
 the result returns the job's state and disposition so the operator continues

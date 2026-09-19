@@ -971,8 +971,9 @@ Expose compact tools with precise enums rather than a large family of aliases:
     `paused`. When the job ID names one of the task's own external jobs that is already `completed`, `failed`
     or `cancelled`, nothing is paused or written and the result carries `paused: false` with the job's state
     and disposition; another task's job ID is `forbidden`; an unregistered ID pauses as declared. While
-    paused, the wait watchdog (§9.3, note 20) reports the task to its fleet at every whole multiple of
-    `fleet-wait-watchdog-sec` (default 5 minutes) as an actionable `runtime-waiting-long` event.
+    paused, when the owner enables the wait watchdog (§9.3, note 20; `fleet-wait-watchdog-sec`, off by
+    default, 300 suggested), it reports the task to its fleet at every whole multiple of that threshold
+    as an actionable `runtime-waiting-long` event.
 
 - **Tool:** `fleet_cleanup_evidence`
   - **Inputs/result summary:** Read-only preservation/ownership/quiescence evidence for a task.
@@ -1079,8 +1080,9 @@ uncertainty.
 - A lost process/transport becomes an execution observation and actionable event once per incident.
 - A declared wait has a reason and deadline. A timer emits one deadline-expired event if no subsequent
   phase/completion superseded it.
-- A wait that lasts is reported before its deadline: at every whole multiple of `fleet-wait-watchdog-sec`
-  since the wait was declared (its latest `task-paused` event), `fleet-core-watch-waits` emits one actionable
+- When the owner enables it (`fleet-wait-watchdog-sec` > 0; default 0), a wait that lasts is reported before
+  its deadline: at every whole multiple of `fleet-wait-watchdog-sec` since the wait was declared (its latest
+  `task-paused` event), `fleet-core-watch-waits` emits one actionable
   `runtime-waiting-long` event to the fleet that owns the task (a lieutenant's fleet for a lieutenant's
   task; the root commander sees it only through the lieutenant, like every task event). The payload carries
   the reason, job id and the job's recorded state, the declared deadline, seconds waited, the threshold and
@@ -2182,8 +2184,10 @@ Each was driven by evidence from the installed pair (see `docs/eca-compatibility
     Fleet's own word came at the deadline. Two additions, both facts owned by `fleet-core` and only ticked
     by the supervisor. The *wait watchdog* (`fleet-core-watch-waits`, run on the existing
     `fleet-supervisor--tick` after expiry) emits one actionable `runtime-waiting-long` event per whole
-    multiple of `fleet-wait-watchdog-sec` (default 5 minutes) to the task's own fleet, anchored on the
-    latest `task-paused` event and made idempotent by the multiple recorded in the last such event, so a
+    multiple of `fleet-wait-watchdog-sec` (opt-in: default 0, 300 suggested; each report costs the
+    supervisor a turn, so the owner enables it after a stall the 1 h deadline cap does not bound acceptably)
+    to the task's own fleet, anchored on the latest `task-paused` event and made idempotent by the multiple
+    recorded in the last such event, so a
     30-second tick never repeats a report and a superseded or expired wait is never reported at all.
     `fleet_wait` (and `fleet_status paused`, one core path) now refuses a deadline that is not ISO-8601
     (`invalid-wait`; `date-to-time` would have read "in 14 minutes" as the year 2000) or later than

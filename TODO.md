@@ -298,7 +298,7 @@ reprioritizes it. An easy label is not a reason to implement unsolicited UI or p
     queued message is noticed before a human reads its chat buffer.
   - **Done if selected:** define the evidence that distinguishes "idle, awaiting the commander" from
     "stalled" without polling a model; emit one actionable event per incident through the same tick and
-    idempotency rule as the wait watchdog (design note 20). Coordinate with F06 (stuck lanes) and F11.
+    idempotency rule as the wait watchdog (design note 20; opt-in like it). Coordinate with F06 (stuck lanes) and F11.
   - **Evidence:** the 2026-09-19 wait incident was a declared wait, which note 20 now covers; the undeclared
     case is out of its scope.
 

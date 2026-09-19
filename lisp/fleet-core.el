@@ -624,15 +624,18 @@ creation, and records it.  Returns the updated task row."
 
 ;;;; Operator status, decisions, waits, artifacts, external jobs
 
-(defcustom fleet-wait-watchdog-sec 300
-  "Seconds a task may sit `paused' on a declared wait before its fleet is told.
-At every whole multiple of this threshold (5, 10, 15 minutes ...) the wait
-watchdog (`fleet-core-watch-waits', run on the supervisor tick) emits one
-actionable `runtime-waiting-long' event to the fleet that owns the task, so a
-wait nothing will ever satisfy is seen before its deadline rather than at it
-\(openclaw 2026-09-19: an operator waited 13 minutes on its own external job,
-already complete, and only the deadline reached the lieutenant).  Zero
-disables the watchdog; the deadline itself still expires."
+(defcustom fleet-wait-watchdog-sec 0
+  "The wait watchdog is off by default (0); 300 seconds (5 minutes) is the
+suggested value when enabled. This is opt-in because every report is one
+actionable event that costs the supervising lieutenant/commander an LLM turn;
+the owner enables it after a stall that the 1-hour deadline cap
+(`fleet-wait-deadline-max-sec') does not bound acceptably. At every whole
+multiple of `fleet-wait-watchdog-sec`, `fleet-core-watch-waits' runs on the
+supervisor tick and emits one actionable `runtime-waiting-long' event to the fleet that owns the
+task. (openclaw 2026-09-19: an operator waited ~13 minutes on its own
+already-complete external job and only the deadline reached the lieutenant;
+with the watchdog at 300 the first report would have come ~7 minutes earlier.)
+The deadline expires regardless of this setting."
   :type 'integer :group 'fleet)
 
 (defcustom fleet-wait-deadline-max-sec 3600

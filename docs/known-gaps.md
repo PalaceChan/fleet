@@ -76,7 +76,8 @@ Source: [`fleet-core.el`](../lisp/fleet-core.el), [`fleet-rpc.el`](../lisp/fleet
   schema/handler/doctrine contract and retry tests. Until then inspect after an uncertain result, don't
   blindly repeat these calls or invent an unsupported key. Consequence for the wait watchdog
   (`fleet-core-watch-waits`, design note 20): it anchors a wait on the task's latest `task-paused` event, so
-  a repeated identical `fleet_wait` restarts the 5-minute clock; the deadline is unaffected.
+  a repeated identical `fleet_wait` restarts the watchdog clock (when the watchdog is enabled; it is off by
+  default); the deadline is unaffected.
 - **Waits on unregistered job ids:** `fleet_wait`/`fleet_status paused` judge `job_id` only when it names a
   row in `external_jobs` (own task: terminal state returns instead of pausing; another task's: `forbidden`).
   An id nothing was registered under pauses as declared, since Fleet has no record to compare it with, and
