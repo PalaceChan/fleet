@@ -1511,5 +1511,28 @@ anything is stopped; \"default\" returns to the configured default."
         ;; an unproven stop is not silently retried: retask stays refused until reconciliation
         (fleet-test-should-fail 'runtime-not-stopped (fleet-core-retask store tid "Retry again with the same scope text here."))))))
 
+;; A doctrine regression, not mechanical enforcement.  Fleet cannot stop an operator
+;; from parking on a child session that will never write its job row (design note 22:
+;; `fleet_external_job' is the only writer of `external_jobs'), so the canonical prompts
+;; have to carry the rule.  The matches are short distinctive phrases, not paragraphs, so
+;; ordinary editing of the prompts does not break this test.
+(ert-deftest fleet-core-prompts-forbid-waiting-on-spawned-children ()
+  (dolist (name '("operator" "ops"))
+    (let ((text (fleet-core--prompt name))
+          (case-fold-search t))
+      ;; registering a job is bookkeeping and creates no completion path
+      (should (string-match-p "bookkeeping" text))
+      (should (string-match-p "completion path" text))
+      ;; a spawned child's announcement is not one: never wait on it
+      (should (string-match-p "ever[^.]*fleet_wait[^.]*child" text))
+      ;; collect in the same turn, then mark the job terminal yourself
+      (should (string-match-p "\\(collect[^.]*same\\** turn\\|same\\** turn[^.]*collect\\)" text))
+      (should (string-match-p "fleet_external_job" text))
+      (should (string-match-p "mark[^.]* the \\(job\\|row\\)[^.]*terminal" text))
+      ;; and when nothing can collect it, `blocked' rather than a silent park
+      (should (string-match-p "\\(publish\\|report\\)[^.]*blocked" text))))
+  ;; the prohibition is scoped: a wait something really does update is still doctrine
+  (should (string-match-p "long job in legs" (fleet-core--prompt "operator"))))
+
 (provide 'fleet-core-tests)
 ;;; fleet-core-tests.el ends here

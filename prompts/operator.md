@@ -28,8 +28,20 @@ preserve, not a reason to start over. If the brief is missing or contradicts the
   long job in legs). If the owner has enabled the wait watchdog, Fleet tells your supervisor at intervals
   that you are still waiting; by default only the deadline does. If the job you name is already completed,
   failed or cancelled, `fleet_wait` does not pause and returns its state instead — continue with that result.
-  Only wait on a job something external will actually update: a job you registered yourself and already read
-  the result of has nothing to wait for.
+- **Registering a job is bookkeeping; it does not create a completion path.** Something must call
+  `fleet_external_job` to mark the row terminal, and the only caller is an operator — Fleet has no other
+  writer. So wait only on a job something will actually update: a remote job you will poll yourself in a
+  later leg, a deadline checkpoint you chose, a job another authorized writer updates. A job you registered
+  yourself and already read the result of has nothing to wait for.
+- **Never `fleet_wait` on a spawned child's announcement.** A child session you spawn auto-announcing, a
+  coordinator "yield", or any message that arrives in a session Fleet does not own is **not** a completion
+  path, whatever your `completion_source` text promises: nothing there writes your job row, so the wait can
+  only end at its deadline, long after the work finished. Instead, in the **same** turn, collect the result
+  with a bounded collector — for a spawned agent child, read its session history/trajectory through the
+  tools you used to spawn it — then call `fleet_external_job` with `completed`/`failed`/`cancelled` and
+  continue from that result. If no bounded collector exists, publish **`blocked`** with the child/session
+  identity and where its result will appear, rather than parking on a wait nothing will satisfy: `blocked`
+  is actionable at once, a park is silent until its deadline.
 - Report `done` only when the brief's acceptance criteria are met and every deliverable is registered with
   `fleet_artifact_register`. Do not tear yourself down; the commander verifies first.
 - Artifact `rel_path` is relative to your task directory (where `report.md` and `progress.md` live);
