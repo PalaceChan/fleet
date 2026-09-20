@@ -1096,6 +1096,13 @@ uncertainty.
 - A wait on an external job that is already terminal is not a wait: `fleet_wait`/`fleet_status paused`
   return the job's state and disposition instead of pausing, and a declared deadline is bounded by
   `fleet-wait-deadline-max-sec` so no single declaration can park a task beyond the watchdog's reach.
+- Registering an external job is bookkeeping, not an adapter. `fleet_external_job` is the only writer of
+  `external_jobs` and only an operator calls it, so a `completion_source` naming a push Fleet cannot
+  observe — a spawned child session announcing into another session, a message to a runtime Fleet does not
+  own — is not a completion path, and a wait declared on it can only end at its deadline. The remedy is
+  doctrine, not a mechanism: the operator collects the result with a bounded collector inside the same
+  turn and then marks the job terminal; where no collector exists, `blocked` is the correct phase, because
+  it is actionable at once while a park is silent until it expires (note 22).
 - External/local jobs include stable identity and a completion path. Local ECA job events can satisfy a
   declared wait when supported.
 - An active tool call can be displayed with elapsed time; long duration alone does not prove it is wedged.
@@ -2236,3 +2243,31 @@ Each was driven by evidence from the installed pair (see `docs/eca-compatibility
     fleet's supervisor still has to deliver. The tool result names the lieutenant and says delivery is
     separate. Direct human resolution (a dashboard/M-x command) remains F08's open remainder; this note
     fixes only the lieutenant path.
+
+22. **A registered job is not a completion path: no waiting on a spawned child's announcement (openclaw,
+    2026-09-20).** An operator spawned an agent child session, registered it as an external job whose
+    `completion_source` promised that the child "auto-announces into coordinator session", and called
+    `fleet_wait` on that job id with a ~30-minute deadline (`task-paused`
+    `fdcb0da5-b565-4a43-85ad-5ddda7e8b0de`, 12:19:43.449Z). The child finished 95 seconds later, at
+    12:21:18.602Z, writing its result only into its own session trajectory on disk. Nothing in Fleet could
+    learn that: `fleet_external_job` is the only writer of `external_jobs` and only an operator calls it,
+    so the row stayed `running` and the task sat parked for about thirty minutes after its work was done,
+    until the deadline expired (`1ed84647-7eac-4bfb-b7ac-9439cd7c4c9d`, 12:50:21.155Z) and its lieutenant
+    read the trajectory off disk and messaged it. None of note 20's three parts applied: the deadline cap
+    does not bind at 30 minutes, the terminal-job return needs a row that is already terminal and this one
+    truthfully said `running`, and the watchdog is opt-in and was off (with it at 300 it would have called
+    the lieutenant about 25 minutes earlier and still only reported "running" — a smoke alarm, not
+    delivery). The third occurrence of the pattern in that fleet, and the operator prompt's generic "only
+    wait on a job something external will actually update" had not prevented any of them. The fix is
+    doctrine that names the trap where the choice is made, in `prompts/operator.md` and `prompts/ops.md`:
+    registration is bookkeeping; a child's auto-announcement or an incoming coordinator message is not a
+    completion path; collect the child's result with a bounded collector in the same turn (for an agent
+    child, its session history through the tools that spawned it), mark the job terminal and continue; and
+    if no collector exists publish `blocked`, which is actionable immediately, rather than a park that is
+    silent until its deadline. A prompt-contract test in `tests/fleet-core-tests.el` keeps the doctrine in
+    both prompts. Deliberately not done: no adapter, poller or child-system knowledge in Fleet (that
+    couples Fleet to another project's private session format, and the callback — if anyone builds one —
+    belongs to the child system), no change to `fleet_wait` semantics or the deadline cap, and no change
+    to the watchdog default, which stays opt-in per `d59014d`; `quickstart.md` now shows the owner how to
+    enable it as a backstop. The residual — no real completion signal for spawned agent children — is in
+    [known gaps](known-gaps.md#authority-and-interface) and `TODO.md` (D12), not closed here.

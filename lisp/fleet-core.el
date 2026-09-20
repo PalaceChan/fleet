@@ -625,10 +625,11 @@ creation, and records it.  Returns the updated task row."
 ;;;; Operator status, decisions, waits, artifacts, external jobs
 
 (defcustom fleet-wait-watchdog-sec 0
-  "The wait watchdog is off by default (0); 300 seconds (5 minutes) is the
-suggested value when enabled. This is opt-in because every report is one
-actionable event that costs the supervising lieutenant/commander an LLM turn;
-the owner enables it after a stall that the 1-hour deadline cap
+  "The wait watchdog is off by default (0); the owner picks a period to enable it.
+`quickstart.md' carries the owner's example of 600 seconds; the period is the
+owner's choice, not a Fleet recommendation.  It is opt-in because every report
+is one actionable event that costs the supervising lieutenant/commander an LLM
+turn; the owner enables it after a stall that the 1-hour deadline cap
 (`fleet-wait-deadline-max-sec') does not bound acceptably. At every whole
 multiple of `fleet-wait-watchdog-sec', `fleet-core-watch-waits' runs on the
 supervisor tick and emits one actionable `runtime-waiting-long' event to the

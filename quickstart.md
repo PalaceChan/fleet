@@ -28,6 +28,10 @@ systemd-owned process; **Emacs** owns state, scheduling and the dashboard.
      ;; (fleet-eca-command '("/home/you/.emacs.d/eca/eca" "server"))
      ;; (fleet-commander-model "openai/gpt-5") (fleet-operator-model "openai/gpt-5")
      ;; (fleet-commander-variant "high") (fleet-operator-variant "medium")
+     ;; your call, not a product default: report a wait that lasts, as a backstop against a task
+     ;; parked on a completion that never arrives. One actionable event per 10-minute window per
+     ;; live wait, and the supervising lieutenant/commander spends a model turn on each. Off by default:
+     ;; (fleet-wait-watchdog-sec 600)
      )
    ```
 

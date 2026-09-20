@@ -90,6 +90,20 @@ Source: [`fleet-core.el`](../lisp/fleet-core.el), [`fleet-rpc.el`](../lisp/fleet
   the row's `state` is the operator's own claim: the 2026-09-19 incident's job still read `running` when
   the wait was declared, so the terminal-job return would not have caught it; the watchdog would have.
   **Close with (if wanted):** require registration before a wait names a job, as doctrine already says.
+- **A registered job with no writer:** the complementary gap, and the one that bites. `fleet-core-external-job`
+  is the only mutation path for `external_jobs` (`lisp/fleet-core.el` ~927–951, exposed at
+  `lisp/fleet-rpc.el` ~420–424) and only an operator calls it, so a job's `state` is that operator's claim
+  and nothing outside Fleet can change it. A `completion_source` describing a push Fleet cannot observe —
+  on 2026-09-20 a spawned child session that "auto-announces into coordinator session" — is therefore not a
+  completion path: registration succeeded and the id was valid, so neither the `job_id` check nor the
+  terminal-job return applies, and the declared wait could only end at its deadline
+  (`fdcb0da5-b565-4a43-85ad-5ddda7e8b0de` at 12:19:43.449Z, child done 12:21:18.602Z,
+  `1ed84647-7eac-4bfb-b7ac-9439cd7c4c9d` at 12:50:21.155Z; design note 22). What shipped for it is
+  **doctrine plus the opt-in watchdog, not a mechanism**: the operator/ops prompts forbid waiting on a
+  spawned child's announcement and require bounded same-turn collection then a terminal job update, or
+  `blocked`; `quickstart.md` shows the owner the watchdog setting. Fleet still cannot tell a truthful
+  `running` from an abandoned one. **Close with (if wanted):** a real completion callback owned by the
+  child system, or an explicitly designed adapter (TODO D12); not by trusting `completion_source` prose.
 - **Task scope and delivery parameters:** `context_paths` is recorded at creation but is not wired into
   operator roots/boot context. Brief completeness is a length check, not semantic validation. When task
   start creates a change worktree, `fleet-core--create-change-workspace` chooses the sole remote, otherwise

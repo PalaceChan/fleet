@@ -308,6 +308,21 @@ reprioritizes it. An easy label is not a reason to implement unsolicited UI or p
   - **Evidence:** the 2026-09-19 wait incident was a declared wait, which note 20 now covers; the undeclared
     case is out of its scope.
 
+- [ ] **D12 — A real completion signal for spawned agent children** · **hard**
+  - **Payoff:** a task whose child session finishes learns it then, instead of at its wait's deadline.
+  - **Residual after the 2026-09-20 incident (design note 22):** what shipped is doctrine — the operator
+    and ops prompts forbid waiting on a spawned child's auto-announcement and require bounded same-turn
+    collection followed by a terminal `fleet_external_job` update, else `blocked` — plus the owner's
+    opt-in wait watchdog as an alarm. Neither is a completion path: `fleet_external_job` remains the only
+    writer of `external_jobs`, so a registered child job's `running` is the operator's claim and nothing
+    external updates it ([registered job with no writer](docs/known-gaps.md#authority-and-interface)).
+  - **Done if selected:** first decide who owns the callback — plausibly the child system, which knows
+    when its session ends, not Fleet — and only then, if it is Fleet's, design the identity, lifecycle,
+    restart reconciliation and authority of the writer. Do not couple Fleet to another project's private
+    session files or formats, and do not weaken the rule that a job's state has one writer.
+  - **Coordinate:** F15 (registered `job_id` for waits) and D11 (undeclared idle waits) are different
+    gaps; this one is the registered-but-unwritable job. Keep all three open.
+
 ## Not TODOs — preserve these decisions
 
 - Automatic task-close inside `fleet-destroy` was rejected. Keep explicit human close separate from
