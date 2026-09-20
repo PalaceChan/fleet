@@ -897,18 +897,32 @@ path that became unreadable or empty since verification counts as changed."
                         arts)))))
 
 (cl-defun fleet-core-decision-resolve (store &key decision-id answer actor authority expected-revision evidence)
-  "Resolve DECISION-ID with ANSWER by ACTOR holding AUTHORITY (commander/human)."
+  "Resolve DECISION-ID with ANSWER by ACTOR holding AUTHORITY (commander/human).
+Human AUTHORITY asserted by a runtime actor is a *relay* of an answer the
+human actually gave, and EVIDENCE must say so (`:owner-relayed' plus the
+relaying runtime/fleet); the row and the `decision-resolved' payload keep
+that evidence so the ledger names who carried the answer.  The event is
+actionable for the decision's fleet when the resolver is not that fleet's
+own commander (the root commander relaying into a lieutenant's fleet, or
+the human): recording the answer and delivering it are separate facts, and
+the fleet's supervisor still has to deliver, so it is woken.  Returns
+\(:ok t :decision-id :task-id :fleet-id :authority :actionable)."
   (let* ((d (or (fleet-store-get store "decisions" decision-id) (fleet-fail 'no-such-decision "Unknown decision" :id decision-id)))
-         (task (fleet-store-get store "tasks" (plist-get d :task-id))))
+         (task (fleet-store-get store "tasks" (plist-get d :task-id)))
+         (own-commander (fleet-core-actor-commander (plist-get d :fleet-id)))
+         (actionable (and (not (equal actor own-commander)) t)))
     (unless (equal (plist-get d :state) "open") (fleet-fail 'decision-closed "Decision already resolved" :state (plist-get d :state)))
     (when (and (equal (plist-get d :authority) "human") (not (equal authority "human")))
       (fleet-fail 'forbidden "This decision requires human authority" :decision-id decision-id))
+    (when (and (equal authority "human") (not (equal actor fleet-core-actor-human)) (not (plist-get evidence :owner-relayed)))
+      (fleet-fail 'forbidden "Human authority from a runtime is a relay and needs relay evidence" :decision-id decision-id :actor actor))
     (fleet-store-check-revision store "tasks" (plist-get task :id) expected-revision)
     (fleet-store-transaction store
       (fleet-store-update store "decisions" decision-id (fleet-store-touch (list :state "resolved" :answer answer :resolved-by actor :evidence (and evidence (fleet-store-json evidence)))))
       (fleet-store-append-event store :fleet-id (plist-get d :fleet-id) :task-id (plist-get d :task-id) :kind "decision-resolved" :actor actor
-                                :payload (list :decision-id decision-id :answer answer :authority authority)))
-    (list :ok t :decision-id decision-id :task-id (plist-get d :task-id))))
+                                :payload (list :decision-id decision-id :answer answer :authority authority :resolved-by actor :evidence evidence)
+                                :actionable actionable))
+    (list :ok t :decision-id decision-id :task-id (plist-get d :task-id) :fleet-id (plist-get d :fleet-id) :authority authority :actionable (or actionable :false))))
 
 (cl-defun fleet-core-external-job (store &key runtime-id job-id system job-ref state completion-source deadline cancel-policy disposition)
   "Register or update an external job for RUNTIME-ID's task.

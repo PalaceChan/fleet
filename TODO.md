@@ -105,10 +105,16 @@ existing-server procedure. Source work, native acceptance, and live activation a
 
 - [ ] **F08 — Complete human-authority decision resolution** · **medium**
   - **Payoff:** operator asks → human answers → durable resolution → operator receives answer → attention clears.
-  - **Done:** provide an explicit human-authorized command/UI; retain commander refusal for human-only
-    decisions; record resolution separately from delivery and truthfully expose a delivery failure.
-    Test duplicate/stale answers, permissions and end-to-end attention state. Chat text alone is not resolution.
-  - **Start:** `lisp/fleet-core.el`, `lisp/fleet.el`, dashboard/RPC; [decision gap](docs/known-gaps.md#authority-and-interface).
+  - **Done so far (2026-09-19):** the commander's relay (`owner_approved` after the user answered in chat)
+    closes human-authority rows in its own fleet and in its lieutenants' fleets; the row/event record human
+    authority by relay with the relaying runtime and fleet; a resolution by anyone but the fleet's own
+    commander is actionable for that fleet so it delivers; duplicate, stale-revision, unrelated-commander,
+    lieutenant and operator refusals are tested (`fleet-rpc-root-commander-relays-the-humans-answer-into-a-lieutenants-decision`,
+    `fleet-core-decision-resolve-records-relay-and-wakes-the-fleet-that-must-deliver`; design note 21).
+  - **Remaining:** provide an explicit human-authorized command/UI (`actor` `human`, no relay evidence
+    needed; core already wakes the fleet's commander to deliver); truthfully expose a delivery failure;
+    end-to-end attention-state test. Chat text alone is not resolution.
+  - **Start:** `lisp/fleet.el`, dashboard; [decision gap](docs/known-gaps.md#authority-and-interface).
 
 - [ ] **F09 — Recover operation journals even with no live runtimes** · **medium**
   - **Payoff:** startup cannot leave interrupted operations "running" merely because nothing needs stopping.

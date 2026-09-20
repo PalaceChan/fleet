@@ -66,10 +66,16 @@ Source: [`fleet-core.el`](../lisp/fleet-core.el), [`fleet-rpc.el`](../lisp/fleet
   same fleet; decide and test whether that visibility is intentional or must be task-scoped (F15).
   Unsandboxed execution does not excuse a tool-level scope violation. (External-job updates are now
   task/fleet-owned at the core mutation boundary; see F04.)
-- **Human-authority decisions:** core requires human authority, but RPC supplies commander authority and
-  there is no public human decision-resolution command. Native question answers and chat messages do not
-  resolve the durable `decisions` row. **Close with:** an explicit human-authorized UI/API and end-to-end
-  resolution/delivery tests. Do not impersonate human authority or bypass the refusal.
+- **Human-authority decisions:** there is no public human decision-resolution command; native question
+  answers and chat messages do not resolve the durable `decisions` row. What exists is the relay: the
+  commander closes a human-authority row with `owner_approved` after the user answered in its chat, in its
+  own fleet and — since 2026-09-19 — in a lieutenant's fleet (`fleet-rpc-root-commander-relays-the-humans-answer-into-a-lieutenants-decision`,
+  `fleet-core-decision-resolve-records-relay-and-wakes-the-fleet-that-must-deliver`); the row and event
+  record the relaying runtime/fleet, and a resolution by anyone other than the fleet's own commander is
+  actionable for that fleet so it delivers. The relay is the commander's statement about what the user
+  said; Fleet cannot verify it. **Close with:** an explicit human-authorized UI/API (which the core
+  actionable rule already supports) and end-to-end resolution/delivery tests. Do not impersonate human
+  authority or bypass the refusal.
 - **Status/wait idempotency:** `fleet_status` and `fleet_wait` bypass the keyed mutation wrapper and their
   schemas do not accept `idempotency_key`. Repeated status can create repeated events/decisions. The schema
   overview's blanket statement that every mutation is keyed is too broad. **Close with:** an aligned

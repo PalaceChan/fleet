@@ -572,6 +572,49 @@ turn an exact threshold into 299.999 s."
   (let ((ms (if (string-match "\\.\\([0-9]\\{3\\}\\)Z\\'" iso) (string-to-number (match-string 1 iso)) 0)))
     (format-time-string "%Y-%m-%dT%H:%M:%S.%3NZ" (time-add (date-to-time iso) (cons (+ ms (* secs 1000)) 1000)) t)))
 
+(ert-deftest fleet-core-decision-resolve-records-relay-and-wakes-the-fleet-that-must-deliver ()
+  "Human authority asserted by a runtime is a relay and needs relay evidence;
+the row and event keep it.  Resolution by the fleet's own commander is a
+plain fact (it delivers itself); resolution by anyone else — a root commander
+into a lieutenant's fleet, or the human — is actionable for that fleet, whose
+commander still has to deliver the answer."
+  (fleet-test-with-fakes
+    (let* ((rid (fleet-core-test-fleet store "workshop"))
+           (lid (plist-get (fleet-core-create-fleet store "frontend" :parent-id rid :charter "UI") :id))
+           (tid (plist-get (fleet-core-test-study store lid "nav") :id))
+           (root (fleet-core-actor-commander rid)) (lt (fleet-core-actor-commander lid)))
+      (fleet-core-test-start store tid)
+      (let* ((rt (fleet-core-test-runtime store tid))
+             (ask (lambda (q auth) (plist-get (fleet-core-task-status store :runtime-id rt :phase "needs-decision" :detail q
+                                                                      :decision (list :question q :authority auth))
+                                              :decision-id)))
+             (h1 (funcall ask "Delete the branch?" "human"))
+             (h2 (funcall ask "Spend on the paid API?" "human"))
+             (c1 (funcall ask "Tabs or spaces?" "commander"))
+             (receipts (lambda () (fleet-store-scalar store "SELECT COUNT(*) FROM event_receipts r JOIN events e ON e.id = r.event_id WHERE e.kind = 'decision-resolved' AND r.fleet_id = ?" lid))))
+        ;; A runtime claiming human authority without relay evidence is refused; commander authority on a human row too.
+        (fleet-test-should-fail 'forbidden (fleet-core-decision-resolve store :decision-id h1 :answer "no" :actor root :authority "human"))
+        (fleet-test-should-fail 'forbidden (fleet-core-decision-resolve store :decision-id h1 :answer "no" :actor root :authority "human" :evidence '(:text "chat")))
+        (fleet-test-should-fail 'forbidden (fleet-core-decision-resolve store :decision-id h1 :answer "no" :actor lt :authority "commander"))
+        (should (equal "open" (plist-get (fleet-store-get store "decisions" h1) :state)))
+        ;; Relay by the root: recorded with its evidence, actionable for the lieutenant's fleet.
+        (let ((r (fleet-core-decision-resolve store :decision-id h1 :answer "no" :actor root :authority "human"
+                                              :evidence (list :owner-relayed t :relayed-by-runtime "rt-root" :relayed-by-fleet rid :lieutenant-fleet-id lid))))
+          (should (equal lid (plist-get r :fleet-id)))
+          (should (equal "human" (plist-get r :authority)))
+          (should (eq t (plist-get r :actionable))))
+        (let ((ev (fleet-store-unjson (plist-get (fleet-store-get store "decisions" h1) :evidence))))
+          (should (equal "rt-root" (plist-get ev :relayed-by-runtime)))
+          (should (equal lid (plist-get ev :lieutenant-fleet-id))))
+        (should (= 1 (funcall receipts)))
+        ;; The human directly: no relay evidence needed, still actionable for the fleet.
+        (should (eq t (plist-get (fleet-core-decision-resolve store :decision-id h2 :answer "yes" :actor fleet-core-actor-human :authority "human") :actionable)))
+        (should (= 2 (funcall receipts)))
+        ;; The fleet's own commander ruling on its own row: a fact, not a wake.
+        (should (eq :false (plist-get (fleet-core-decision-resolve store :decision-id c1 :answer "spaces" :actor lt :authority "commander") :actionable)))
+        (should (= 2 (funcall receipts)))
+        (should (= 3 (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'decision-resolved' AND fleet_id = ?" lid)))))))
+
 (ert-deftest fleet-core-paused-wait-expires-once ()
   (fleet-test-with-fakes
     (let* ((fid (fleet-core-test-fleet store))

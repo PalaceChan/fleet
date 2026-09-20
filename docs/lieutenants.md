@@ -45,7 +45,7 @@ fleet like on any other.
 | own runtime, replace, stop | `fleets.commander_runtime_id`, `fleet-commander-replace/stop` with a `root/child` selector |
 | own memory | the child's `commander/context.md` (written by the lieutenant itself, read at its boot) |
 | own task namespace and inbox | `tasks.fleet_id`, `event_receipts.fleet_id`, `wake_batches.fleet_id` |
-| scope enforcement | `fleet-rpc--task-in-fleet` (a lieutenant cannot touch sibling or root tasks) |
+| scope enforcement | `fleet-rpc--task-in-fleet` (a lieutenant cannot touch sibling or root tasks); one root → child write: the human's relayed answer to a lieutenant's human-authority decision (§5) |
 | global workspace/resource claims | `resource_claims.key UNIQUE` already spans all fleets |
 | delegation | a message on the child's lane + a `requests` row |
 | report upstream | an actionable event in the parent fleet (wakes the commander through the existing hook) |
@@ -161,6 +161,22 @@ requests. A settled request is evidence for the commander to verify, not user ac
   human may also answer in the lieutenant's chat directly. While `ask_first` is `["*"]` this costs one
   round trip per delegation; it fades as the rules converge. The commander never approves on the
   human's behalf.
+- **Human-authority decisions.** A lieutenant's operator raises them like any operator (`fleet_status`
+  `needs-decision`, authority `human`); the row lives in the lieutenant's fleet. The lieutenant cannot
+  close it: `owner_approved` means "the runtime whose user is the human heard the human answer this exact
+  question", and a lieutenant's user is the commander, so Fleet refuses it the flag (incident 2026-09-19:
+  ten such rows stayed open). The sanctioned path is one hop shorter than for model approvals: the
+  lieutenant sends a `question` on the request naming the decision id, the commander puts it to the
+  human, and the **commander closes the row itself** with `fleet_decision_resolve` (`owner_approved`,
+  the human's answer in substance). `fleet-rpc.el` admits that call when the decision's fleet has the
+  caller's fleet as `parent_id`, the caller is a `commander`, `owner_approved` is true and the row's
+  authority is `human`; anything else is `forbidden` — a lieutenant's commander-authority decisions stay
+  its own, and no sibling or unrelated root can reach in. `fleet-core-decision-resolve` records
+  authority `human` with evidence `owner-relayed`, `relayed-by-runtime`, `relayed-by-fleet`,
+  `lieutenant-fleet-id`/`lieutenant`, and appends `decision-resolved` to the lieutenant's fleet as an
+  **actionable** event (the resolver is not that fleet's own commander, so its supervisor still has to
+  deliver): the lieutenant is woken, reads the answer from the payload, `fleet_message_send`s it to its
+  operator and acknowledges. Recording and delivery stay separate facts; the tool result says so.
 - **Long context.** Handoff timing is the supervisor's judgement, for roots and lieutenants alike; a
   lieutenant writes `context.md`, reports `progress` "ready to be replaced", and the commander calls
   `fleet_lieutenant_replace`. Fleet has per-turn usage but no window size, so it gives no number yet

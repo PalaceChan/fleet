@@ -105,6 +105,86 @@
           (should (equal "stale-runtime" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_snapshot" tok2))))
           (should (equal "unauthenticated" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_snapshot" "never-issued")))))))))
 
+(ert-deftest fleet-rpc-root-commander-relays-the-humans-answer-into-a-lieutenants-decision ()
+  "Lieutenant fleet 2026-09-19: a lieutenant's operator raised human-authority
+decisions; the lieutenant was refused `owner_approved' (its user is the
+commander) and the root commander was refused by fleet scope, so ten rows
+stayed open after the human had answered.  The root commander now relays the
+human's answer into its lieutenant's human-authority row; the row and event
+record human authority by relay, the relaying commander and the lieutenant
+fleet; the event is actionable for the lieutenant, which delivers.  Both
+original refusals still hold, as do an unrelated commander, an operator, a
+stale revision, a duplicate and a commander-authority row."
+  (fleet-rpc-test-with
+    (let* ((rid (fleet-core-test-fleet store "workshop"))
+           (lid (plist-get (fleet-core-create-fleet store "frontend" :parent-id rid :charter "UI") :id))
+           (other (fleet-core-test-fleet store "other"))
+           (root-cid (fleet-sup-test-commander store rid))
+           (lt-cid (fleet-sup-test-commander store lid))
+           (other-cid (fleet-sup-test-commander store other))
+           (tid (plist-get (fleet-core-test-study store lid "nav") :id)))
+      (fleet-sup-test-settle)
+      (fleet-core-test-start store tid)
+      (let* ((rtok (fleet-rpc-test-token root-cid)) (ltok (fleet-rpc-test-token lt-cid)) (xtok (fleet-rpc-test-token other-cid))
+             (otok (fleet-rpc-test-token (fleet-core-test-runtime store tid))))
+        (setq fleet-test-fake-turn 'busy)
+        (let* ((st (plist-get (fleet-rpc-test-req "fleet_status" otok '(:phase "needs-decision" :detail "?" :decision (:question "Delete the old branch?" :options ["yes" "no"] :recommendation "no" :authority "human"))) :result))
+               (did (plist-get st :decision-id))
+               (cst (plist-get (fleet-rpc-test-req "fleet_status" otok '(:phase "needs-decision" :detail "?" :decision (:question "Tabs or spaces?" :authority "commander"))) :result))
+               (cdid (plist-get cst :decision-id))
+               (rev (plist-get (fleet-store-get store "tasks" tid) :entity-revision))
+               (open-p (lambda (id) (equal "open" (plist-get (fleet-store-get store "decisions" id) :state)))))
+          (should (and did cdid))
+          ;; Incident refusal 1: the lieutenant may not assert owner_approved; nor rule on a human row.
+          (should (equal "forbidden" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_decision_resolve" ltok (list :decision_id did :answer "no" :owner_approved t) "l1"))))
+          (should (equal "forbidden" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_decision_resolve" ltok (list :decision_id did :answer "no") "l2"))))
+          ;; Incident refusal 2: the root commander without the human's answer is out of scope.
+          (should (equal "forbidden" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_decision_resolve" rtok (list :decision_id did :answer "no") "r1"))))
+          ;; An unrelated root, an operator, and the lieutenant's commander-authority row from the root.
+          (should (equal "forbidden" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_decision_resolve" xtok (list :decision_id did :answer "no" :owner_approved t) "x1"))))
+          (should (equal "forbidden" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_decision_resolve" otok (list :decision_id did :answer "no" :owner_approved t) "o1"))))
+          (should (equal "forbidden" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_decision_resolve" rtok (list :decision_id cdid :answer "tabs" :owner_approved t) "r2"))))
+          ;; A stale revision is refused before anything changes.
+          (should (equal "revision-mismatch" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_decision_resolve" rtok (list :decision_id did :answer "no" :owner_approved t :expected_revision (1+ rev)) "r3"))))
+          (should (funcall open-p did))
+          (should (= 0 (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'decision-resolved'")))
+          ;; The sanctioned path: the root relays the human's answer with owner_approved.
+          (let ((r (plist-get (fleet-rpc-test-req "fleet_decision_resolve" rtok (list :decision_id did :answer "no — keep it" :owner_approved t :evidence "user said no in chat" :expected_revision rev) "r4") :result)))
+            (should (eq t (plist-get r :ok)))
+            (should (equal lid (plist-get r :fleet-id)))
+            (should (equal "human" (plist-get r :authority)))
+            (should (equal "frontend" (plist-get r :lieutenant)))
+            (should (string-match-p "separate" (plist-get r :delivery))))
+          (let* ((d (fleet-store-get store "decisions" did)) (ev (fleet-store-unjson (plist-get d :evidence))))
+            (should (equal "resolved" (plist-get d :state)))
+            (should (equal "no — keep it" (plist-get d :answer)))
+            (should (equal (fleet-core-actor-commander rid) (plist-get d :resolved-by)))
+            (should (eq t (plist-get ev :owner-relayed)))
+            (should (equal root-cid (plist-get ev :relayed-by-runtime)))
+            (should (equal rid (plist-get ev :relayed-by-fleet)))
+            (should (equal lid (plist-get ev :lieutenant-fleet-id)))
+            (should (equal "user said no in chat" (plist-get ev :text))))
+          ;; The event lives in the lieutenant's fleet, names the relay, and is actionable there only.
+          (let* ((e (car (fleet-store-query store "SELECT * FROM events WHERE kind = 'decision-resolved'")))
+                 (payload (fleet-store-unjson (plist-get e :payload))))
+            (should (equal lid (plist-get e :fleet-id)))
+            (should (eql 1 (plist-get e :actionable)))
+            (should (equal "human" (plist-get payload :authority)))
+            (should (equal (fleet-core-actor-commander rid) (plist-get payload :resolved-by)))
+            (should (equal root-cid (plist-get (plist-get payload :evidence) :relayed-by-runtime)))
+            (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM event_receipts WHERE event_id = ? AND fleet_id = ?" (plist-get e :id) lid)))
+            (should (cl-find (plist-get e :id) (append (plist-get (plist-get (fleet-rpc-test-req "fleet_events_pending" ltok) :result) :events) nil)
+                             :key (lambda (x) (plist-get x :event-id)) :test #'equal))
+            (should-not (cl-find (plist-get e :id) (append (plist-get (plist-get (fleet-rpc-test-req "fleet_events_pending" rtok) :result) :events) nil)
+                                 :key (lambda (x) (plist-get x :event-id)) :test #'equal)))
+          ;; Duplicate: same key replays, a new key is refused as closed.
+          (should (eq t (plist-get (plist-get (fleet-rpc-test-req "fleet_decision_resolve" rtok (list :decision_id did :answer "no — keep it" :owner_approved t :evidence "user said no in chat" :expected_revision rev) "r4") :result) :ok)))
+          (should (equal "decision-closed" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_decision_resolve" rtok (list :decision_id did :answer "yes" :owner_approved t) "r5"))))
+          (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'decision-resolved'")))
+          ;; The lieutenant's own commander-authority row is still its own, and resolving it wakes nobody.
+          (should (eq t (plist-get (plist-get (fleet-rpc-test-req "fleet_decision_resolve" ltok (list :decision_id cdid :answer "spaces") "l3") :result) :ok)))
+          (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'decision-resolved' AND actionable = 1"))))))))
+
 (ert-deftest fleet-rpc-external-job-refuses-another-tasks-job-id ()
   "F04: over the socket, an operator naming a sibling task's job id gets
 `forbidden'; the sibling's record and its events are untouched, while the
