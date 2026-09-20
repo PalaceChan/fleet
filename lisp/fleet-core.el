@@ -630,11 +630,12 @@ suggested value when enabled. This is opt-in because every report is one
 actionable event that costs the supervising lieutenant/commander an LLM turn;
 the owner enables it after a stall that the 1-hour deadline cap
 (`fleet-wait-deadline-max-sec') does not bound acceptably. At every whole
-multiple of `fleet-wait-watchdog-sec`, `fleet-core-watch-waits' runs on the
-supervisor tick and emits one actionable `runtime-waiting-long' event to the fleet that owns the
-task. (openclaw 2026-09-19: an operator waited ~13 minutes on its own
-already-complete external job and only the deadline reached the lieutenant;
-with the watchdog at 300 the first report would have come ~7 minutes earlier.)
+multiple of `fleet-wait-watchdog-sec', `fleet-core-watch-waits' runs on the
+supervisor tick and emits one actionable `runtime-waiting-long' event to the
+fleet that owns the task. (openclaw 2026-09-19: an operator waited ~13
+minutes on its own already-complete external job and only the deadline reached
+the lieutenant; with the watchdog at 300 the first report would have come ~7
+minutes earlier.)
 The deadline expires regardless of this setting."
   :type 'integer :group 'fleet)
 
