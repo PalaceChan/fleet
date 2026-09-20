@@ -167,7 +167,7 @@ Each row has :at :kind :task :runtime :summary :latency."
                                               (if (plist-get u :session-cost) (format " $%s" (plist-get u :session-cost)) "")))
                                      (t ""))
                                (cond ((plist-get p :stopped) " · stopped") ((plist-get p :error) " · error") (t "")))))
-    ((or "task-done" "task-failed" "task-blocked" "task-working" "task-paused" "decision-requested")
+    ((or "task-done" "task-failed" "task-blocked" "task-working" "task-paused" "decision-requested" "runtime-waiting-long")
      (or (plist-get p :detail) ""))
     ("operation-failed" (format "%s@%s: %s" (plist-get p :kind) (plist-get p :step) (plist-get p :error)))
     ("message-rejected" (format "%s: %s" (plist-get p :origin) (plist-get p :code)))

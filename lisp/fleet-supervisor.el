@@ -13,7 +13,8 @@
 ;;    dispatched only when the §9.2 admission rule holds; one bounded
 ;;    reminder per batch, then hold for a human.
 ;;
-;; Nothing here polls a model.  Timers only expire declared waits.
+;; Nothing here polls a model.  Timers only expire declared waits and
+;; report ones that have run long (both facts owned by fleet-core).
 
 ;;; Code:
 
@@ -36,7 +37,8 @@
 (defvar fleet-supervisor--wake-incident (make-hash-table :test 'equal) "fleet-id -> reason blocking auto wake retry.")
 (defvar fleet-supervisor-change-hook nil "Run after committed state changes; the dashboard subscribes.")
 
-(defconst fleet-supervisor-wait-tick-sec 30 "Interval for declared-wait deadline checks.")
+(defconst fleet-supervisor-wait-tick-sec 30
+  "Interval for declared-wait checks: deadline expiry and the long-wait watchdog.")
 (defconst fleet-supervisor-wake-batch-limit 25 "Receipts claimed per wake message.")
 (defconst fleet-supervisor-empty-turn-retries 1
   "How many times a message whose turn produced nothing is resent as is.
@@ -192,10 +194,15 @@ CALLBACK gets a mode plist."
           (run-with-timer fleet-supervisor-wait-tick-sec fleet-supervisor-wait-tick-sec #'fleet-supervisor--tick))))
 
 (defun fleet-supervisor--tick ()
-  "Periodic: expire declared waits.  Emits events; never sends a wake by itself."
+  "Periodic: expire declared waits, then report waits that have run long.
+Expiry runs first so a wait past its deadline is reported once, as expired,
+and never also as long-running.  Core owns both facts; this only ticks and
+kicks.  Emits events; never sends a wake by itself."
   (when (and fleet-supervisor--store (fleet-supervisor-owner-p))
     (condition-case err
-        (when (> (fleet-core-expire-waits fleet-supervisor--store) 0)
+        (when (> (+ (fleet-core-expire-waits fleet-supervisor--store)
+                    (fleet-core-watch-waits fleet-supervisor--store))
+                 0)
           (dolist (f (fleet-store-fleets fleet-supervisor--store)) (fleet-supervisor-kick (plist-get f :id) 'event)))
       (error (message "fleet-supervisor: tick error: %s" (error-message-string err))))))
 

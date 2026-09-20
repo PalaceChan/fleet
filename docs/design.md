@@ -966,7 +966,14 @@ Expose compact tools with precise enums rather than a large family of aliases:
 
 - **Tool:** `fleet_wait`
   - **Inputs/result summary:** Reason, bounded deadline, external job ID if applicable, and who/how completion
-    will be reported.
+    will be reported. The deadline must be ISO-8601 and no more than `fleet-wait-deadline-max-sec` (default
+    60 minutes) ahead (`invalid-wait`, `wait-deadline-too-far`); the same core path serves `fleet_status`
+    `paused`. When the job ID names one of the task's own external jobs that is already `completed`, `failed`
+    or `cancelled`, nothing is paused or written and the result carries `paused: false` with the job's state
+    and disposition; another task's job ID is `forbidden`; an unregistered ID pauses as declared. While
+    paused, when the owner enables the wait watchdog (§9.3, note 20; `fleet-wait-watchdog-sec`, off by
+    default, 300 suggested), it reports the task to its fleet at every whole multiple of that threshold
+    as an actionable `runtime-waiting-long` event.
 
 - **Tool:** `fleet_cleanup_evidence`
   - **Inputs/result summary:** Read-only preservation/ownership/quiescence evidence for a task.
@@ -1073,6 +1080,19 @@ uncertainty.
 - A lost process/transport becomes an execution observation and actionable event once per incident.
 - A declared wait has a reason and deadline. A timer emits one deadline-expired event if no subsequent
   phase/completion superseded it.
+- When the owner enables it (`fleet-wait-watchdog-sec` > 0; default 0), a wait that lasts is reported before
+  its deadline: at every whole multiple of `fleet-wait-watchdog-sec` since the wait was declared (its latest
+  `task-paused` event), `fleet-core-watch-waits` emits one actionable
+  `runtime-waiting-long` event to the fleet that owns the task (a lieutenant's fleet for a lieutenant's
+  task; the root commander sees it only through the lieutenant, like every task event). The payload carries
+  the reason, job id and the job's recorded state, the declared deadline, seconds waited, the threshold and
+  the multiple. Idempotency is by the multiple: a tick emits only when the current multiple exceeds the
+  last one reported for this wait, so nothing repeats within a window and a slow tick does not catch up.
+  A superseding status is a new wait (own clock) or no wait; an expired wait has no deadline; neither is
+  reported. The supervisor tick runs expiry first, so a wait is never reported both as expired and as long.
+- A wait on an external job that is already terminal is not a wait: `fleet_wait`/`fleet_status paused`
+  return the job's state and disposition instead of pausing, and a declared deadline is bounded by
+  `fleet-wait-deadline-max-sec` so no single declaration can park a task beyond the watchdog's reach.
 - External/local jobs include stable identity and a completion path. Local ECA job events can satisfy a
   declared wait when supported.
 - An active tool call can be displayed with elapsed time; long duration alone does not prove it is wedged.
@@ -2155,3 +2175,28 @@ Each was driven by evidence from the installed pair (see `docs/eca-compatibility
     `turn-failed` (actionable for operators). Turns that did work before failing are still never resent.
     Owner model choices stay in owner configuration: no policy file means no policy, and a malformed one
     refuses task creation and is reported in the commander's boot message rather than silently ignored.
+20. **Long waits are reported before their deadline; terminal jobs are not waited on (openclaw,
+    2026-09-19).** An operator registered an external job it had launched itself, read the job's result,
+    and then called `fleet_wait` on that job with a 13-minute deadline "for its completion event" — an
+    event nothing would ever push, since the job row was the operator's own and still said `running`. The
+    wait was accepted (§9.3 was satisfied: reason, deadline, one expiry event), `task-paused` is not
+    actionable, and so the lieutenant learned of the stall from the human, who had read the chat buffer;
+    Fleet's own word came at the deadline. Two additions, both facts owned by `fleet-core` and only ticked
+    by the supervisor. The *wait watchdog* (`fleet-core-watch-waits`, run on the existing
+    `fleet-supervisor--tick` after expiry) emits one actionable `runtime-waiting-long` event per whole
+    multiple of `fleet-wait-watchdog-sec` (opt-in: default 0, 300 suggested; each report costs the
+    supervisor a turn, so the owner enables it after a stall the 1 h deadline cap does not bound acceptably)
+    to the task's own fleet, anchored on the latest `task-paused` event and made idempotent by the multiple
+    recorded in the last such event, so a
+    30-second tick never repeats a report and a superseded or expired wait is never reported at all.
+    `fleet_wait` (and `fleet_status paused`, one core path) now refuses a deadline that is not ISO-8601
+    (`invalid-wait`; `date-to-time` would have read "in 14 minutes" as the year 2000) or later than
+    `fleet-wait-deadline-max-sec` (default 60 minutes, `wait-deadline-too-far`), so long jobs are waited for
+    in legs the watchdog can see; and when `job_id` names one of the task's own external jobs that is
+    already `completed`, `failed` or `cancelled`, it pauses nothing and returns `paused: false` with the
+    job's state and disposition — the operator continues with the outcome it was about to wait for. A job
+    owned by another task is `forbidden` at the same boundary F04 draws for `fleet_external_job`; an id no
+    job was registered under is not Fleet's to judge and pauses as declared. Deliberately not done: the
+    watchdog does not watch an idle runtime that never declared a wait (that is the empty-turn and
+    delivery machinery's domain), `fleet_wait` still returns immediately (no long-poll), and a deadline
+    already in the past is still accepted because expiring on the next tick is the loudest thing it can do.

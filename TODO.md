@@ -192,13 +192,16 @@ before adding automatic retries, and F12 before migration/restore or frequent li
   - **Payoff:** uncertain tool results do not produce duplicate decisions/events on retries.
   - **Done:** align status/wait schema, handlers and doctrine on a replay-safe contract; test repeated
     identical submissions, conflicting reuse and uncertain results. Plan compatibility for existing callers;
-    do not simply tell an agent to send keys rejected by the current schema.
+    do not simply tell an agent to send keys rejected by the current schema. A replayed identical
+    `fleet_wait` must not restart the wait watchdog's clock (it anchors on the latest `task-paused` event).
   - **Start:** core/RPC/store, `schema/tools-v1.json`; [idempotency evidence](docs/known-gaps.md#authority-and-interface).
 
 - [ ] **F15 — Align the advertised tool interface with actual behavior** · **medium**
   - **Payoff:** agents can rely on supported inputs, outputs and authority rather than discovering silent gaps.
   - **Done:** resolve ignored `completion_report`, overpromised snapshot fields, validation depth/bounds and
     authenticated `tools_list` documentation. Decide/test operator visibility of same-fleet operations.
+    Decide whether `fleet_wait.job_id` must name a registered external job (today an unregistered id pauses
+    as declared; see [waits on unregistered job ids](docs/known-gaps.md#authority-and-interface)).
     Prefer narrowing unsupported promises over gratuitous features; add request/result/refusal contract tests.
   - **Start:** `lisp/fleet-rpc.el`, schemas, bridge and doctrine; [interface evidence](docs/known-gaps.md#authority-and-interface).
   - **Coordinate:** F04 owns job mutation checks; F13/F14 own their inputs; split this item into bounded
@@ -289,6 +292,15 @@ reprioritizes it. An easy label is not a reason to implement unsolicited UI or p
   - **Done if selected:** the transient unit treats the ECA server's SIGTERM exit as success, or the
     verdict/observation path records a distinct closed state; stop verdicts and fail-closed tests unchanged.
   - **Evidence:** [zero-lieutenant run](docs/known-gaps.md#native-observations-zero-lieutenant-run-2026-09-17).
+
+- [ ] **D11 — Watch idle runtimes that declared no wait** · **medium**
+  - **Payoff:** an operator whose turn ended without a status (no `paused`, no `done`) and that has no
+    queued message is noticed before a human reads its chat buffer.
+  - **Done if selected:** define the evidence that distinguishes "idle, awaiting the commander" from
+    "stalled" without polling a model; emit one actionable event per incident through the same tick and
+    idempotency rule as the wait watchdog (design note 20; opt-in like it). Coordinate with F06 (stuck lanes) and F11.
+  - **Evidence:** the 2026-09-19 wait incident was a declared wait, which note 20 now covers; the undeclared
+    case is out of its scope.
 
 ## Not TODOs — preserve these decisions
 

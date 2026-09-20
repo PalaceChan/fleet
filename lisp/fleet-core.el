@@ -15,6 +15,7 @@
 
 (require 'cl-lib)
 (require 'subr-x)
+(require 'iso8601)
 (require 'fleet-paths)
 (require 'fleet-policy)
 (require 'fleet-store)
@@ -623,6 +624,61 @@ creation, and records it.  Returns the updated task row."
 
 ;;;; Operator status, decisions, waits, artifacts, external jobs
 
+(defcustom fleet-wait-watchdog-sec 0
+  "The wait watchdog is off by default (0); 300 seconds (5 minutes) is the
+suggested value when enabled. This is opt-in because every report is one
+actionable event that costs the supervising lieutenant/commander an LLM turn;
+the owner enables it after a stall that the 1-hour deadline cap
+(`fleet-wait-deadline-max-sec') does not bound acceptably. At every whole
+multiple of `fleet-wait-watchdog-sec', `fleet-core-watch-waits' runs on the
+supervisor tick and emits one actionable `runtime-waiting-long' event to the
+fleet that owns the task. (openclaw 2026-09-19: an operator waited ~13
+minutes on its own already-complete external job and only the deadline reached
+the lieutenant; with the watchdog at 300 the first report would have come ~7
+minutes earlier.)
+The deadline expires regardless of this setting."
+  :type 'integer :group 'fleet)
+
+(defcustom fleet-wait-deadline-max-sec 3600
+  "Longest declared wait an operator may ask for, in seconds from now.
+`fleet_wait' and `fleet_status' with phase `paused' refuse a later deadline
+with `wait-deadline-too-far'.  A long job is waited for in bounded legs, each
+of which the watchdog and the deadline can report on."
+  :type 'integer :group 'fleet)
+
+(defconst fleet-core-terminal-job-states '("completed" "failed" "cancelled")
+  "External job states after which there is nothing left to wait for.")
+
+(defun fleet-core--iso-seconds (s)
+  "Seconds since the epoch of ISO-8601 timestamp S, or nil when S is not one.
+`date-to-time' (behind `fleet-paths-time-float') accepts nearly anything and
+yields the year 2000 for garbage, so a deadline is parsed strictly here."
+  (and (stringp s)
+       (condition-case nil (float-time (encode-time (iso8601-parse s))) (error nil))))
+
+(defun fleet-core--assert-wait-deadline (deadline now)
+  "Refuse DEADLINE unless it is an ISO-8601 timestamp no later than
+`fleet-wait-deadline-max-sec' after NOW.  A deadline already in the past is
+accepted: it expires on the next tick, which is the loudest thing it can do."
+  (let ((at (fleet-core--iso-seconds deadline)) (from (fleet-core--iso-seconds now)))
+    (unless at (fleet-fail 'invalid-wait "wait deadline must be a UTC ISO-8601 timestamp" :deadline deadline))
+    (when (> (- at from) fleet-wait-deadline-max-sec)
+      (fleet-fail 'wait-deadline-too-far "wait deadline is beyond the maximum; declare a nearer checkpoint and wait again"
+                  :deadline deadline :requested-sec (round (- at from)) :max-sec fleet-wait-deadline-max-sec))))
+
+(defun fleet-core--wait-job (store rt job-id)
+  "External job row JOB-ID named by a wait of runtime RT, or nil.
+Nil JOB-ID, or an id no job was registered under, yields nil: the wait is
+then bound to nothing Fleet can inspect and proceeds as declared.  A job
+registered by another task (or fleet) is refused with `forbidden' before
+anything is written, the same boundary `fleet-core-external-job' enforces."
+  (when job-id
+    (let ((job (fleet-store-get store "external_jobs" job-id)))
+      (when (and job (not (and (equal (plist-get job :task-id) (plist-get rt :task-id))
+                               (equal (plist-get job :fleet-id) (plist-get rt :fleet-id)))))
+        (fleet-fail 'forbidden "External job belongs to another task" :job-id job-id :task-id (plist-get rt :task-id)))
+      job)))
+
 (defun fleet-core-runtime-authorized (store runtime-id &optional task-id)
   "Runtime row for RUNTIME-ID if it is the live current runtime of its task/fleet.
 Signals `stale-runtime' otherwise.  TASK-ID, when given, must match."
@@ -645,7 +701,15 @@ Signals `stale-runtime' otherwise.  TASK-ID, when given, must match."
 (cl-defun fleet-core-task-status (store &key runtime-id phase detail decision wait artifacts)
   "Accept an operator status from RUNTIME-ID: PHASE, DETAIL, optional DECISION,
 WAIT (:reason :deadline :job-id) and ARTIFACTS (list of plists).  Terminal
-phases cannot revert; done requires registered artifacts.  Returns a plist."
+phases cannot revert; done requires registered artifacts.  Returns a plist.
+
+A `paused' wait needs a reason and an ISO-8601 deadline within
+`fleet-wait-deadline-max-sec' (`invalid-wait', `wait-deadline-too-far').
+When its :job-id names one of the task's external jobs that is already
+terminal (`fleet-core-terminal-job-states'), nothing is paused and nothing
+is written: the result carries `:paused :false' with the job's state and
+disposition so the operator continues with the outcome it was about to wait
+for.  Another task's job id is `forbidden'."
   (let* ((rt (fleet-core-runtime-authorized store runtime-id))
          (task (fleet-store-get store "tasks" (plist-get rt :task-id)))
          (tid (plist-get task :id)) (fid (plist-get task :fleet-id))
@@ -655,8 +719,17 @@ phases cannot revert; done requires registered artifacts.  Returns a plist."
       (fleet-fail 'terminal-phase "Terminal scope cannot change except through retask" :current (plist-get task :phase) :requested phase))
     (when (and (equal phase "needs-decision") (not (plist-get decision :question)))
       (fleet-fail 'invalid-status "needs-decision requires a decision question"))
-    (when (and (equal phase "paused") (not (and (plist-get wait :reason) (plist-get wait :deadline))))
-      (fleet-fail 'invalid-status "paused requires a wait reason and deadline"))
+    (when (equal phase "paused")
+      (unless (and (plist-get wait :reason) (plist-get wait :deadline))
+        (fleet-fail 'invalid-status "paused requires a wait reason and deadline"))
+      (fleet-core--assert-wait-deadline (plist-get wait :deadline) now)
+      (let ((job (fleet-core--wait-job store rt (plist-get wait :job-id))))
+        (when (and job (member (plist-get job :state) fleet-core-terminal-job-states))
+          (cl-return-from fleet-core-task-status
+            (list :ok t :paused :false :task-id tid :phase (plist-get task :phase)
+                  :job-id (plist-get job :id) :job-state (plist-get job :state) :disposition (plist-get job :disposition)
+                  :message (format "External job %s is already %s; nothing to wait for. Continue with its result instead of pausing."
+                                   (plist-get job :id) (plist-get job :state)))))))
     (fleet-store-transaction store
       (dolist (a artifacts) (fleet-core--register-artifact store tid a))
       (when (equal phase "done")
@@ -874,6 +947,44 @@ Return the count of emitted events."
         (fleet-store-append-event store :fleet-id (plist-get task :fleet-id) :task-id (plist-get task :id) :kind "wait-deadline-expired"
                                   :payload (list :reason (plist-get task :wait-reason) :job-id (plist-get task :wait-job-id)) :actionable t))
       (cl-incf n))
+    n))
+
+(defun fleet-core-watch-waits (store &optional now)
+  "Emit `runtime-waiting-long' for paused tasks that have waited past the threshold.
+NOW (ISO-8601, default the clock) is the observation time; the supervisor
+ticks this after `fleet-core-expire-waits'.  For every active task that is
+`paused' with a live deadline, the wait began at its latest `task-paused'
+event; once it has lasted K whole multiples of `fleet-wait-watchdog-sec'
+\(K >= 1) exactly one actionable event carrying `:multiple' K goes to the
+task's own fleet, and nothing more until the next multiple.  A superseding
+status appends a newer `task-paused' (a fresh wait, its own count) or leaves
+`paused' altogether, and an expired wait has no deadline any more, so
+neither is ever reported here.  Return the count of emitted events."
+  (let ((now (or now (fleet-paths-now))) (n 0))
+    (when (> fleet-wait-watchdog-sec 0)
+      (dolist (task (fleet-store-query store "SELECT * FROM tasks WHERE phase = 'paused' AND wait_deadline IS NOT NULL AND lifecycle = 'active'"))
+        (let* ((tid (plist-get task :id))
+               (since (fleet-store-query1 store "SELECT seq, created_at FROM events WHERE task_id = ? AND kind = 'task-paused' ORDER BY seq DESC LIMIT 1" tid))
+               (waited (and since (fleet-paths-seconds-between (plist-get since :created-at) now)))
+               (k (and waited (floor waited fleet-wait-watchdog-sec)))
+               (last (and since (fleet-store-query1 store "SELECT payload FROM events WHERE task_id = ? AND kind = 'runtime-waiting-long' AND seq > ? ORDER BY seq DESC LIMIT 1"
+                                                    tid (plist-get since :seq))))
+               (last-k (or (and last (plist-get (fleet-store-unjson (plist-get last :payload)) :multiple)) 0)))
+          (when (and k (>= k 1) (> k last-k))
+            (let* ((job-id (plist-get task :wait-job-id))
+                   (job (and job-id (fleet-store-get store "external_jobs" job-id)))
+                   (minutes (round (/ waited 60.0))))
+              (fleet-store-transaction store
+                (fleet-store-append-event store :fleet-id (plist-get task :fleet-id) :task-id tid :runtime-id (plist-get task :current-runtime-id)
+                                          :kind "runtime-waiting-long" :actionable t
+                                          :payload (list :reason (plist-get task :wait-reason) :job-id job-id
+                                                         :job-state (and job (plist-get job :state))
+                                                         :deadline (plist-get task :wait-deadline)
+                                                         :waited-sec (round waited) :threshold-sec fleet-wait-watchdog-sec :multiple k
+                                                         :detail (format "waiting %d min, deadline %s%s: %s" minutes (plist-get task :wait-deadline)
+                                                                         (if job (format ", job %s is %s" job-id (plist-get job :state)) "")
+                                                                         (plist-get task :wait-reason)))))
+              (cl-incf n))))))
     n))
 
 ;;;; Operations journal

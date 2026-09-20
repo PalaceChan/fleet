@@ -221,6 +221,44 @@ operators continue; the root gets an actionable event; busy/foreign refusals."
         (should (= 1 (length (plist-get (fleet-supervisor-pending-for-commander store fid) :events))))
         (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM event_receipts WHERE fleet_id = ? AND state = 'claimed'" fid)))))))
 
+(ert-deftest fleet-supervisor-tick-reports-a-long-wait-once-and-wakes-the-commander ()
+  "The supervisor tick runs the wait watchdog after deadline expiry; the
+resulting actionable event reaches the commander as a wake naming the task
+and the wait, and a second tick in the same window adds nothing."
+  (fleet-sup-test-with
+    (let* ((fleet-wait-watchdog-sec 1)
+           (fid (fleet-core-test-fleet store)) (cid (fleet-sup-test-commander store fid))
+           (tid (plist-get (fleet-core-test-study store fid) :id)))
+      (fleet-sup-test-settle)
+      (fleet-core-test-start store tid)
+      (setq fleet-test-fake-turn 'busy)
+      (fleet-core-task-status store :runtime-id (fleet-core-test-runtime store tid) :phase "paused" :detail "waiting: CI"
+                              :wait (list :reason "CI run 7" :deadline (fleet-core-test-iso 1800)))
+      (fleet-sup-test-settle)
+      ;; task-paused is not actionable: no wake yet, and a fresh wait is not long
+      (should (= 0 (length (fleet-sup-test-wakes store fid))))
+      (fleet-supervisor--tick)
+      (should (= 0 (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'runtime-waiting-long'")))
+      ;; past one threshold the tick reports it once
+      (let ((t0 (fleet-paths-time-float (plist-get (fleet-store-query1 store "SELECT created_at FROM events WHERE kind = 'task-paused' AND task_id = ?" tid) :created-at))))
+        (should (fleet-test-wait-for (lambda () (>= (- (float-time) t0) 1.05)) 5)))
+      (fleet-supervisor--tick)
+      (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'runtime-waiting-long'")))
+      (should (= 0 (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'wait-deadline-expired'")))
+      (fleet-supervisor--tick)
+      (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'runtime-waiting-long'")))
+      (fleet-sup-test-settle)
+      (let ((wakes (fleet-sup-test-wakes store fid)))
+        (should (= 1 (length wakes)))
+        (should (equal (plist-get (car wakes) :target-runtime-id) cid))
+        (should (string-match-p "runtime-waiting-long" (plist-get (car wakes) :text)))
+        (should (string-match-p "task `study1`" (plist-get (car wakes) :text)))
+        (should (string-match-p "CI run 7" (plist-get (car wakes) :text))))
+      ;; the task itself is untouched: still paused on the same wait, for the dashboard to show
+      (let ((task (fleet-store-get store "tasks" tid)))
+        (should (equal "paused" (plist-get task :phase)))
+        (should (equal "CI run 7" (plist-get task :wait-reason)))))))
+
 (ert-deftest fleet-supervisor-rpc-actionable-event-wakes-without-external-kick ()
   "Rehearsal 1 bug A: `fleet_status done' created a pending receipt but nothing
 kicked the supervisor until an unrelated human message arrived 7 minutes later.
