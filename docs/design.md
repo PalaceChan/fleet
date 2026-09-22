@@ -251,7 +251,9 @@ launch workers merely because the package was required.
 │   └── <fleet-uuid>/
 │       ├── about.md                # user-editable project context; optional
 │       ├── commander/
-│       │   ├── context.md          # explicit human/commander handoff
+│       │   ├── context.md          # explicit human/commander handoff; boot-loaded whole
+│       │   ├── context/            # referenced detail; read on demand, never boot-loaded
+│       │   ├── archive/            # superseded, timestamped history; never boot-loaded
 │       │   └── runs/<runtime-uuid>/
 │       │       ├── launch.json     # non-secret execution/config fingerprint
 │       │       ├── transcript.jsonl
@@ -1128,7 +1130,10 @@ New fleet flow:
 2. Create fleet UUID, artifact roots, configuration snapshot, and persisted commander-start operation.
 3. Launch native ECA commander and wait asynchronously for verified initialization/readiness.
 4. Submit a self-contained boot payload containing the canonical commander doctrine, scoped Fleet
-   identity/tools, current snapshot, and context paths.
+   identity/tools, current snapshot, and context paths. `about.md` and `commander/context.md` are the only
+   files injected; both are read whole. When `commander/context.md` exceeds
+   `fleet-core-context-warn-bytes` (65536), the payload carries one actionable warning naming the size, the
+   threshold and the two progressive-disclosure directories. It never refuses or truncates a boot.
 5. On readiness, show commander plus dashboard without arbitrary rearrangement of unrelated windows. Operator
    creation remains entirely background-only.
 
@@ -1147,7 +1152,12 @@ Existing parked/recoverable fleet flow:
    decision/message identity.
 
 Recovery uses `about.md`, commander `context.md`, briefs, and progress. The user or commander can record an
-explicit handoff in `context.md` with decisions, next steps, and artifact pointers.
+explicit handoff in `context.md` with decisions, next steps, and artifact pointers. `context.md` is an index
+of the current working set, rewritten rather than appended: detail belongs in `commander/context/` and
+superseded history in timestamped files under `commander/archive/`, reached only through pointers in
+`context.md` that give the path plus why and when to read it. Fleet creates both directories (at fleet
+creation, and lazily at commander start for older fleets) and never reads, globs or migrates their contents;
+referencing a file there does not inject it.
 
 ### 10.2 Task creation and start
 

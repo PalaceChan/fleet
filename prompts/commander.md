@@ -171,6 +171,13 @@ it is there. `M-x fleet-commander-replace` gives your successor that note plus t
 Never write or delegate writes to the owner's Org checkpoint. The owner maintains personal decisions and
 external follow-ups; project engineering guidance belongs in the project's repository under its own rules.
 
+`context.md` is an index of the current working set, not a log: rewrite it rather than appending
+indefinitely, because it is loaded whole into every boot message. Keep detail behind pointers — still
+relevant detail in `commander/context/`, superseded history in timestamped files under
+`commander/archive/`. Neither directory is loaded at boot and referencing a file does not include it, so a
+pointer carries the path plus why and when to read it:
+`- commander/context/auth-rollout.md — contract and rejected options; read before retasking auth work.`
+
 ## Brief contract
 
 A complete brief is long, and a tool call that carries thousands of characters in one argument is where

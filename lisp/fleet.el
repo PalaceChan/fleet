@@ -204,7 +204,10 @@ lieutenant without a live commander is started alongside (docs/lieutenants.md §
                             (conn (fleet-eca-conn (plist-get f :commander-runtime-id))))
                        (fleet-dashboard)
                        (when conn (fleet-eca-visit conn))
-                       (message "Fleet %s: commander ready" name))
+                       (if-let* ((over (fleet-core-context-oversize-bytes (plist-get f :artifact-root))))
+                           (message "Fleet %s: commander ready — commander/context.md is %d bytes (over %d) and is loaded at every boot; the commander was asked to index it and move detail to commander/context/ and history to commander/archive/"
+                                    name over fleet-core-context-warn-bytes)
+                         (message "Fleet %s: commander ready" name)))
                    (fleet-dashboard)
                    (message "Fleet %s: commander start failed: %s (see fleet-doctor)" name (plist-get op :error)))))))
 

@@ -261,6 +261,12 @@ reconciliation or a retask was interrupted. Review [recovery](docs/recovery.md) 
 Ask it to write `commander/context.md`, then `M-x fleet-commander-replace`. Never create a second live
 commander by renaming a buffer.
 
+That note is loaded whole at every boot, so it is meant to be an index of the current working set, rewritten
+rather than appended: detail goes to `commander/context/`, superseded history to timestamped files under
+`commander/archive/`, and `context.md` keeps a pointer with the path plus why and when to read it. Neither
+directory is boot-loaded. Above 64 KiB (65536 bytes) the commander's boot message and the `commander ready`
+echo say so; nothing is refused, truncated or moved for you.
+
 ## Mistyped name / finished fleet
 
 Tear down every task (or `M-x fleet-task-close` the ones teardown will never admit), then
