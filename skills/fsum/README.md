@@ -10,8 +10,42 @@ installation and development.
 |---|---|
 | `SKILL.md` | ECA skill loaded by the commander |
 | `scripts/fleet-read.el` | Read helper: `fleet-read-bearings` (plist, `fleet-read-schema` 1), `fleet-read-bearings-json`. Shared with `/frev` by path or copy. |
-| `scripts/fsum.el` | Formatter and entry point: `fsum-render`, `fsum-bearings` (Markdown string). Loads `fleet-read.el` from its own directory. |
-| `test/fsum-tests.el` | ERT suite over a faked store API with a mutation spy; no live fleet, no SQLite, no ECA. |
+| `scripts/fleet-result.el` | Unresolved owner-facing results: the durable checkpoint (`fleet-result-read`, `fleet-result-apply` and its named wrappers) and the commander-transcript collector (`fleet-result-scan`, `fleet-result-candidates`). Shared with `/frev` by path. |
+| `scripts/fsum.el` | Formatter and entry point: `fsum-render`, `fsum-bearings` (Markdown string). Loads both helpers from its own directory. |
+| `test/fsum-tests.el` | ERT suite over a faked store API with a mutation spy, plus the checkpoint and collector over throwaway roots and synthetic transcripts; no live fleet, no SQLite, no ECA. |
+
+## Unresolved owner-facing results
+
+`fleet-result.el` tracks results that stay unresolved because the user has not acknowledged them or has
+not given a disposition. Two things make it worth its size:
+
+- **Two independent axes.** `acknowledgement` and `disposition` move separately, so "I saw it, I'll
+  review later" survives as *acknowledged + outstanding* instead of disappearing.
+- **One writer, in Emacs.** All authoritative mutation goes through `fleet-result-apply`; `/fsum` only
+  reads, and `/frev`'s Python app and browser never touch the file (`AGENTS.md`: *Emacs alone writes
+  state*). This is **skill review/adjudication state, not a Fleet projection** — no table, no RPC, no
+  tool, and it must never be shown as Fleet's own record.
+
+Layout, keyed by root fleet so it survives commander replacement:
+
+```text
+$XDG_DATA_HOME/fleet-result-review/<namespace>/<root-fleet-id>/
+    state.json     items, scan cursors, dismissed fingerprints (temp file + rename)
+    events.jsonl   append-only audit, one line per operation, carrying the revision it produces
+    .lock          O_EXCL lock held across a read-modify-write
+```
+
+`<namespace>` is `fleet-paths-root-hash`, so a disposable test data root cannot mix with the owner's.
+Corruption, a newer schema and a held lock are refused with stable codes and the file is left alone;
+`fleet-result-lock-timeout` bounds the wait. Every write pins `coding-system-for-write` — clipped text
+carries `…`, and an unpinned write asks which coding system to use, which hangs a daemon instead of
+failing.
+
+The collector reads `<artifact root>/commander/runs/*/transcript.jsonl` (current **and** replaced
+commanders), suppresses ECA's duplicate rendering of each submitted prompt, skips tool lines, and reports
+clipped (4,000-character), missing, unreadable, unparsable and capped input as coverage. It never closes
+anything: a later user message is context, and inference produces **candidates** identified by a stable
+fingerprint, which `/frev` splits, merges, promotes or dismisses.
 
 ## How it reads
 
@@ -69,3 +103,8 @@ Byte-compile check (same server): `(byte-compile-file "/path/to/skills/fsum/scri
 - Observation is sequential reads, not an atomic census; the heading's time and the `Coverage` notes say
   what was and was not seen.
 - No historical comparison, trend, or "since last summary" store — by design.
+- The unresolved-result checkpoint is only as durable as the files under `$XDG_DATA_HOME`; it is not in
+  Fleet's database and not covered by Fleet's backup/restore. Commander run transcripts persist today but
+  `docs/design.md` reserves a retention policy, so the scan's reach is reported, never assumed.
+- Candidate detection is a deliberately broad text filter (a question mark or one of a few ask phrases).
+  It over-offers rather than miss a result; `/fsum` caps it at three and never treats one as authority.

@@ -11,7 +11,7 @@ installation, tests, and the honest limits of the notify hop.
 | Path | Role |
 |---|---|
 | `SKILL.md` | ECA skill loaded by the root commander |
-| `scripts/frev.el` | Emacs bridge: `frev-collect-to-file` (evidence via fsum's `fleet-read.el`, plus the data-root namespace) and `frev-notify-to-file` (fixed-format notice through `fleet-supervisor-send`) |
+| `scripts/frev.el` | Emacs bridge: `frev-collect-to-file` (evidence via fsum's `fleet-read.el`, plus the data-root namespace), `frev-notify-to-file` (fixed-format notice through `fleet-supervisor-send`) and `frev-result-review-to-file` / `frev-result-apply-to-file` (deep unresolved-result pass and the only write path into fsum's `fleet-result.el` checkpoint) |
 | `app/frev.py` | CLI entry: `start`, `publish`, `status`, `end`, `validate`, `example`, `serve`, `server status|stop` |
 | `app/frev_app/schema.py` | Review/submission shapes (v1) and validation; the example review |
 | `app/frev_app/store.py` | Session directories, atomic writes, `flock`, publish/submit state machine, evidence digest |
@@ -49,11 +49,21 @@ commander ◄── one notice on its lane ──► frev.py status … ──�
 - **Endpoints:** `GET /api/ping`, the UI, `/static/*`, `GET …/session|state|revision/N`,
   `POST …/submit`, `POST …/notify/<id>` (retry). No execute, eval or Fleet-mutation route exists.
 - **Fresh only.** Every `start` allocates a new directory. Nothing resumes, migrates or supersedes.
+- **Unresolved results are the exception to "fresh only", and they are not session files.** They live in
+  the shared checkpoint `$XDG_DATA_HOME/fleet-result-review/<ns>/<root-uuid>/`, owned by fsum's
+  `fleet-result.el` and keyed by root fleet, so they outlive both the session and the commander.
+  `frev-result-review-to-file` reads it and scans every retained commander transcript incrementally
+  (5 MiB / 500 turns per pass, per-file cursors); `frev-result-apply-to-file` is the **only** way a
+  `/frev` adjudication reaches it. The Python app and the browser never write it: they carry the user's
+  picks and words to the commander, which decides what each means and states it through Emacs
+  (`AGENTS.md`: *Emacs alone writes state*). Cursors are committed only together with an adjudication,
+  so an unreviewed candidate is re-offered rather than skipped.
 
 ## Install (owner step, separate from merging)
 
 Skills on this host are symlinks into a checkout. `frev` needs `fsum` next to it (it loads
-`../fsum/scripts/fleet-read.el`, resolved first beside the checkout, then beside the install):
+`../fsum/scripts/fleet-read.el` and `../fsum/scripts/fleet-result.el`, resolved first beside the
+checkout, then beside the install):
 
 ```bash
 ln -s ~/development/fleet/skills/fsum ~/.config/eca/skills/fsum   # if not already

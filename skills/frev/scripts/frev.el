@@ -14,6 +14,16 @@
 ;;    round: queue one short, fixed-format notice on the commander runtime the
 ;;    session was bound to at start, through `fleet-supervisor-send'.
 ;;
+;; 3. `frev-result-review-to-file' / `frev-result-apply-to-file' — the deep
+;;    unresolved-result pass: a cursored incremental scan of every retained
+;;    commander transcript, and the ONLY route by which a `/frev' adjudication
+;;    reaches the durable checkpoint.  The checkpoint is written by
+;;    `fleet-result.el' in Emacs and by nothing else: the Python app and the
+;;    browser page submit choices, comments and messages into their own
+;;    disposable session files, and the commander routes each one here.  That
+;;    boundary is deliberate (AGENTS.md: "Emacs alone writes state"); do not add
+;;    a Python writer for `state.json'.
+;;
 ;; Constraints this file exists to keep:
 ;; - The notice targets the runtime recorded in `session.json' at session start;
 ;;   if the root's current commander is a different runtime the notice is
@@ -46,8 +56,19 @@
 (declare-function fleet-eca-draft "fleet-eca" (conn))
 (declare-function fleet-paths-root-hash "fleet-paths" ())
 (declare-function fleet-read-bearings "fleet-read" (&rest keys))
+(declare-function fleet-read-resolve-root "fleet-read" (store &rest keys))
 (declare-function fleet-read-error-code "fleet-read" (err))
 (declare-function fleet-read-error-message "fleet-read" (err))
+
+;; Shared unresolved-result checkpoint, loaded from the fsum skill like the reader.
+(declare-function fleet-result-read "fleet-result" (&rest keys))
+(declare-function fleet-result-open-items "fleet-result" (read))
+(declare-function fleet-result-scan "fleet-result" (&rest keys))
+(declare-function fleet-result-candidates "fleet-result" (scan read &rest keys))
+(declare-function fleet-result-runs-directory "fleet-result" (artifact-root))
+(declare-function fleet-result-apply "fleet-result" (&rest keys))
+(declare-function fleet-result-error-code "fleet-result" (err))
+(declare-function fleet-result-error-message "fleet-result" (err))
 
 (defconst frev-schema 1 "Version of the plist shapes this bridge writes.")
 
@@ -57,6 +78,9 @@
 
 (defvar frev-fleet-read-file nil
   "Explicit path of fsum's fleet-read.el.  Nil looks next to this skill.")
+
+(defvar frev-fleet-result-file nil
+  "Explicit path of fsum's fleet-result.el.  Nil looks next to this skill.")
 
 (defvar frev-data-root nil
   "Override of the frev data root (tests).  Nil derives it from XDG_DATA_HOME.")
@@ -74,24 +98,40 @@
 
 ;;;; fsum reader
 
+(defun frev--sibling-candidates (name override)
+  "Places fsum's NAME may live, most specific first; OVERRIDE wins."
+  (delq nil
+        (list override
+              ;; Checkout sibling: skills/frev -> skills/fsum, through the symlink.
+              (expand-file-name (concat "../fsum/scripts/" name) (file-truename frev-skill-directory))
+              ;; Install sibling: ~/.config/eca/skills/frev -> ~/.config/eca/skills/fsum.
+              (expand-file-name (concat "../fsum/scripts/" name) frev-skill-directory))))
+
 (defun frev--fleet-read-candidates ()
   "Places fsum's fleet-read.el may live, most specific first."
-  (delq nil
-        (list frev-fleet-read-file
-              ;; Checkout sibling: skills/frev -> skills/fsum, through the symlink.
-              (expand-file-name "../fsum/scripts/fleet-read.el" (file-truename frev-skill-directory))
-              ;; Install sibling: ~/.config/eca/skills/frev -> ~/.config/eca/skills/fsum.
-              (expand-file-name "../fsum/scripts/fleet-read.el" frev-skill-directory))))
+  (frev--sibling-candidates "fleet-read.el" frev-fleet-read-file))
+
+(defun frev--fleet-result-candidates ()
+  "Places fsum's fleet-result.el may live, most specific first."
+  (frev--sibling-candidates "fleet-result.el" frev-fleet-result-file))
+
+(defun frev--load-sibling (feature name tried code)
+  "Load fsum's NAME once for FEATURE from the first readable path in TRIED.
+Fail closed with stable CODE when none of them exists."
+  (unless (featurep feature)
+    (let ((file (cl-find-if #'file-readable-p tried)))
+      (unless file
+        (frev--fail code (format "fsum's %s was not found; install the fsum skill next to frev" name) :tried tried))
+      (load file nil t)))
+  t)
 
 (defun frev-load-reader ()
   "Load fsum's `fleet-read' once; fail closed when it cannot be found."
-  (unless (featurep 'fleet-read)
-    (let ((file (cl-find-if #'file-readable-p (frev--fleet-read-candidates))))
-      (unless file
-        (frev--fail 'reader-missing "fsum's fleet-read.el was not found; install the fsum skill next to frev or set `frev-fleet-read-file'"
-                    :tried (frev--fleet-read-candidates)))
-      (load file nil t)))
-  t)
+  (frev--load-sibling 'fleet-read "fleet-read.el" (frev--fleet-read-candidates) 'reader-missing))
+
+(defun frev-load-result ()
+  "Load fsum's `fleet-result' once; fail closed when it cannot be found."
+  (frev--load-sibling 'fleet-result "fleet-result.el" (frev--fleet-result-candidates) 'result-module-missing))
 
 ;;;; Paths and identity
 
@@ -150,6 +190,7 @@ Return \"ok\" or \"error\" so an `emacsclient' caller sees a one-word verdict."
        (progn (frev--write-json ,out (append (list :ok t) (progn ,@body))) "ok")
      (frev-error (frev--write-json ,out (list :ok :false :code (symbol-name (frev-error-code err)) :message (frev-error-message err))) "error")
      (fleet-read-error (frev--write-json ,out (list :ok :false :code (symbol-name (fleet-read-error-code err)) :message (fleet-read-error-message err))) "error")
+     (fleet-result-error (frev--write-json ,out (list :ok :false :code (symbol-name (fleet-result-error-code err)) :message (fleet-result-error-message err))) "error")
      (error (frev--write-json ,out (list :ok :false :code "error" :message (error-message-string err))) "error")))
 
 ;;;; Collect
@@ -268,6 +309,130 @@ Refusals are results, not signals, so the caller can show them."
 (defun frev-notify-to-file (out session-dir submission-id)
   "Write `frev-notify' for SESSION-DIR / SUBMISSION-ID to OUT as JSON."
   (frev--to-file out (frev-notify session-dir submission-id)))
+
+;;;; Unresolved owner-facing results
+
+(defconst frev-result-max-bytes 5242880
+  "Byte cap of one deep transcript pass.  Cursors continue it at the next review.")
+(defconst frev-result-max-turns 500
+  "Conversational turns one deep pass keeps.")
+(defconst frev-result-max-candidates 50
+  "Inferred candidates one review offers for adjudication.")
+
+(cl-defun frev-result-root (&key session-fleet-id selector)
+  "The root fleet `/frev' reviews results for, as :id :name :artifact-root.
+SESSION-FLEET-ID and SELECTOR follow fsum's identity rules exactly: a
+selector naming another fleet is a conflict, lieutenants and archived fleets
+are refused.  This is a store read and nothing else."
+  (frev-load-reader)
+  (let* ((store (frev--store))
+         (root (fleet-read-resolve-root store :session-fleet-id session-fleet-id :selector selector)))
+    (list :id (plist-get root :id) :name (plist-get root :name)
+          :artifact-root (plist-get root :artifact-root))))
+
+(cl-defun frev-result-review (&key session-fleet-id selector root)
+  "One deep, read-only unresolved-result pass for the session's root fleet.
+
+SESSION-FLEET-ID and SELECTOR identify the fleet (see `frev-result-root'); ROOT
+short-circuits that resolution when the caller already has it.  Returns a plist:
+
+  :root       the fleet this is about;
+  :status     the checkpoint's read status (ok / absent / corrupt / unsupported);
+  :open       explicit items still awaiting the user — owner-facing truth;
+  :terminal   how many settled items the checkpoint also holds;
+  :candidates inferred transcript candidates, presented SEPARATELY and never
+              as acknowledgement or disposition;
+  :cursors    cursors the caller MAY commit with `frev-result-apply'; they are
+              deliberately not written here, so a candidate nobody adjudicated
+              is offered again rather than silently skipped;
+  :runs       what was read per commander run, current and replaced;
+  :coverage   every limit, gap, clip and damaged input, in plain words;
+  :truncated  non-nil when a cap stopped the pass (run it again after applying).
+
+Nothing in this function writes anything."
+  (frev-load-result)
+  (let* ((root (or root (frev-result-root :session-fleet-id session-fleet-id :selector selector)))
+         (read (fleet-result-read :root-id (plist-get root :id)))
+         (scan (fleet-result-scan :runs-dir (fleet-result-runs-directory (plist-get root :artifact-root))
+                                  :cursors (plist-get read :cursors)
+                                  :max-bytes frev-result-max-bytes
+                                  :max-turns frev-result-max-turns))
+         (all (fleet-result-candidates scan read))
+         (candidates (if (> (length all) frev-result-max-candidates)
+                         (last all frev-result-max-candidates)
+                       all))
+         (open (fleet-result-open-items read))
+         (coverage (append (plist-get read :coverage) (plist-get scan :coverage)
+                           (when (> (length all) (length candidates))
+                             (list (format "%d inferred candidates were found; the newest %d are offered this round"
+                                           (length all) (length candidates)))))))
+    (list :schema frev-schema
+          :root root
+          :status (plist-get read :status)
+          :state-file (plist-get read :state-file)
+          :revision (plist-get read :revision)
+          :open open
+          :terminal (- (length (plist-get read :items)) (length open))
+          :candidates candidates
+          :cursors (plist-get scan :cursors)
+          :runs (plist-get scan :runs)
+          :coverage coverage
+          :truncated (and (plist-get scan :truncated) t))))
+
+(cl-defun frev-result-review-to-file (out &key session-fleet-id selector)
+  "Write `frev-result-review' for the given identity to OUT as JSON."
+  (frev--to-file out (frev-result-review :session-fleet-id session-fleet-id :selector selector)))
+
+(defun frev--result-ops (source)
+  "Operations from SOURCE: a list already, or a JSON file holding one.
+The file may be a bare array or an object with an `ops' array."
+  (cond
+   ((null source) nil)
+   ((listp source) source)
+   ((stringp source)
+    (unless (file-readable-p source)
+      (frev--fail 'ops-missing "The operations file is missing or unreadable" :file source))
+    (let ((parsed (condition-case err (frev--read-json source)
+                    (error (frev--fail 'ops-invalid (format "The operations file is not valid JSON: %s"
+                                                            (error-message-string err))
+                                       :file source)))))
+      ;; A JSON object parses to a plist (its car is a keyword); an array to a list.
+      (if (and (consp parsed) (keywordp (car parsed))) (plist-get parsed :ops) parsed)))
+   (t (frev--fail 'ops-invalid "Operations must be a list or a JSON file path" :given source))))
+
+(cl-defun frev-result-apply (&key session-fleet-id selector root ops ops-file review-file actor)
+  "Route `/frev' adjudications into the Elisp-owned unresolved-result checkpoint.
+
+This is the only write path `/frev' has, and it delegates to
+`fleet-result-apply': the browser and the Python app never touch the
+checkpoint, they only carry the user's choices to the commander, who decides
+what each one means and states it here.
+
+OPS is a list of operation plists, or OPS-FILE a JSON file holding them (an
+array, or an object with an `ops' key).  REVIEW-FILE is the JSON written by
+`frev-result-review-to-file'; when given, the scan cursors it recorded are
+committed in the same transaction, which is what makes the deep pass
+incremental — cursors advance only together with an adjudication.  ROOT
+short-circuits identity resolution; SESSION-FLEET-ID and SELECTOR resolve it
+otherwise.  ACTOR is recorded in the audit log."
+  (frev-load-result)
+  (let* ((root (or root (frev-result-root :session-fleet-id session-fleet-id :selector selector)))
+         (ops (append (frev--result-ops (or ops ops-file)) nil))
+         (cursors (when review-file
+                    (unless (file-readable-p review-file)
+                      (frev--fail 'review-missing "The review file is missing or unreadable" :file review-file))
+                    (plist-get (frev--read-json review-file) :cursors)))
+         (all (append ops (when cursors (list (list :op "cursors" :cursors cursors))))))
+    (unless all (frev--fail 'no-operations "Nothing to apply: no operations and no cursors to commit"))
+    (let ((res (fleet-result-apply :root-id (plist-get root :id) :ops all :actor (or actor frev-sender))))
+      (list :schema frev-schema :root root :revision (plist-get res :revision)
+            :state-file (plist-get res :state-file)
+            :applied (length all) :cursors-committed (and cursors t)))))
+
+(cl-defun frev-result-apply-to-file (out &key session-fleet-id selector ops ops-file review-file actor)
+  "Write `frev-result-apply' for the given identity and operations to OUT as JSON."
+  (frev--to-file out (frev-result-apply :session-fleet-id session-fleet-id :selector selector
+                                        :ops ops :ops-file ops-file :review-file review-file :actor actor)))
 
 (provide 'frev)
 ;;; frev.el ends here

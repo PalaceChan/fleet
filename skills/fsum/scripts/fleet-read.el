@@ -268,8 +268,9 @@ It has a declaration reference, not a fleet id or runtime."
   "One bounded, read-only observation of a root fleet and its lieutenants.
 SESSION-FLEET-ID and SELECTOR choose the root (see `fleet-read-resolve-root');
 RUNTIME-ID, when given, is compared with the root's current commander runtime.
-Returns a plist: :schema :observed-at :revision :root :caller :config :members
-:requests :diagnostics :counts.  Members are the root, every existing lieutenant
+Returns a plist: :schema :observed-at :revision :root (:id :name :artifact-root)
+:caller :config :members :requests :diagnostics :counts.  Members are the root,
+every existing lieutenant
 (stopped or not) and every declared-but-uncreated lieutenant; each carries a
 :status of observed, read-failed or declared-not-created."
   (let* ((store (fleet-read--store))
@@ -324,7 +325,9 @@ Returns a plist: :schema :observed-at :revision :root :caller :config :members
       (list :schema fleet-read-schema
             :observed-at (format-time-string "%FT%T%z")
             :revision (plist-get root-member :revision)
-            :root (list :id root-id :name root-name)
+            ;; :artifact-root is the root fleet's own directory path (no credential,
+            ;; no free text); `fleet-result.el' needs it to find commander/runs.
+            :root (list :id root-id :name root-name :artifact-root (plist-get root :artifact-root))
             :caller caller
             :config config
             :members members
