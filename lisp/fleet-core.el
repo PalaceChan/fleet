@@ -86,6 +86,7 @@ the root commander routes by); one level only (docs/lieutenants.md §2)."
          (root (fleet-paths-fleet-dir id)))
     (fleet-paths-ensure-dir (expand-file-name "commander" root))
     (fleet-paths-ensure-dir (expand-file-name "tasks" root))
+    (fleet-core-ensure-context-dirs root)
     (unless (file-exists-p (expand-file-name "about.md" root))
       (fleet-paths-write-atomically (expand-file-name "about.md" root)
                                     (format "# %s\n\nProject context for the commander. Edit freely.\n" name)))
@@ -1223,6 +1224,58 @@ Never marks stopped without proof."
          (when conn (fleet-eca-detach conn))
          (funcall callback (list :verdict verdict :lifecycle lifecycle :inspection (plist-get r :inspection) :operation-id op)))))))
 
+;;;; Commander context: progressive disclosure
+
+;; `commander/context.md' is the only handoff file loaded whole at every
+;; commander boot (and again at every replacement, which assembles a fresh
+;; payload).  Detail belongs under `commander/context/' and superseded history
+;; under `commander/archive/', reached only through pointers the commander
+;; writes into `context.md'.  Neither directory is ever read by the boot path.
+
+(defconst fleet-core-context-warn-bytes 65536
+  "Size in bytes of `commander/context.md' above which a commander boot warns.
+At or below this size the boot payload carries no warning.  The warning is
+advice, never a refusal: boot and replacement proceed unchanged.")
+
+(defun fleet-core-context-detail-dir (root)
+  "Directory of referenced commander detail under fleet artifact ROOT."
+  (expand-file-name "commander/context" root))
+
+(defun fleet-core-context-archive-dir (root)
+  "Directory of superseded commander history under fleet artifact ROOT."
+  (expand-file-name "commander/archive" root))
+
+(defun fleet-core-ensure-context-dirs (root)
+  "Create the progressive-disclosure directories under fleet artifact ROOT.
+Creates only the empty directories; no existing file is read, moved,
+rewritten or migrated, and nothing in them ever reaches a boot payload."
+  (fleet-paths-ensure-dir (fleet-core-context-detail-dir root))
+  (fleet-paths-ensure-dir (fleet-core-context-archive-dir root))
+  root)
+
+(defun fleet-core-context-oversize-bytes (root)
+  "Size of ROOT's `commander/context.md' when it exceeds the warning threshold.
+Returns nil otherwise.  The size is the file's real byte size on disk, so a
+multibyte note counts its UTF-8 bytes rather than its decoded characters."
+  (let* ((file (expand-file-name "commander/context.md" root))
+         (size (and (file-regular-p file) (file-attribute-size (file-attributes file)))))
+    (and size (> size fleet-core-context-warn-bytes) size)))
+
+(defun fleet-core--context-warning (root)
+  "Boot-payload warning about an oversized `commander/context.md' under ROOT, or nil.
+Composed exactly once, by `fleet-core-commander-boot-payload'."
+  (when-let* ((size (fleet-core-context-oversize-bytes root)))
+    (concat "\n## Warning: your handoff note is oversized\n"
+            (format "`%s` is %d bytes, over the %d-byte guideline. It is loaded whole into this message at every boot, and a replacement commander pays it again, so the cost repeats until you shrink it.\n"
+                    (expand-file-name "commander/context.md" root) size fleet-core-context-warn-bytes)
+            "Nothing is to be deleted; move it behind pointers instead:\n"
+            "- Rewrite `context.md` as a concise index of the current working set: open threads, decisions in force, next steps, where detail lives.\n"
+            (format "- Move still-relevant detail into `%s` and leave a pointer in `context.md` giving the path plus why and when to read it.\n"
+                    (fleet-core-context-detail-dir root))
+            (format "- Move superseded history into timestamped files or directories under `%s`.\n"
+                    (fleet-core-context-archive-dir root))
+            "Files under those two directories are never loaded automatically at boot, and referencing one does not include it; read them on demand with your file tools.\n")))
+
 ;;;; Boot payloads
 
 (defun fleet-core--prompt (name) "Canonical prompt NAME text." (or (fleet-paths-read-file (fleet-paths-prompt-file name)) (fleet-fail 'prompt-missing "Prompt file missing" :name name)))
@@ -1253,6 +1306,8 @@ lieutenant overlay and its charter; a root gets its lieutenants listed."
             (format "- Fleet: `%s` (id `%s`)\n- Runtime: `%s`\n- Artifact root: `%s`\n- Project context: `%s`\n- Handoff note: `%s`\n"
                     (fleet-core-fleet-selector store fleet) (plist-get fleet :id) (plist-get rt :id) root
                     (expand-file-name "about.md" root) (expand-file-name "commander/context.md" root))
+            (format "- Referenced detail: `%s`; superseded history: `%s`. Neither is loaded at boot; read a file there when a pointer in `context.md` says to.\n"
+                    (fleet-core-context-detail-dir root) (fleet-core-context-archive-dir root))
             "- Fleet tools are available as MCP tools named `fleet_*`; they are scoped to this fleet.\n"
             (when parent
               (format "- You are the lieutenant `%s` of fleet `%s` (id `%s`); its commander is your user.\n\n## Your charter\n%s\n"
@@ -1264,7 +1319,10 @@ lieutenant overlay and its charter; a root gets its lieutenants listed."
             (let ((about (fleet-paths-read-file (expand-file-name "about.md" root))))
               (when about (concat "\n## about.md\n" about)))
             (let ((ctx (fleet-paths-read-file (expand-file-name "commander/context.md" root))))
-              (when ctx (concat "\n## commander/context.md\n" ctx))))))
+              (when ctx (concat "\n## commander/context.md\n" ctx)))
+            ;; Last, where it is hardest to miss, and only here: composing it
+            ;; into the recovery summary as well would say it twice.
+            (fleet-core--context-warning root))))
 
 (defun fleet-core--models-section (store rt)
   "Boot-message section listing the ECA model catalog, for commander RT.
@@ -1585,6 +1643,9 @@ Return the operation id."
       (fleet-fail 'operation-in-progress "A commander start is already running"))
     (fleet-core-owner-epoch)
     (fleet-eca-assert-supported)
+    ;; Fleets created before the progressive-disclosure convention existed gain
+    ;; the two directories here; nothing already in the tree is touched.
+    (fleet-core-ensure-context-dirs (plist-get fleet :artifact-root))
     (let* ((op (fleet-core-operation-begin store "commander-start" :fleet-id fleet-id))
            (effective (fleet-core-commander-model fleet))
            (rt (fleet-core--new-runtime store :role "commander" :fleet-id fleet-id :model (car effective)

@@ -424,6 +424,111 @@ overlay and charter; the root's boot lists its lieutenants and charters."
         (should (string-match-p "fleet_delegate" boot))
         (should-not (string-match-p "# You are a lieutenant" boot))))))
 
+(defun fleet-core-test-occurrences (needle text)
+  "Number of occurrences of literal NEEDLE in TEXT."
+  (let ((n 0) (start 0))
+    (while (string-match (regexp-quote needle) text start)
+      (setq n (1+ n) start (match-end 0)))
+    n))
+
+(defconst fleet-core-test-context-warning "## Warning: your handoff note is oversized"
+  "Marker of the oversized-handoff warning in a commander boot payload.")
+
+(ert-deftest fleet-core-oversized-context-warns-once-on-bytes-and-never-blocks ()
+  "`commander/context.md' is boot-loaded whole, so an oversized one is paid at
+every boot and every replacement.  The threshold is strict (nothing at exactly
+65536 bytes), measured in bytes rather than decoded characters, the warning is
+composed exactly once, and boot is never refused."
+  (fleet-test-with-fakes
+    (let* ((fleet (fleet-core-create-fleet store "handoff"))
+           (root (plist-get fleet :artifact-root))
+           (ctx (expand-file-name "commander/context.md" root))
+           (rt '(:id "rt-unlaunched"))
+           (payload (lambda (&optional recovery) (fleet-core-commander-boot-payload store fleet rt recovery))))
+      ;; Exactly at the threshold: no warning, and none below it either.
+      (fleet-paths-write-atomically ctx (make-string fleet-core-context-warn-bytes ?x))
+      (should (= fleet-core-context-warn-bytes (file-attribute-size (file-attributes ctx))))
+      (should-not (fleet-core-context-oversize-bytes root))
+      (should-not (fleet-core--context-warning root))
+      (should (= 0 (fleet-core-test-occurrences fleet-core-test-context-warning (funcall payload))))
+      (fleet-paths-write-atomically ctx (make-string 10 ?x))
+      (should-not (fleet-core-context-oversize-bytes root))
+      ;; One byte over: exactly one actionable warning, with size, threshold and both directories.
+      (fleet-paths-write-atomically ctx (make-string (1+ fleet-core-context-warn-bytes) ?x))
+      (should (= (1+ fleet-core-context-warn-bytes) (fleet-core-context-oversize-bytes root)))
+      (let ((warning (fleet-core--context-warning root)))
+        (should (string-match-p (format "%d bytes" (1+ fleet-core-context-warn-bytes)) warning))
+        (should (string-match-p (format "%d-byte" fleet-core-context-warn-bytes) warning))
+        (should (string-match-p (regexp-quote (fleet-core-context-detail-dir root)) warning))
+        (should (string-match-p (regexp-quote (fleet-core-context-archive-dir root)) warning))
+        (should (string-match-p "concise index" warning))
+        (should (string-match-p "path plus why and when to read it" warning))
+        (should (string-match-p "never loaded automatically at boot" warning)))
+      ;; Once in the payload, and still once when a recovery summary is composed in.
+      (should (= 1 (fleet-core-test-occurrences fleet-core-test-context-warning (funcall payload))))
+      (should (= 1 (fleet-core-test-occurrences
+                    fleet-core-test-context-warning
+                    (funcall payload (fleet-core-recovery-summary store fleet)))))
+      ;; Bytes, not characters: fewer characters than the threshold, more UTF-8 bytes.
+      (let ((multibyte (make-string 33000 ?é)))
+        (should (< (length multibyte) fleet-core-context-warn-bytes))
+        (fleet-paths-write-atomically ctx multibyte)
+        (should (= 66000 (fleet-core-context-oversize-bytes root)))
+        (should (string-match-p "66000 bytes" (fleet-core--context-warning root))))
+      ;; Boot proceeds: the oversized note is delivered, warning and all.
+      (fleet-test-wait-op store (fleet-core-start-commander store (plist-get fleet :id)))
+      (let* ((rt (fleet-store-get store "runtimes"
+                                  (plist-get (fleet-store-get store "fleets" (plist-get fleet :id)) :commander-runtime-id)))
+             (boot (plist-get (car fleet-test-fake-submissions) :text)))
+        (should (equal (plist-get rt :lifecycle) "ready"))
+        (should (= 1 (fleet-core-test-occurrences fleet-core-test-context-warning boot)))))))
+
+(ert-deftest fleet-core-context-and-archive-files-are-never-boot-loaded ()
+  "Progressive disclosure: only `about.md' and `commander/context.md' are
+injected.  A file under `commander/context/' or `commander/archive/' stays out
+of the payload even when `context.md' points at it by path."
+  (fleet-test-with-fakes
+    (let* ((fleet (fleet-core-create-fleet store "disclosure"))
+           (root (plist-get fleet :artifact-root)))
+      (fleet-test-write (expand-file-name "auth.md" (fleet-core-context-detail-dir root))
+                        "SENTINEL-DETAIL-BODY\n")
+      (fleet-test-write (expand-file-name "2026-09-01-superseded.md" (fleet-core-context-archive-dir root))
+                        "SENTINEL-ARCHIVE-BODY\n")
+      (fleet-paths-write-atomically
+       (expand-file-name "commander/context.md" root)
+       (format "# Index\n- `%s` — auth contract; read before retasking auth work.\n- `%s` — superseded plan.\n"
+               (expand-file-name "auth.md" (fleet-core-context-detail-dir root))
+               (expand-file-name "2026-09-01-superseded.md" (fleet-core-context-archive-dir root))))
+      (let ((boot (fleet-core-commander-boot-payload store fleet '(:id "rt-unlaunched"))))
+        (should (string-match-p "auth contract; read before retasking auth work" boot))
+        (should-not (string-match-p "SENTINEL-DETAIL-BODY" boot))
+        (should-not (string-match-p "SENTINEL-ARCHIVE-BODY" boot))))))
+
+(ert-deftest fleet-core-context-directories-exist-for-new-and-pre-existing-fleets ()
+  "A new fleet root carries both directories; a root created without them gains
+them at commander start without any of its content being read or rewritten."
+  (fleet-test-with-fakes
+    (let* ((fleet (fleet-core-create-fleet store "dirs"))
+           (root (plist-get fleet :artifact-root))
+           (ctx (expand-file-name "commander/context.md" root))
+           (existing (expand-file-name "notes.md" (fleet-core-context-detail-dir root))))
+      (should (file-directory-p (fleet-core-context-detail-dir root)))
+      (should (file-directory-p (fleet-core-context-archive-dir root)))
+      ;; A pre-convention root: directories missing, handoff note present.
+      (delete-directory (fleet-core-context-detail-dir root) t)
+      (delete-directory (fleet-core-context-archive-dir root) t)
+      (fleet-paths-write-atomically ctx "# Handoff\nkeep me exactly as I am\n")
+      (let ((before (fleet-paths-sha256-file ctx)))
+        (fleet-test-wait-op store (fleet-core-start-commander store (plist-get fleet :id)))
+        (should (file-directory-p (fleet-core-context-detail-dir root)))
+        (should (file-directory-p (fleet-core-context-archive-dir root)))
+        (should (equal before (fleet-paths-sha256-file ctx)))
+        (should (equal "# Handoff\nkeep me exactly as I am\n" (fleet-paths-read-file ctx))))
+      ;; Ensuring is idempotent and leaves existing detail files alone.
+      (fleet-test-write existing "detail\n")
+      (fleet-core-ensure-context-dirs root)
+      (should (equal "detail\n" (fleet-paths-read-file existing))))))
+
 (ert-deftest fleet-core-dependencies-reject-cycles-and-cross-fleet ()
   (fleet-test-with-fakes
     (let* ((f1 (fleet-core-test-fleet store "a")) (f2 (fleet-core-test-fleet store "b"))
@@ -1533,6 +1638,24 @@ anything is stopped; \"default\" returns to the configured default."
       (should (string-match-p "\\(publish\\|report\\)[^.]*blocked" text))))
   ;; the prohibition is scoped: a wait something really does update is still doctrine
   (should (string-match-p "long job in legs" (fleet-core--prompt "operator"))))
+
+;; Also a doctrine regression: the boot payload warns about an oversized
+;; `context.md' but only the prompt teaches the convention that avoids it.
+(ert-deftest fleet-core-commander-prompt-teaches-progressive-disclosure ()
+  (let ((text (fleet-core--prompt "commander"))
+        (case-fold-search t))
+    ;; an index, rewritten rather than appended, with detail behind pointers
+    (should (string-match-p "index of the current working set" text))
+    (should (string-match-p "rewrite it rather than appending" text))
+    (should (string-match-p "commander/context/" text))
+    (should (string-match-p "commander/archive/" text))
+    (should (string-match-p "path plus why and when to read it" text))
+    ;; one compact pointer example
+    (should (string-match-p "^`- commander/context/[^`]+ — [^`]+`$" text))
+    ;; the standing prohibition is preserved
+    (should (string-match-p "Never write or delegate writes to the owner's Org checkpoint" text)))
+  ;; the lieutenant overlay speaks of the same file and stays coherent
+  (should (string-match-p "rewritten, not appended" (fleet-core--prompt "lieutenant"))))
 
 (provide 'fleet-core-tests)
 ;;; fleet-core-tests.el ends here
