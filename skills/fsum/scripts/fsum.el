@@ -12,13 +12,25 @@
 ;; Exceptions (decision, blocked, failed, lost, unknown, unverified done, closing)
 ;; are always individual rows.  Only routine rows may be rolled up, and a rollup
 ;; row names its tasks and states its count.
+;;
+;; Unresolved owner-facing results come from `fleet-result.el' (shared with
+;; `/frev').  `/fsum' uses its READ side only: the checkpoint, a small bounded
+;; transcript scan, and the candidate filter.  It never declares, records,
+;; dismisses or commits a cursor — the checkpoint's only writer is `/frev' and
+;; the commander's own declarations.  Explicit items are owner-facing truth and
+;; belong under "Needs you"; scan candidates are inferred, capped, and kept in a
+;; separately labelled section that claims nothing.
 
 ;;; Code:
 
 (require 'cl-lib)
 (require 'subr-x)
-(require 'fleet-read (expand-file-name "fleet-read.el"
-                                       (file-name-directory (or load-file-name buffer-file-name default-directory))))
+(eval-and-compile
+  (defconst fsum--script-directory
+    (file-name-directory (or load-file-name buffer-file-name default-directory))
+    "Directory this file was loaded from; its siblings are the shared helpers."))
+(require 'fleet-read (expand-file-name "fleet-read.el" fsum--script-directory))
+(require 'fleet-result (expand-file-name "fleet-result.el" fsum--script-directory))
 
 (defconst fsum-rollup-threshold 12
   "Above this many retained tasks, routine rows are rolled up per owner and state.")
@@ -26,6 +38,15 @@
 (defconst fsum-focus-width 48 "Display width of the supervisor Focus cell.")
 (defconst fsum-frev-hint-threshold 3
   "Suggest `/frev' only when at least this many items need the user.")
+
+(defconst fsum-result-max-runs 2
+  "Commander runs the quick result scan looks at: the current one and its predecessor.")
+(defconst fsum-result-max-bytes 262144
+  "Byte cap of the quick result scan.  `/frev' is where a deep scan belongs.")
+(defconst fsum-result-max-turns 24
+  "Conversational turns the quick result scan keeps, newest first.")
+(defconst fsum-result-max-candidates 3
+  "Inferred candidates `/fsum' will show.  More than a few is a `/frev'.")
 
 ;;;; Text
 
@@ -255,6 +276,78 @@ runtimes and lieutenants without a session; commander-authority work is not."
               ((or 'dead 'unknown) (push (format "`%s` (%s): %s" (plist-get task :name) owner (fsum--cell next)) items)))))))
     (nreverse items)))
 
+;;;; Unresolved owner-facing results (read-only)
+
+(defun fsum--result-review (bearings)
+  "Read-only unresolved-result evidence for BEARINGS.
+Returns a plist with :status, :items (explicit, presented, not terminal),
+:staged, :candidates (inferred, capped) and :coverage.  Every failure becomes
+a coverage string: an unreadable checkpoint must never break the bearings, and
+must never be rendered as \"nothing needs you\" either."
+  (let* ((root (plist-get bearings :root))
+         (root-id (plist-get root :id)))
+    (condition-case err
+        (let* ((read (fleet-result-read :root-id root-id))
+               (open (fleet-result-open-items read))
+               (presented (cl-remove-if-not (lambda (i) (equal (plist-get i :presentation) "presented")) open))
+               (staged (cl-remove-if (lambda (i) (equal (plist-get i :presentation) "presented")) open))
+               (scan (fleet-result-scan :runs-dir (fleet-result-runs-directory (plist-get root :artifact-root))
+                                        :max-runs fsum-result-max-runs
+                                        :max-bytes fsum-result-max-bytes
+                                        :max-turns fsum-result-max-turns))
+               (candidates (fleet-result-candidates scan read :max fsum-result-max-candidates)))
+          (list :status (plist-get read :status)
+                :items presented
+                :staged staged
+                :candidates candidates
+                :coverage (append (plist-get read :coverage)
+                                  (and staged
+                                       (list (format "%s declared but never confirmed presented; %s not shown below"
+                                                     (fsum--plural (length staged) "unresolved result was" "unresolved results were")
+                                                     (if (= 1 (length staged)) "it is" "they are"))))
+                                  (plist-get scan :coverage))))
+      (error (list :status "error" :items nil :staged nil :candidates nil
+                   :coverage (list (format "Unresolved owner-facing results could not be read (%s); this screen cannot say whether one is awaiting you"
+                                           (if (eq (car err) 'fleet-result-error)
+                                               (fleet-result-error-string err)
+                                             (error-message-string err)))))))))
+
+(defun fsum--result-item-bullet (item)
+  "One `Needs you' bullet for explicit result ITEM."
+  (let ((ack (if (equal (plist-get item :acknowledgement) "acknowledged") "acknowledged" "not acknowledged"))
+        (last (plist-get item :last-interaction)))
+    (format "`%s` — %s — %s, %s. Needed: %s.%s"
+            (plist-get item :id)
+            (fsum--cell (plist-get item :summary))
+            ack
+            (format "disposition %s" (plist-get item :disposition))
+            (fsum--cell (plist-get item :expected))
+            (if last (format " Last: %s." (fsum--cell last)) ""))))
+
+(defun fsum--result-candidates-section (candidates)
+  "Markdown for inferred CANDIDATES, or the empty string.
+Separately labelled and explicitly not authoritative: a later user message is
+carried as context and is never treated as an acknowledgement."
+  (if (null candidates)
+      ""
+    (concat "\n**Recent results that may need acknowledgement**\n"
+            "_Inferred from recent commander transcript turns — not acknowledged, not a disposition, not Fleet truth. `/frev` adjudicates them._\n"
+            (mapconcat (lambda (c)
+                         ;; The runtime id and the fingerprint are identities: never abbreviated,
+                         ;; because they are what `/frev' and a human use to find the turn again.
+                         (format "- %s (runtime `%s`, `%s`): %s%s%s"
+                                 (fsum--hhmm (plist-get c :at))
+                                 (fsum--clean (plist-get c :runtime-id))
+                                 (plist-get c :fingerprint)
+                                 (fsum--cell (plist-get c :excerpt))
+                                 (if (plist-get c :clipped) " [transcript clipped; the end of this result was not retained]" "")
+                                 (if (plist-get c :next-input)
+                                     (format " — next user message (context only, not an acknowledgement): %s"
+                                             (fsum--cell (plist-get c :next-input) 60))
+                                   "")))
+                       candidates "\n")
+            "\n")))
+
 (defun fsum--supervisor-queue (bearings)
   "One line of what supervisors are handling themselves, or nil."
   (let ((cmd-decisions 0) (unrouted 0) (blocked 0) (failed 0) (events 0) (done 0))
@@ -302,9 +395,12 @@ runtimes and lieutenants without a session; commander-authority work is not."
 (defun fsum-render (bearings)
   "Markdown bearings for the evidence plist BEARINGS from `fleet-read-bearings'."
   (let* ((rows (fsum--task-rows bearings))
-         (needs (fsum--needs-you bearings))
+         (result (fsum--result-review bearings))
+         (candidates (plist-get result :candidates))
+         (needs (append (fsum--needs-you bearings)
+                        (mapcar #'fsum--result-item-bullet (plist-get result :items))))
          (queue (fsum--supervisor-queue bearings))
-         (diagnostics (plist-get bearings :diagnostics))
+         (coverage (append (plist-get bearings :diagnostics) (plist-get result :coverage)))
          (owners (cl-remove-duplicates (mapcar #'cadr rows) :test #'equal)))
     (concat
      (format "**Fleet `%s` — observed %s**\n\n" (plist-get (plist-get bearings :root) :name) (fsum--hhmm (plist-get bearings :observed-at)))
@@ -312,10 +408,19 @@ runtimes and lieutenants without a session; commander-authority work is not."
      (fsum--supervisor-table bearings) "\n"
      (fsum--work-table rows) "\n"
      "**Needs you**\n"
-     (if needs (mapconcat (lambda (i) (concat "- " i)) needs "\n") "- Nothing needs you right now.")
+     (cond
+      (needs (mapconcat (lambda (i) (concat "- " i)) needs "\n"))
+      ;; Silence is only honest when the durable record was actually readable.
+      ((not (equal (plist-get result :status) "ok"))
+       "- Unresolved results could not be read (see Coverage), so this is not a clean bill: nothing here proves no result is awaiting your answer.")
+      (candidates
+       (format "- Nothing confirmed needs you; %s below may need acknowledgement."
+               (fsum--plural (length candidates) "recent result")))
+      (t "- Nothing needs you right now."))
      "\n"
+     (fsum--result-candidates-section candidates)
      (if queue (concat "\n" queue "\n") "")
-     (if diagnostics (concat "\n**Coverage**\n" (mapconcat (lambda (d) (concat "- " (fsum--clean d))) diagnostics "\n") "\n") "")
+     (if coverage (concat "\n**Coverage**\n" (mapconcat (lambda (d) (concat "- " (fsum--clean d))) coverage "\n") "\n") "")
      (if (and (>= (length needs) fsum-frev-hint-threshold) (> (length owners) 1))
          (format "\n_%d items need you across %d owners — `/frev` is the place to work through them together._\n" (length needs) (length owners))
        ""))))

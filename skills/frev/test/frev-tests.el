@@ -266,5 +266,170 @@
             (should (eq (frev-test--code #'frev-load-reader) 'reader-missing))))
       (setq features saved))))
 
+;;;; Unresolved owner-facing results — the deep pass and the single writer
+
+;; The shared module lives in the fsum skill; the checkout ships them as siblings.
+(let ((shared (expand-file-name "../fsum/scripts/fleet-result.el" frev-test--root)))
+  (when (file-readable-p shared) (load shared nil t)))
+
+(defmacro frev-test-with-result-fixture (fixture &rest body)
+  "Run BODY inside `frev-test-with-fixture' FIXTURE with the checkpoint redirected.
+Binds `art' (a throwaway fleet artifact root) and `rroot' (the plist
+`frev-result-*' takes as its already-resolved root), and points the shared
+checkpoint at a throwaway data root.  Skips when fsum is not installed next
+to frev, because the shared module then cannot be loaded."
+  (declare (indent 1))
+  `(progn
+     (skip-unless (featurep 'fleet-result))
+     (frev-test-with-fixture ,fixture
+       (let* ((art (expand-file-name "artifacts" root))
+              (rroot (list :id frev-test--fleet-id :name "workshop" :artifact-root art))
+              (fleet-result-data-root (expand-file-name "result-review" root))
+              (fleet-result-namespace-override "test-ns"))
+         (make-directory art t)
+         ,@body))))
+
+(defun frev-test--transcript (art runtime-id entries)
+  "Write ENTRIES as RUNTIME-ID's commander transcript under artifact root ART."
+  (let ((file (expand-file-name (format "commander/runs/%s/transcript.jsonl" runtime-id) art))
+        (coding-system-for-write 'utf-8))
+    (make-directory (file-name-directory file) t)
+    (with-temp-file file
+      (dolist (e entries) (insert (json-serialize e) "\n")))
+    file))
+
+(defun frev-test--assistant (at text)
+  "Assistant transcript line AT with TEXT."
+  (list :at at :role "assistant" :kind "text" :text text))
+
+(defun frev-test--tree-digest (dir)
+  "Name, size and content hash of every file under DIR, sorted."
+  (and (file-directory-p dir)
+       (mapcar (lambda (f)
+                 (list (file-relative-name f dir)
+                       (file-attribute-size (file-attributes f))
+                       (secure-hash 'sha256 (with-temp-buffer (insert-file-contents-literally f) (buffer-string)))))
+               (sort (directory-files-recursively dir "" nil) #'string<))))
+
+(ert-deftest frev-test-result-root-follows-the-fsum-identity-rules ()
+  (skip-unless (featurep 'fleet-result))
+  (frev-test-with-fixture (frev-test--fixture)
+    (let ((r (frev-result-root :session-fleet-id frev-test--fleet-id)))
+      (should (equal (plist-get r :id) frev-test--fleet-id))
+      (should (equal (plist-get r :name) "workshop")))
+    ;; identity problems stay the reader's own refusals, unchanged
+    (should (eq (condition-case err (progn (frev-result-root :session-fleet-id "nope") nil)
+                  (fleet-read-error (fleet-read-error-code err)))
+                'no-such-fleet))
+    (should (eq (condition-case err (progn (frev-result-root) nil)
+                  (fleet-read-error (fleet-read-error-code err)))
+                'no-fleet-identity))))
+
+(ert-deftest frev-test-result-review-separates-open-items-from-candidates ()
+  (frev-test-with-result-fixture (frev-test--fixture)
+    (frev-test--transcript art "rt-current"
+                           (list (frev-test--assistant "2026-09-22T09:01:00.000Z" "The draft is ready. Please review it.")
+                                 (frev-test--assistant "2026-09-22T09:02:00.000Z" "Telemetry is installed and complete.")))
+    ;; nothing durable yet: that is a coverage limitation, not "all clear"
+    (let ((review (frev-result-review :root rroot)))
+      (should (equal (plist-get review :status) "absent"))
+      (should (string-match-p "No result-review checkpoint exists"
+                              (string-join (plist-get review :coverage) "\n"))))
+    (fleet-result-declare :root-id frev-test--fleet-id :summary "an explicit ask" :why "unanswered"
+                          :expected "decide" :presented t :actor "test")
+    (let* ((review (frev-result-review :root rroot))
+           (candidates (plist-get review :candidates)))
+      (should (equal (plist-get review :status) "ok"))
+      (should (= 1 (length (plist-get review :open))))
+      (should (equal (plist-get (car (plist-get review :open)) :origin) "explicit"))
+      ;; a completed report is not a candidate; the ask is, and it is labelled inferred
+      (should (= 1 (length candidates)))
+      (should (equal (plist-get (car candidates) :origin) "inferred"))
+      (should (string-match-p "Please review it" (plist-get (car candidates) :excerpt)))
+      (should (= 1 (length (plist-get review :cursors))))
+      (should-not (plist-get review :truncated)))))
+
+(ert-deftest frev-test-result-review-writes-nothing ()
+  (frev-test-with-result-fixture (frev-test--fixture)
+    (frev-test--transcript art "rt-current"
+                           (list (frev-test--assistant "2026-09-22T09:01:00.000Z" "Ready. Please review it.")))
+    (fleet-result-declare :root-id frev-test--fleet-id :summary "an ask" :why "unanswered" :expected "decide"
+                          :presented t :actor "test")
+    (let ((before (frev-test--tree-digest fleet-result-data-root)))
+      (frev-result-review :root rroot)
+      (should (equal before (frev-test--tree-digest fleet-result-data-root)))
+      ;; the cursors the pass proposes are not the cursors it stored
+      (should (null (plist-get (fleet-result-read :root-id frev-test--fleet-id) :cursors))))))
+
+(ert-deftest frev-test-result-apply-persists-adjudications-and-commits-cursors ()
+  (frev-test-with-result-fixture (frev-test--fixture)
+    (frev-test--transcript art "rt-current"
+                           (list (frev-test--assistant "2026-09-22T09:01:00.000Z"
+                                                       "Two results are ready. Please review them.")))
+    (let* ((review (frev-result-review :root rroot))
+           (fingerprint (plist-get (car (plist-get review :candidates)) :fingerprint))
+           (out (expand-file-name "review.json" root))
+           (ops (expand-file-name "ops.json" root)))
+      (frev--write-json out review)
+      (frev--write-json ops (list :ops (list (list :op "declare" :summary "first of the two" :why "unanswered"
+                                                   :expected "decide" :origin "inferred" :presented t
+                                                   :fingerprints (list fingerprint))
+                                             (list :op "declare" :summary "second of the two" :why "unanswered"
+                                                   :expected "decide" :origin "inferred" :presented t
+                                                   :fingerprints (list fingerprint)))))
+      (let ((res (frev-result-apply :root rroot :ops-file ops :review-file out :actor "frev-test")))
+        (should (eq (plist-get res :cursors-committed) t))
+        (should (= 3 (plist-get res :applied))))
+      (let ((read (fleet-result-read :root-id frev-test--fleet-id)))
+        ;; one transcript line, two independently addressable items
+        (should (= 2 (length (fleet-result-open-items read))))
+        (should (equal '("first of the two" "second of the two")
+                       (mapcar (lambda (i) (plist-get i :summary)) (plist-get read :items))))
+        (should (= 1 (length (plist-get read :cursors))))
+        ;; an adjudicated fingerprint never returns as a candidate
+        (should (null (plist-get (frev-result-review :root rroot) :candidates))))
+      ;; acknowledgement recorded from a browser round does not resolve anything
+      (let ((id (plist-get (car (fleet-result-open-items (fleet-result-read :root-id frev-test--fleet-id))) :id)))
+        (frev-result-apply :root rroot :actor "frev-test"
+                           :ops (list (list :op "record" :id id :acknowledged t :basis "owner-report"
+                                            :note "user picked: seen, will decide later")))
+        (let ((item (fleet-result-item (fleet-result-read :root-id frev-test--fleet-id) id)))
+          (should (equal (plist-get item :acknowledgement) "acknowledged"))
+          (should (equal (plist-get item :disposition) "outstanding")))))))
+
+(ert-deftest frev-test-result-apply-refuses-and-changes-nothing ()
+  (frev-test-with-result-fixture (frev-test--fixture)
+    (fleet-result-init :root-id frev-test--fleet-id :actor "test")
+    (let ((before (frev-test--tree-digest fleet-result-data-root)))
+      (should (eq (frev-test--code (lambda () (frev-result-apply :root rroot))) 'no-operations))
+      (should (eq (frev-test--code (lambda () (frev-result-apply :root rroot :ops-file "/nonexistent/ops.json")))
+                  'ops-missing))
+      (should (eq (condition-case err (progn (frev-result-apply :root rroot :ops (list (list :op "merge-everything"))) nil)
+                    (fleet-result-error (fleet-result-error-code err)))
+                  'invalid-op))
+      (should (equal before (frev-test--tree-digest fleet-result-data-root))))
+    ;; and a refusal travels to the caller's file with its stable code
+    (let ((out (expand-file-name "apply.json" root)))
+      (should (equal (frev-result-apply-to-file out :session-fleet-id frev-test--fleet-id
+                                                :ops (list (list :op "declare" :summary "x" :why "y")))
+                     "error"))
+      (should (equal (alist-get 'code (frev-test--read out)) "incomplete-declaration")))))
+
+(ert-deftest frev-test-result-module-loads-from-sibling-fsum ()
+  ;; The checkout ships fsum next to frev: the shared module must be found unconfigured.
+  (should (cl-some #'file-readable-p (frev--fleet-result-candidates)))
+  (frev-load-result)
+  (should (featurep 'fleet-result))
+  (should (fboundp 'fleet-result-apply)))
+
+(ert-deftest frev-test-result-module-fails-closed-when-missing ()
+  (let ((frev-fleet-result-file "/nonexistent/fleet-result.el") (saved features))
+    (unwind-protect
+        (progn
+          (setq features (remq 'fleet-result features))
+          (cl-letf (((symbol-function 'frev--fleet-result-candidates) (lambda () (list frev-fleet-result-file))))
+            (should (eq (frev-test--code #'frev-load-result) 'result-module-missing))))
+      (setq features saved))))
+
 (provide 'frev-tests)
 ;;; frev-tests.el ends here

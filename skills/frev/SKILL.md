@@ -132,6 +132,52 @@ If the notice's arrival is delayed (your lane was busy) you may see it later tha
 fine — `status` shows what is pending. If the user says they sent a round and nothing arrived, run
 `status`: a round with `notify: refused (…)` names why (see Limitations).
 
+### 4b. Unresolved results (the deep pass)
+
+A review is also where **results still awaiting the user** get worked through. They live in a shared
+checkpoint keyed by root fleet (see the fsum skill), and `/frev` is the deep, adjudicating side of it:
+
+```bash
+emacsclient --eval '(load "~/.config/eca/skills/frev/scripts/frev.el" nil t)'
+emacsclient --eval '(frev-result-review-to-file "/tmp/rr-review.json" :session-fleet-id "FLEET-UUID")'
+```
+
+That writes one JSON file: `open` (explicit items awaiting the user — truth), `candidates` (inferred from
+transcript text — **not** acknowledgement, **not** a disposition), `runs`, `coverage` and `cursors`. It
+writes nothing else; the pass is read-only.
+
+Put the open items and the candidates in the review as **separate** items — candidates phrased as "did
+this ever get answered?", never as "you owe me this". Then act on the round: author the operations the
+user's picks and words justify into a JSON file and apply them in one transaction:
+
+```bash
+cat > /tmp/rr-ops.json <<'JSON'
+{"ops": [
+  {"op": "record", "id": "rr-4f1a20c8", "acknowledged": true, "basis": "owner-report",
+   "note": "picked: seen, decide later"},
+  {"op": "declare", "summary": "the cache recommendation", "why": "unanswered", "expected": "authorize or decline",
+   "origin": "inferred", "presented": true, "fingerprints": ["9c1e02b7a4d5f610"]},
+  {"op": "dismiss", "fingerprints": ["1a2b3c4d5e6f7081"], "note": "informational"}
+]}
+JSON
+emacsclient --eval '(frev-result-apply-to-file "/tmp/rr-applied.json" :session-fleet-id "FLEET-UUID"
+                     :ops-file "/tmp/rr-ops.json" :review-file "/tmp/rr-review.json")'
+```
+
+- Operations: `declare`, `presented`, `record`, `withdraw`, `supersede`, `attach`, `dismiss`, `cursors`.
+  **Split** one transcript line into several results by declaring several items with the same
+  `fingerprints`; **merge** with `attach`; dismiss reviewed noise so it never returns.
+- Passing `--review-file` commits that pass's scan cursors in the same transaction. That is deliberate:
+  cursors advance only together with an adjudication, so a candidate nobody looked at is offered again
+  instead of being silently skipped.
+- The batch is all-or-nothing and refuses with a stable code (`incomplete-declaration`, `invalid-basis`,
+  `item-terminal`, `no-such-item`, `checkpoint-locked`, `checkpoint-corrupt`, …). Nothing is written on a
+  refusal.
+- **The browser never writes this checkpoint.** Choices, comments and messages arrive as ordinary round
+  inputs; you decide what each one means and say so here. Elisp is the only writer (`AGENTS.md`: *Emacs
+  alone writes state*), and this is skill review state, not Fleet truth. Record only what the user
+  actually said.
+
 ### 5. End
 
 - **User ends** (End button): a `kind: end` round arrives, possibly with final inputs. Account for any
@@ -156,7 +202,7 @@ A later `/frev` **always** starts a fresh session directory. Do not try to reope
 | Code | Meaning | What to do |
 |---|---|---|
 | `store-not-open` / `fleet-not-loaded` | Fleet not started in the Emacs reached | Tell the user (`M-x fleet-dashboard`). |
-| `reader-missing` | fsum skill not installed next to frev | Tell the user; see README. |
+| `reader-missing` / `result-module-missing` | fsum skill not installed next to frev | Tell the user; see README. |
 | `selector-conflict` / `no-such-fleet` / `not-a-root` / `fleet-archived` | Identity problems, as in `/fsum` | Report; no switching. |
 | `not-current-commander` | Your runtime is not the root's current commander | The user runs `/frev` in the current commander. |
 | `invalid-review` | Your JSON did not validate | Fix the listed errors; nothing was published. |

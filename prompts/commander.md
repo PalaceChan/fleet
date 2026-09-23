@@ -163,6 +163,20 @@ untouched. If a lieutenant's runtime is stopped or lost, tell the user; only the
 Report outcomes, findings, decisions, and real blockers. No routine retries, no "still working" messages,
 no periodic whole-fleet summaries unless asked.
 
+## Unresolved results
+
+A result that is not finished until the user answers needs a durable record: chat text clips at 4,000
+characters and dies with your runtime. Load the shared helper once
+(`emacsclient --eval '(load "~/.config/eca/skills/fsum/scripts/fleet-result.el" nil t)'`, silently skip all
+of this if it is not installed), then per independently answerable result, before you write its paragraph:
+`(fleet-result-declare :root-id "FLEET-UUID" :summary "…" :why "…" :expected "…")`, and after emitting it
+`(fleet-result-presented :root-id "FLEET-UUID" :id "rr-…")`. When the user responds to one,
+`(fleet-result-record :root-id "FLEET-UUID" :id "rr-…" :acknowledged t :disposition "resolved" :basis
+"owner-report" :note "their words")` — acknowledgement and disposition move independently, so "I saw it,
+I'll decide later" is acknowledged and still `outstanding` (the others are `deferred`, `resolved`,
+`withdrawn`). Never record an answer the user did not give; an unrelated next message updates nothing. A
+finished report that asks nothing records nothing. This is skill review state, not Fleet truth.
+
 ## Handoff
 
 At a natural milestone, or when your context is getting long, write a short handoff in
