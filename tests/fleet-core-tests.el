@@ -1263,6 +1263,55 @@ a root with lieutenants or open requests cannot be retired."
         ;; name reusable after archive
         (should (fleet-core-test-study store fid))))))
 
+(defun fleet-core-test-verified-study (store fid &optional name)
+  "Start a study NAME in FID, report it done and verify its report; return its id."
+  (let* ((task (fleet-core-test-study store fid name)) (tid (plist-get task :id)))
+    (fleet-core-test-start store tid)
+    (fleet-core-task-status store :runtime-id (fleet-core-test-runtime store tid) :phase "done"
+                            :artifacts '((:kind "report" :rel-path "report.md")))
+    (fleet-core-artifact-verify store :artifact-id (plist-get (fleet-store-query1 store "SELECT id FROM artifacts WHERE task_id = ?" tid) :id)
+                                :actor "c" :accepted t)
+    tid))
+
+(defun fleet-core-test-open-request (store root-id lieutenant-id &optional subject)
+  "Insert an open request from ROOT-ID to LIEUTENANT-ID (what fleet_delegate records); return its id."
+  (let ((id (fleet-paths-uuid)) (now (fleet-paths-now)))
+    (fleet-store-transaction store
+      (fleet-store-insert store "requests" (list :id id :parent-fleet-id root-id :child-fleet-id lieutenant-id
+                                                 :subject (or subject "outcome") :state "open" :created-at now :updated-at now)))
+    id))
+
+(ert-deftest fleet-core-teardown-refuses-an-unreported-verified-result-on-an-open-request ()
+  "Fleet lieutenant 2026-09-23: a corrective study was verified at 10:00:04 and
+archived at 10:00:06 while its parent request stayed open with no upstream
+report until 11:11:47.  Teardown of a lieutenant's verified task, while the
+lieutenant is party to an open request, is refused until a report names the
+result; nothing is settled, stopped or archived by the refusal."
+  (fleet-test-with-fakes
+    (let* ((rid (fleet-core-test-fleet store "root"))
+           (lid (plist-get (fleet-core-create-fleet store "fleet" :parent-id rid :charter "Fleet source") :id))
+           (req (fleet-core-test-open-request store rid lid "diagnosis"))
+           (tid (fleet-core-test-verified-study store lid "corrective")))
+      (should (fleet-core-task-verified-p store (fleet-store-get store "tasks" tid)))
+      ;; A report upstream that does not name the task (legacy shape) is not coverage.
+      (fleet-store-transaction store
+        (fleet-store-append-event store :fleet-id rid :kind "lieutenant-report" :actionable t
+                                  :payload (list :lieutenant "fleet" :lieutenant-fleet-id lid :request-id req :kind "progress" :detail "working")))
+      (let ((err (fleet-test-should-fail 'report-pending (fleet-core-teardown-task store tid))))
+        (should (equal (plist-get (fleet-error-evidence err) :task-id) tid))
+        (should (equal (plist-get (fleet-error-evidence err) :open-requests) (list req))))
+      (let ((task (fleet-store-get store "tasks" tid)))
+        (should (equal (plist-get task :lifecycle) "active"))
+        (should (equal (plist-get task :phase) "done")))
+      (should (= 0 (fleet-store-scalar store "SELECT COUNT(*) FROM operations WHERE task_id = ? AND kind = 'task-teardown'" tid)))
+      (should (equal (plist-get (fleet-store-get store "requests" req) :state) "open"))
+      ;; A root fleet's tasks and a lieutenant without open requests are not gated.
+      (let ((root-task (fleet-core-test-verified-study store rid "root-study")))
+        (should (equal (plist-get (fleet-test-wait-op store (plist-get (fleet-core-teardown-task store root-task) :operation-id)) :state) "done")))
+      (let* ((idle (plist-get (fleet-core-create-fleet store "idle" :parent-id rid :charter "Nothing delegated") :id))
+             (idle-task (fleet-core-test-verified-study store idle "side-work")))
+        (should (equal (plist-get (fleet-test-wait-op store (plist-get (fleet-core-teardown-task store idle-task) :operation-id)) :state) "done"))))))
+
 (ert-deftest fleet-core-teardown-change-task-refuses-dirty-then-retains-and-removes ()
   (fleet-test-with-fakes
     (let* ((repo (fleet-git-test-repo "proj2"))
