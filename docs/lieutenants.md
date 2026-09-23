@@ -124,34 +124,47 @@ actionable event in the parent's inbox. Both are already durable, ordered, idemp
   `fleet-store-actionable-event-hook`. `settled` also closes the `requests` row; a settled request
   cannot be settled again (`request-settled`). A report without `request_id` is an out-of-band notice
   (e.g. the human talked to the lieutenant directly). Refuses from a fleet without a parent. Optional
-  `task_ids` (ids or names of the lieutenant's own tasks) name the verified results a `progress` or
-  `settled` report covers; see *Verified results are reported before teardown* below.
+  `task_ids` (ids or names of the lieutenant's own tasks) name the results or blockers a report is
+  about; see *Results go upstream as they happen; teardown never waits for the root* below.
 
-**Verified results are reported before teardown** (`fleet-core-task-report-pending`, incident
-2026-09-23: a lieutenant's corrective study was verified at 10:00:04 and archived at 10:00:06 UTC while
-its parent request stayed open with no report until 11:11:47; every wake had been accepted). While a
-lieutenant is the child of **any open request**, `fleet_task_teardown` of one of its verified tasks is
-refused `report-pending` (evidence: task and open request ids) until a `fleet_report` has named that
-task in `task_ids`. Naming is evidence-checked, not asserted: each task must be in the lieutenant's fleet
-(`forbidden`) and pass `fleet-core-task-verified-p` at report time (`deliverable-unverified`); a
-`question` cannot name tasks (`invalid-request`); any refusal records nothing. In the report's transaction
-each named task gets a non-actionable `task-reported` event (report event id, request id, kind, brief
-revision, `result-digest` over the brief revision and every artifact's verified hash), and the root's
-`lieutenant-report` payload and wake line list the task names — never result content; the text is the
-lieutenant's. Teardown compares the current digest, so a retask or a re-verified deliverable needs a new
-report. Admission checks it, and the evidence step re-checks it after the runtime stop (a request opened
-meanwhile refuses there, `verified result not reported upstream`, task back to `active`). The rule is
-about **reporting, not settling**: Fleet has no task→request link and one task rarely proves a
-multi-task request done, so a `progress` report and a teardown leave the request open, nothing is ever
-settled automatically, and the lieutenant names the request (or none, for out-of-band work) itself. The
-report is an event persisted with its root receipt; teardown needs neither a live root commander nor its
-acknowledgement, which is delivery, not acceptance. Not gated: root fleets (they report to the human),
-a lieutenant with no open request (nothing upstream is waiting), and the human's `M-x fleet-task-close`
-(human authority, no teardown). **Upgrade:** no schema change. Old `lieutenant-report` events carry no
-`task-reported` marker, so an existing verified-but-unarchived lieutenant task on an open request is
-refused until one report names it — the intended rollout, one `progress` call; archived tasks and
-settled requests are untouched. A running runtime keeps the tool schema it loaded (`fleet-rpc--tools`),
-so `task_ids` appears with the same restart that loads the new Lisp.
+**Results go upstream as they happen; teardown never waits for the root** (`fleet-core-task-report-pending`,
+incident 2026-09-23: a lieutenant's corrective study was verified at 10:00:04 and archived at 10:00:06
+UTC while its parent request stayed open with no report until 11:11:47; every wake had been accepted).
+The owner's contract: a factual result or a blocker goes upstream promptly — a done-but-unverified result
+as `progress` labelled unverified, the verified result again after verification (`progress` for partial
+or multi-task work, `settled` only when the whole request is done); a durable report or a visible
+obligation exists before teardown starts; and once teardown's own preconditions hold it runs without
+waiting for the root's receipt, acknowledgement, verification, chat delivery or a human answer.
+
+- **Labels are Fleet's, not the model's.** Each task in `task_ids` must be in the lieutenant's fleet
+  (`forbidden`; unknown: `no-such-task`); any refusal records nothing and leaves the action key free for a
+  retry. Any kind may name tasks (a `question` about a blocked task, say). In the report's transaction each
+  named task gets a non-actionable `task-reported` event: report event id, request id, kind, `phase`,
+  `verified` (`fleet-core-task-verified-p` at that instant), brief revision and `result-digest` (brief
+  revision plus every artifact's verification flag and verified hash). The root's `lieutenant-report`
+  payload lists `tasks` (id, name, phase, verified) and the wake line says e.g. ``reports `nav` (done,
+  unverified)``. Fleet adds names and labels, never result content; the text is the lieutenant's.
+- **The obligation.** While a lieutenant is the child of **any open request**, a done task whose current
+  result no report has named *as verified* is owed: the lieutenant's `fleet_snapshot` shows it as
+  `report-owed` (the open request ids), and `fleet_task_teardown` of such a verified task is refused
+  `report-pending` (task and open request ids). An unverified report does not discharge it; a retask or a
+  re-verified deliverable changes the digest and needs a new report. Admission checks it and the evidence
+  step re-checks it after the runtime stop (a request opened meanwhile refuses there, `verified result not
+  reported upstream`, task back to `active`). A failed report therefore leaves the task visibly owed and
+  unarchived — never a silent archive.
+- **No waiting on the root.** The report is an event persisted with its root receipt in the same
+  transaction; teardown looks only at that durable fact. A lost, busy or parked root commander, a pending
+  or claimed receipt, and an unanswered question delay delivery only, never teardown.
+- **Reporting, not settling.** Fleet has no task→request link and one task rarely proves a multi-task
+  request done, so a `progress` report and a teardown leave the request open, nothing is settled
+  automatically, and the lieutenant names the request (or none, for out-of-band work) itself. Not gated:
+  root fleets (they report to the human), a lieutenant with no open request (nothing upstream is
+  waiting), and the human's `M-x fleet-task-close` (human authority, no teardown).
+- **Upgrade.** No schema change. Old `lieutenant-report` events carry no `task-reported` marker, so an
+  existing done lieutenant task on an open request shows as owed and a verified one is refused teardown
+  until one report names it — the intended rollout, one `progress` call; archived tasks and settled
+  requests are untouched. A running runtime keeps the tool schema it loaded (`fleet-rpc--tools`), so
+  `task_ids` appears with the same restart that loads the new Lisp.
 
 `requests`: `id, parent_fleet_id, child_fleet_id, subject, state ('open','settled'), outcome, summary,
 message_id, created_at, updated_at`. The request text lives in the message row; the brief contract
@@ -181,9 +194,9 @@ requests. A settled request is evidence for the commander to verify, not user ac
 - **Watch** (`fleet-watch-start/stop`) on a root applies to its children.
 - **Destroy.** `fleet-destroy root` refuses while it has unarchived children; `fleet-destroy root/child`
   retires an empty lieutenant. Open requests block a lieutenant's retirement.
-- **Teardown.** A lieutenant's verified task is torn down only after a report named it while any
-  request to the lieutenant is open (§4, *Verified results are reported before teardown*); the refusal
-  applies to dashboard `t` as well, since UI and tools share admission.
+- **Teardown.** While any request to the lieutenant is open, its verified task is torn down only after
+  a report named it as verified (§4, *Results go upstream as they happen*), and then without waiting for
+  the root; the refusal applies to dashboard `t` as well, since UI and tools share admission.
 - **Old state.** Existing fleets have `parent_id NULL` and behave as before. No task is moved.
 - **Model approvals.** A lieutenant routes its operators under the same `models` policy and hits the
   same `model-needs-approval` gate; having no user of its own, it batches its proposals for a request
@@ -278,11 +291,12 @@ parentheses. Verify through the disposable `fleet-test` server per [testing](tes
   Not yet covered: a wire-level RPC test through `fleet-rpc-dispatch` for the three tools (the handlers
   are thin; add one when touching `fleet-rpc-tests.el`). `fleet_report` and `fleet_task_teardown` are
   now covered on the wire by `fleet-rpc-lieutenant-reports-a-verified-result-before-teardown-over-the-socket`.
-- [x] **L01.5a Verified results reported before teardown** (`fleet-core.el`, `fleet-supervisor.el`,
+- [x] **L01.5a Results reported upstream before teardown** (`fleet-core.el`, `fleet-supervisor.el`,
   `fleet-rpc.el`, `tools-v1.json`, `prompts/lieutenant.md`): `fleet_report` `task_ids`, `task-reported`
-  markers, `report-pending` teardown refusal (§4). Tests: `fleet-core-teardown-refuses-an-unreported-verified-result-on-an-open-request`
+  markers with Fleet's verified/unverified label, snapshot `report-owed`, `report-pending` teardown refusal
+  (§4). Tests: `fleet-core-teardown-refuses-an-unreported-verified-result-on-an-open-request`
   (failed on the base commit), `fleet-core-teardown-rechecks-verification-and-report-after-the-runtime-stops`,
-  `fleet-supervisor-verified-result-is-reported-before-teardown-and-nothing-settles-itself`,
+  `fleet-supervisor-results-go-up-as-they-happen-and-teardown-never-waits-for-the-root`,
   `fleet-supervisor-result-report-is-durable-while-the-root-is-lost-or-parked`, and the wire test above.
 - [x] **L01.6 Lifecycle glue** (`fleet.el`, `fleet-core.el`, core tests): `fleet-core-ensure-lieutenants`
   applied and lieutenants started by `fleet--start-commander-and-show` on a root; selectors in

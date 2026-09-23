@@ -904,32 +904,42 @@ path that became unreadable or empty since verification counts as changed."
 ;; within two seconds while its parent request stayed open, and nothing
 ;; upstream heard of the result for 72 minutes.  Every wake had been accepted;
 ;; what was missing was the lieutenant's report, and teardown let the result
-;; leave the fleet without one.  There is no task→request link to say which
-;; request a result belongs to, and one task rarely proves a multi-task
-;; request done, so the rule is deliberately about reporting, not settling:
+;; leave the fleet without one.  The owner's contract: a result goes upstream
+;; as soon as it exists (labelled unverified until verified), and a durable
+;; report or a visible obligation exists before teardown starts; teardown then
+;; runs on its own preconditions and waits for no root receipt, root
+;; verification, delivery or human answer.  There is no task→request link to
+;; say which request a result belongs to, and one task rarely proves a
+;; multi-task request done, so the rule is about reporting, not settling:
 ;; while a lieutenant is party to any open request, a verified task stays
-;; until a `fleet_report' has named it.  The report records a
-;; `task-reported' event on the task binding the exact verified result it
-;; covered, so a retask or re-verification needs a fresh report.
+;; until a `fleet_report' has named its verified result.  Each named task gets
+;; a `task-reported' event binding the exact result it saw (verified or not),
+;; so a retask or re-verification needs a fresh report.  The obligation is a
+;; teardown refusal and a snapshot field, never a silent archive.
 
 (defun fleet-core-task-result-digest (store task)
-  "Digest of TASK's current result: brief revision and each artifact's verified hash."
+  "Digest of TASK's current result.
+Covers the brief revision and each artifact's verification flag and
+verified hash, so an unverified report never matches a verified result."
   (fleet-paths-sha256-string
    (format "%s|%s" (plist-get task :brief-revision)
-           (mapconcat (lambda (a) (format "%s=%s" (plist-get a :id) (or (plist-get a :verified-hash) "")))
-                      (fleet-store-query store "SELECT id, verified_hash FROM artifacts WHERE task_id = ? ORDER BY id" (plist-get task :id))
+           (mapconcat (lambda (a) (format "%s=%s:%s" (plist-get a :id) (or (plist-get a :verified) 0) (or (plist-get a :verified-hash) "")))
+                      (fleet-store-query store "SELECT id, verified, verified_hash FROM artifacts WHERE task_id = ? ORDER BY id" (plist-get task :id))
                       ","))))
 
 (defun fleet-core-task-reported-p (store task)
-  "Non-nil when a lieutenant report named TASK's current verified result."
+  "Non-nil when a lieutenant report named TASK's current result as verified."
   (let ((digest (fleet-core-task-result-digest store task)))
-    (cl-some (lambda (e) (equal (plist-get (fleet-store-unjson (plist-get e :payload)) :result-digest) digest))
+    (cl-some (lambda (e)
+               (let ((p (fleet-store-unjson (plist-get e :payload))))
+                 (and (eq (plist-get p :verified) t) (equal (plist-get p :result-digest) digest))))
              (fleet-store-query store "SELECT payload FROM events WHERE task_id = ? AND kind = 'task-reported'" (plist-get task :id)))))
 
 (defun fleet-core-task-report-pending (store task)
-  "Ids of the open requests still owed a report of TASK's result, or nil.
+  "Ids of the open requests still owed a verified report of TASK, or nil.
 Only a lieutenant's tasks owe one, only while the lieutenant is the child
-of an open request, and only until a report has named this exact result."
+of an open request, and only until a report has named this exact result
+as verified."
   (let ((fleet (fleet-store-get store "fleets" (plist-get task :fleet-id))))
     (when (plist-get fleet :parent-id)
       (let ((open (mapcar (lambda (r) (plist-get r :id))
@@ -1360,7 +1370,7 @@ lieutenant overlay and its charter; a root gets its lieutenants listed."
             (unless parent (fleet-core--lieutenants-section store fleet))
             (fleet-core--models-section store rt)
             (when recovery-summary (concat "\n## Recovery summary\n" recovery-summary "\n"))
-            "\n## Current snapshot\n```json\n" (fleet-store-json (fleet-core--compact-snapshot snap)) "\n```\n"
+            "\n## Current snapshot\n```json\n" (fleet-store-json (fleet-core--compact-snapshot snap store)) "\n```\n"
             (let ((about (fleet-paths-read-file (expand-file-name "about.md" root))))
               (when about (concat "\n## about.md\n" about)))
             (let ((ctx (fleet-paths-read-file (expand-file-name "commander/context.md" root))))
@@ -1407,8 +1417,10 @@ commander needs it to turn casual model names into exact ids."
              (t (format "- No owner policy file (`%s`); every task without an explicit `model` gets the operator default.\n"
                         (fleet-config-file)))))))
 
-(defun fleet-core--compact-snapshot (snap)
-  "Reduce SNAP to the fields a model needs."
+(defun fleet-core--compact-snapshot (snap &optional store)
+  "Reduce SNAP to the fields a model needs.
+With STORE, a lieutenant's done task whose verified result is still owed
+upstream carries `:report-owed', the open request ids."
   (list :revision (plist-get snap :revision)
         :fleets (mapcar (lambda (f)
                           (list :name (plist-get f :name) :lifecycle (plist-get f :lifecycle) :supervision (plist-get f :supervision)
@@ -1425,7 +1437,9 @@ commander needs it to turn casual model names into exact ids."
                                                        :delivery (plist-get task :delivery-mode)
                                                        :runtime (and (plist-get task :runtime) (plist-get (plist-get task :runtime) :lifecycle))
                                                        :open-decisions (mapcar (lambda (d) (list :id (plist-get d :id) :question (plist-get d :question))) (plist-get task :decisions))
-                                                       :artifacts (mapcar (lambda (a) (list :id (plist-get a :id) :kind (plist-get a :kind) :path (plist-get a :rel-path) :verified (plist-get a :verified))) (plist-get task :artifacts))))
+                                                       :artifacts (mapcar (lambda (a) (list :id (plist-get a :id) :kind (plist-get a :kind) :path (plist-get a :rel-path) :verified (plist-get a :verified))) (plist-get task :artifacts))
+                                                       :report-owed (and store (equal (plist-get task :phase) "done")
+                                                                         (fleet-core-task-report-pending store task))))
                                                (plist-get f :tasks))))
                         (plist-get snap :fleets))))
 

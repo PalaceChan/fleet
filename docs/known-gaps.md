@@ -79,10 +79,12 @@ Source: [`fleet-core.el`](../lisp/fleet-core.el), [`fleet-rpc.el`](../lisp/fleet
 - **Lieutenant results and requests have no link:** `tasks` has no request column and a request records only
   its first message (`schema/003.sql`), so Fleet cannot tell which request a lieutenant's task serves. The
   report-before-teardown guard (`fleet-core-task-report-pending`, 2026-09-23) is therefore fleet-granular:
-  while any request to the lieutenant is open, a verified task's teardown waits for a report naming it,
-  whatever request that report names; the owed report is visible only as the `report-pending` refusal, not
-  in snapshots; the human's `fleet-task-close` is not gated. It guarantees an upstream event before
-  archive, not that the root read it or the human heard. **Close with:** D13.
+  while any request to the lieutenant is open, a verified task's teardown waits for a report naming it
+  as verified, whatever request that report names; the owed report shows in the lieutenant's own
+  snapshot (`report-owed`) and as the `report-pending` refusal, not on the dashboard or in the root's
+  view; the human's `fleet-task-close` is not gated. Promptness is doctrine: Fleet does not notice a done
+  task that stays unreported but is never torn down. It guarantees an upstream event before archive, not
+  that the root read it or the human heard. **Close with:** D13.
 - **Status/wait idempotency:** `fleet_status` and `fleet_wait` bypass the keyed mutation wrapper and their
   schemas do not accept `idempotency_key`. Repeated status can create repeated events/decisions. The schema
   overview's blanket statement that every mutation is keyed is too broad. **Close with:** an aligned

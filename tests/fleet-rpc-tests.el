@@ -206,6 +206,11 @@ after it the same teardown call is admitted."
         (let ((err (plist-get (fleet-rpc-test-req "fleet_task_teardown" ltok (list :task_id tid) "t1") :error)))
           (should (equal "report-pending" (plist-get err :code)))
           (should (equal (vector req) (plist-get (plist-get err :evidence) :open-requests))))
+        ;; The obligation is visible in the lieutenant's snapshot on the wire.
+        (let* ((fleets (plist-get (plist-get (fleet-rpc-test-req "fleet_snapshot" ltok) :result) :fleets))
+               (task (aref (plist-get (aref fleets 0) :tasks) 0)))
+          (should (equal tid (plist-get task :id)))
+          (should (equal (vector req) (plist-get task :report-owed))))
         (should (equal "invalid-request" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_report" ltok (list :kind "progress" :text "nav verified" :request_id req :task_ids "nav") "p0"))))
         (let ((r (plist-get (fleet-rpc-test-req "fleet_report" ltok (list :kind "progress" :text "nav verified" :request_id req :task_ids (vector "nav")) "p1") :result)))
           (should (equal "open" (plist-get r :state)))
