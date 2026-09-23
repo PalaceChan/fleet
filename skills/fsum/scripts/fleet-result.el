@@ -732,9 +732,21 @@ Each entry is a plist with :runtime-id :file :size :started-at :status
                   out)))))
     (sort (nreverse out) (lambda (a b) (string< (plist-get a :started-at) (plist-get b :started-at))))))
 
-(defun fleet-result--head-hash (file)
-  "Hash of the first 256 bytes of FILE, identifying it across scans."
-  (secure-hash 'sha256 (fleet-result--raw-slice file 0 (min 256 (or (file-attribute-size (file-attributes file)) 0)))))
+(defconst fleet-result-head-window 256
+  "Most bytes of a transcript prefix a cursor hashes to prove file identity.")
+
+(defun fleet-result--head-hash (file limit)
+  "Hash of the first LIMIT bytes of FILE.
+A cursor hashes exactly the prefix it already consumed, capped at
+`fleet-result-head-window'.  Hashing a fixed window instead would make the
+hash of a short file change every time the file merely grew, and every
+append-only transcript would look like a different file on the next review."
+  (secure-hash 'sha256 (fleet-result--raw-slice
+                        file 0 (min limit (or (file-attribute-size (file-attributes file)) 0)))))
+
+(defun fleet-result--cursor-window (bytes)
+  "Prefix length a cursor standing at BYTES hashes."
+  (min fleet-result-head-window (max 0 (or bytes 0))))
 
 (defun fleet-result--cursor (cursors runtime-id)
   "Cursor for RUNTIME-ID among CURSORS, or nil."
@@ -849,20 +861,24 @@ closed because a file no longer holds it."
         (_
          (let* ((file (plist-get run :file))
                 (size (plist-get run :size))
-                (head (fleet-result--head-hash file))
                 (cursor (fleet-result--cursor cursors (plist-get run :runtime-id)))
+                (cursor-bytes (or (plist-get cursor :bytes) 0))
+                ;; Shrink is checked before identity: a file shorter than the cursor
+                ;; cannot supply the prefix the cursor hashed, so the identity test
+                ;; would report the wrong reason for the same evidence.
                 (start (cond ((null cursor) 0)
-                             ((not (equal (plist-get cursor :head-hash) head))
-                              (push (format "Transcript of runtime %s changed identity since the last review; it was rescanned from the start"
-                                            (plist-get run :runtime-id))
-                                    coverage)
-                              0)
-                             ((> (or (plist-get cursor :bytes) 0) size)
+                             ((> cursor-bytes size)
                               (push (format "Transcript of runtime %s shrank since the last review; it was rescanned from the start, and nothing is assumed closed"
                                             (plist-get run :runtime-id))
                                     coverage)
                               0)
-                             (t (or (plist-get cursor :bytes) 0))))
+                             ((not (equal (plist-get cursor :head-hash)
+                                          (fleet-result--head-hash file (fleet-result--cursor-window cursor-bytes))))
+                              (push (format "Transcript of runtime %s changed identity since the last review; it was rescanned from the start"
+                                            (plist-get run :runtime-id))
+                                    coverage)
+                              0)
+                             (t cursor-bytes)))
                 (contiguous t))
            (cond
             ((<= budget 0)
@@ -874,7 +890,8 @@ closed because a file no longer holds it."
              (push (list :runtime-id (plist-get run :runtime-id) :status "up-to-date" :from start :to size
                          :size size :turns 0)
                    run-reports)
-             (push (list :runtime-id (plist-get run :runtime-id) :bytes size :size size :head-hash head
+             (push (list :runtime-id (plist-get run :runtime-id) :bytes size :size size
+                         :head-hash (fleet-result--head-hash file (fleet-result--cursor-window size))
                          :updated-at (fleet-result-now))
                    new-cursors))
             (t
@@ -901,7 +918,10 @@ closed because a file no longer holds it."
                      run-reports)
                (when contiguous
                  (push (list :runtime-id (plist-get run :runtime-id) :bytes (plist-get res :consumed)
-                             :size size :head-hash head :updated-at (fleet-result-now))
+                             :size size
+                             :head-hash (fleet-result--head-hash
+                                         file (fleet-result--cursor-window (plist-get res :consumed)))
+                             :updated-at (fleet-result-now))
                        new-cursors)))))))))
     ;; `collected' is newest-run-first with each run's turns in order; sort by time.
     (let* ((turns (sort collected (lambda (a b) (string< (or (plist-get a :at) "") (or (plist-get b :at) "")))))
