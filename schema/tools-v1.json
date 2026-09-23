@@ -130,7 +130,7 @@
     {
       "name": "fleet_task_teardown",
       "roles": ["commander", "lieutenant"],
-      "description": "Request normal verified teardown of a done+verified task. Returns an operation id; the result is an event. There is no force or discard option.",
+      "description": "Request normal verified teardown of a done+verified task. Returns an operation id; the result is an event. There is no force or discard option. A lieutenant party to an open request is refused (report-pending) until a fleet_report with task_ids has named the task's verified result.",
       "inputSchema": {"type": "object", "required": ["idempotency_key", "task_id"], "properties": {"idempotency_key": {"type": "string"}, "task_id": {"type": "string"}, "expected_revision": {"type": "integer"}}, "additionalProperties": false}
     },
     {
@@ -148,8 +148,8 @@
     {
       "name": "fleet_report",
       "roles": ["lieutenant"],
-      "description": "Report to your commander. kind question: a decision you need (end your turn; the answer arrives as a message). kind progress: a milestone or plan-changing finding only. kind settled: the request is finished; give outcome (done, failed, partial), what was delivered, the evidence you verified and what remains; a settled request is closed and cannot be settled again. Name the request_id you report on; omit it only for an out-of-band notice (for example the human addressed you directly). Wakes the commander.",
-      "inputSchema": {"type": "object", "required": ["idempotency_key", "kind", "text"], "properties": {"idempotency_key": {"type": "string"}, "kind": {"type": "string", "enum": ["question", "progress", "settled"]}, "text": {"type": "string"}, "request_id": {"type": "string"}, "outcome": {"type": "string", "enum": ["done", "failed", "partial"], "description": "Required with kind settled."}}, "additionalProperties": false}
+      "description": "Report to your commander. kind question: a decision you need (end your turn; the answer arrives as a message). kind progress: a milestone or plan-changing finding only; a verified operator result and a deliberate hold are milestones. kind settled: the request is finished; give outcome (done, failed, partial), what was delivered, the evidence you verified and what remains; a settled request is closed and cannot be settled again. Name the request_id you report on; omit it only for an out-of-band notice (for example the human addressed you directly). task_ids names the verified tasks whose results this report covers (refused with deliverable-unverified unless each is done with every artifact verified); while you are party to an open request, fleet_task_teardown refuses a verified task (report-pending) until a report has named it. Naming a task settles nothing. Wakes the commander.",
+      "inputSchema": {"type": "object", "required": ["idempotency_key", "kind", "text"], "properties": {"idempotency_key": {"type": "string"}, "kind": {"type": "string", "enum": ["question", "progress", "settled"]}, "text": {"type": "string"}, "request_id": {"type": "string"}, "outcome": {"type": "string", "enum": ["done", "failed", "partial"], "description": "Required with kind settled."}, "task_ids": {"type": "array", "items": {"type": "string"}, "description": "Ids or names of your verified tasks whose results this progress or settled report covers."}}, "additionalProperties": false}
     },
     {
       "name": "fleet_operation",

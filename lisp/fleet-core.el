@@ -898,6 +898,51 @@ path that became unreadable or empty since verification counts as changed."
                                             (fleet-error nil))))))
                         arts)))))
 
+;;;; Upstream report obligation of a lieutenant's verified result (docs/lieutenants.md §4)
+;;
+;; Fleet lieutenant 2026-09-23: a corrective study was verified and archived
+;; within two seconds while its parent request stayed open, and nothing
+;; upstream heard of the result for 72 minutes.  Every wake had been accepted;
+;; what was missing was the lieutenant's report, and teardown let the result
+;; leave the fleet without one.  There is no task→request link to say which
+;; request a result belongs to, and one task rarely proves a multi-task
+;; request done, so the rule is deliberately about reporting, not settling:
+;; while a lieutenant is party to any open request, a verified task stays
+;; until a `fleet_report' has named it.  The report records a
+;; `task-reported' event on the task binding the exact verified result it
+;; covered, so a retask or re-verification needs a fresh report.
+
+(defun fleet-core-task-result-digest (store task)
+  "Digest of TASK's current result: brief revision and each artifact's verified hash."
+  (fleet-paths-sha256-string
+   (format "%s|%s" (plist-get task :brief-revision)
+           (mapconcat (lambda (a) (format "%s=%s" (plist-get a :id) (or (plist-get a :verified-hash) "")))
+                      (fleet-store-query store "SELECT id, verified_hash FROM artifacts WHERE task_id = ? ORDER BY id" (plist-get task :id))
+                      ","))))
+
+(defun fleet-core-task-reported-p (store task)
+  "Non-nil when a lieutenant report named TASK's current verified result."
+  (let ((digest (fleet-core-task-result-digest store task)))
+    (cl-some (lambda (e) (equal (plist-get (fleet-store-unjson (plist-get e :payload)) :result-digest) digest))
+             (fleet-store-query store "SELECT payload FROM events WHERE task_id = ? AND kind = 'task-reported'" (plist-get task :id)))))
+
+(defun fleet-core-task-report-pending (store task)
+  "Ids of the open requests still owed a report of TASK's result, or nil.
+Only a lieutenant's tasks owe one, only while the lieutenant is the child
+of an open request, and only until a report has named this exact result."
+  (let ((fleet (fleet-store-get store "fleets" (plist-get task :fleet-id))))
+    (when (plist-get fleet :parent-id)
+      (let ((open (mapcar (lambda (r) (plist-get r :id))
+                          (fleet-store-query store "SELECT id FROM requests WHERE child_fleet_id = ? AND state = 'open' ORDER BY created_at" (plist-get fleet :id)))))
+        (and open (not (fleet-core-task-reported-p store task)) open)))))
+
+(defun fleet-core--assert-reported (store task)
+  "Signal `report-pending' when TASK's verified result is owed upstream."
+  (when-let* ((open (fleet-core-task-report-pending store task)))
+    (fleet-fail 'report-pending
+                "Report this verified result to your commander before teardown: fleet_report kind progress (or settled, if it finishes the request) with task_ids naming this task"
+                :task-id (plist-get task :id) :task (plist-get task :name) :open-requests open)))
+
 (cl-defun fleet-core-decision-resolve (store &key decision-id answer actor authority expected-revision evidence)
   "Resolve DECISION-ID with ANSWER by ACTOR holding AUTHORITY (commander/human).
 Human AUTHORITY asserted by a runtime actor is a *relay* of an answer the
@@ -1824,6 +1869,7 @@ No force/discard parameter exists."
       (unless (fleet-core-task-verified-p store task)
         (fleet-fail 'deliverable-unverified "Teardown requires done + verified deliverables at the current brief revision"
                     :phase (plist-get task :phase)))
+      (fleet-core--assert-reported store task)
       (let ((op (fleet-core-operation-begin store "task-teardown" :fleet-id (plist-get task :fleet-id) :task-id task-id
                                             :expected-revision (plist-get task :entity-revision))))
         (fleet-store-transaction store
@@ -1859,12 +1905,17 @@ Waits for an observed turn end first."
     (fleet-core-operation-finish store op :state "failed" :error reason :evidence evidence))
   (when callback (funcall callback (fleet-store-get store "operations" op))))
 
-(defun fleet-core--teardown-evidence (store op task callback)
+(cl-defun fleet-core--teardown-evidence (store op task callback)
   "Teardown step: collect Git evidence (change tasks) and decide removals.
-Non-change tasks archive directly."
+Non-change tasks archive directly.  A `cl-defun' for its early refusals:
+a plain `defun' has no block, and `cl-return-from' signalled `no-catch'."
   (fleet-core-operation-step store op "runtime-stopped")
   (unless (fleet-core-task-verified-p store task)
     (fleet-core--teardown-refuse store op task "deliverables changed after verification" nil callback)
+    (cl-return-from fleet-core--teardown-evidence nil))
+  ;; A request opened or a result re-verified while the runtime stopped.
+  (when-let* ((open (fleet-core-task-report-pending store task)))
+    (fleet-core--teardown-refuse store op task "verified result not reported upstream" (list :open-requests open) callback)
     (cl-return-from fleet-core--teardown-evidence nil))
   (if (not (and (equal (plist-get task :kind) "change") (plist-get task :workspace-path)))
       (fleet-core--teardown-archive store op task nil callback)

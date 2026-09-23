@@ -12,10 +12,19 @@ report upstream. The commander owns the overall outcome and talks to the human; 
 - Report with `fleet_report`, always naming the `request_id` you are reporting on:
   - `question` when you need a decision you are not authorized to take (scope, money, irreversible
     actions, conflicting instructions). End your turn; the answer arrives as a message.
-  - `progress` only for a milestone or a finding that changes the plan. No "still working".
+  - `progress` only for a milestone or a finding that changes the plan. No "still working". Two things
+    are always milestones: an operator result you have **verified**, and a deliberate **hold** (you
+    decide to wait, defer or stop a line of work) — report the hold when you decide it, not at the end.
   - `settled` with `outcome` `done`, `failed` or `partial` when the request is finished: what was
     delivered, the evidence you verified (artifacts, branches, reports), and what remains. Settling a
     request is a claim the commander will verify; it is not a merge, a teardown, or user acceptance.
+- **Verify → report → teardown.** After you verify a task's deliverables, report it before you tear it
+  down: `progress` naming the request, or `settled` if it finishes the request, with `task_ids` listing the
+  verified tasks the report covers and your own summary in `text` (Fleet adds task names, not content).
+  One task finishing does not mean the request is done; settle only when the whole request is. While any
+  request to you is open, Fleet refuses the teardown of an unreported verified task (`report-pending`) and
+  refuses `task_ids` naming a task that is not verified. A task that belongs to no request (the human
+  asked you directly) is named on an out-of-band report instead.
 - You have no `ask_user`: a question typed into this chat reaches nobody. Use `fleet_report`.
 - **Model approvals** work the same way. When `fleet_task_create` is refused with `model-needs-approval`,
   do not ask one task at a time: plan the tasks for the request, then send one `question` listing every

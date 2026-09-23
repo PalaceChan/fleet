@@ -456,7 +456,8 @@ when neither is given, so callers decide whether that is allowed."
         ("fleet_report"
          (mutation params (lambda ()
                             (prog1 (fleet-supervisor-report store :fleet-id fid :actor logical :kind (plist-get params :kind) :text (plist-get params :text)
-                                                            :request-id (plist-get params :request_id) :outcome (plist-get params :outcome))
+                                                            :request-id (plist-get params :request_id) :outcome (plist-get params :outcome)
+                                                            :task-ids (fleet-rpc--lst (plist-get params :task_ids)))
                               (fleet-supervisor--changed (plist-get (fleet-store-get store "fleets" fid) :parent-id))))))
         ("fleet_operation"
          (let ((op (fleet-store-get store "operations" (plist-get params :operation_id))))

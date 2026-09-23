@@ -185,6 +185,36 @@ stale revision, a duplicate and a commander-authority row."
           (should (eq t (plist-get (plist-get (fleet-rpc-test-req "fleet_decision_resolve" ltok (list :decision_id cdid :answer "spaces") "l3") :result) :ok)))
           (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'decision-resolved' AND actionable = 1"))))))))
 
+(ert-deftest fleet-rpc-lieutenant-reports-a-verified-result-before-teardown-over-the-socket ()
+  "The report guardrail on the wire: a lieutenant's fleet_task_teardown of a
+verified, unreported task on an open request is refused `report-pending';
+fleet_report accepts `task_ids' as an array (and refuses another shape), and
+after it the same teardown call is admitted."
+  (fleet-rpc-test-with
+    (let* ((rid (fleet-core-test-fleet store "workshop"))
+           (lid (plist-get (fleet-core-create-fleet store "frontend" :parent-id rid :charter "UI") :id))
+           (root-cid (fleet-sup-test-commander store rid))
+           (lt-cid (fleet-sup-test-commander store lid)))
+      (fleet-sup-test-settle)
+      (let* ((ltok (fleet-rpc-test-token lt-cid))
+             (req (plist-get (plist-get (fleet-rpc-test-req "fleet_delegate" (fleet-rpc-test-token root-cid) (list :lieutenant "frontend" :subject "nav" :text "Goal: nav") "d1") :result) :request-id))
+             (tid (fleet-core-test-verified-study store lid "nav"))
+             (report-tool (cl-find "fleet_report" (append (plist-get (plist-get (fleet-rpc-test-req "tools_list" ltok) :result) :tools) nil)
+                                   :key (lambda (tl) (plist-get tl :name)) :test #'equal)))
+        (should req)
+        (should (plist-get (plist-get (plist-get report-tool :inputSchema) :properties) :task_ids))
+        (let ((err (plist-get (fleet-rpc-test-req "fleet_task_teardown" ltok (list :task_id tid) "t1") :error)))
+          (should (equal "report-pending" (plist-get err :code)))
+          (should (equal (vector req) (plist-get (plist-get err :evidence) :open-requests))))
+        (should (equal "invalid-request" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_report" ltok (list :kind "progress" :text "nav verified" :request_id req :task_ids "nav") "p0"))))
+        (let ((r (plist-get (fleet-rpc-test-req "fleet_report" ltok (list :kind "progress" :text "nav verified" :request_id req :task_ids (vector "nav")) "p1") :result)))
+          (should (equal "open" (plist-get r :state)))
+          (should (equal "nav" (plist-get (aref (plist-get r :tasks) 0) :name))))
+        (let ((op (plist-get (plist-get (fleet-rpc-test-req "fleet_task_teardown" ltok (list :task_id tid) "t1") :result) :operation-id)))
+          (should op)
+          (should (equal "done" (plist-get (fleet-test-wait-op store op) :state))))
+        (should (equal "open" (plist-get (fleet-store-get store "requests" req) :state)))))))
+
 (ert-deftest fleet-rpc-external-job-refuses-another-tasks-job-id ()
   "F04: over the socket, an operator naming a sibling task's job id gets
 `forbidden'; the sibling's record and its events are untouched, while the

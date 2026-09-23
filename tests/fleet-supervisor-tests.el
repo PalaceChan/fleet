@@ -152,6 +152,129 @@ commander; settling closes the request once; scope refusals hold."
             (should (member "fleet_task_create" (funcall names "lieutenant")))
             (should-not (member "fleet_report" (funcall names "operator")))))))))
 
+(defun fleet-sup-test-report (store fleet-id actor key &rest args)
+  "`fleet_report' ARGS from ACTOR of FLEET-ID keyed by KEY, as the RPC handler runs it."
+  (fleet-store-with-action store actor key args
+    (apply #'fleet-supervisor-report store :fleet-id fleet-id :actor actor args)))
+
+(ert-deftest fleet-supervisor-verified-result-is-reported-before-teardown-and-nothing-settles-itself ()
+  "Fleet lieutenant 2026-09-23: a verified result left the fleet with no report
+while its request stayed open for 72 minutes.  The normal sequence is now
+verify → report naming the task → teardown.  Only a verified result can be
+named; a question cannot carry one; the report is keyed; a refused teardown
+is retried under the same key; the report binds the exact result, so a
+re-verified one needs another report; a progress report and a teardown never
+settle the request, which stays open for the rest of a multi-task request;
+once nothing is open upstream, nothing is owed."
+  (fleet-sup-test-with
+    (let* ((rid (fleet-core-test-fleet store "root"))
+           (lid (plist-get (fleet-core-create-fleet store "fleet" :parent-id rid :charter "Fleet source") :id))
+           (root-actor (fleet-core-actor-commander rid))
+           (lt-actor (fleet-core-actor-commander lid))
+           (reports (lambda () (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE fleet_id = ? AND kind = 'lieutenant-report'" rid)))
+           (markers (lambda (tid) (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE task_id = ? AND kind = 'task-reported'" tid))))
+      (fleet-sup-test-commander store rid)
+      (fleet-sup-test-commander store lid)
+      (fleet-sup-test-settle)
+      (let* ((req (plist-get (fleet-supervisor-delegate store :fleet-id rid :actor root-actor :lieutenant "fleet" :subject "Two studies" :text "Goal: two studies" :idempotency-key "d1") :request-id))
+             (a (fleet-core-test-verified-study store lid "first"))
+             (b (plist-get (fleet-core-test-study store lid "second") :id))
+             (foreign (plist-get (fleet-core-test-study store rid "root-own") :id)))
+        (fleet-sup-test-settle)
+        ;; Verified but unreported: teardown refused, nothing started, nothing settled.
+        (let ((err (fleet-test-should-fail 'report-pending (fleet-core-teardown-task store a :actor lt-actor :action-id "t1"))))
+          (should (equal (plist-get (fleet-error-evidence err) :open-requests) (list req))))
+        (should (equal (plist-get (fleet-store-get store "tasks" a) :lifecycle) "active"))
+        ;; Not yet verified (blocked): cannot be named; the whole report is refused and records nothing.
+        (fleet-core-test-start store b)
+        (fleet-core-task-status store :runtime-id (fleet-core-test-runtime store b) :phase "blocked" :detail "needs creds")
+        (fleet-test-should-fail 'deliverable-unverified
+          (fleet-sup-test-report store lid lt-actor "r1" :kind "progress" :text "both done" :request-id req :task-ids (list a b)))
+        (fleet-test-should-fail 'deliverable-unverified (fleet-core-teardown-task store b :actor lt-actor))
+        ;; A question reports no result; another fleet's task or an unknown one is refused.
+        (fleet-test-should-fail 'invalid-request
+          (fleet-sup-test-report store lid lt-actor "r1" :kind "question" :text "ok?" :request-id req :task-ids (list a)))
+        (fleet-test-should-fail 'forbidden
+          (fleet-sup-test-report store lid lt-actor "r1" :kind "progress" :text "x" :request-id req :task-ids (list foreign)))
+        (fleet-test-should-fail 'no-such-task
+          (fleet-sup-test-report store lid lt-actor "r1" :kind "progress" :text "x" :request-id req :task-ids (list "nope")))
+        (should (= 0 (funcall reports)))
+        (should (= 0 (funcall markers a)))
+        (should (= 0 (fleet-store-scalar store "SELECT COUNT(*) FROM actions WHERE actor = ? AND action_id = 'r1'" lt-actor)))
+        ;; Retry after the failure: progress naming the task by name (and by id: one task).
+        (setq fleet-test-fake-turn 'busy)
+        (let ((r (fleet-sup-test-report store lid lt-actor "r1" :kind "progress" :text "first study verified" :request-id req :task-ids (list "first" a))))
+          (should (equal (plist-get r :state) "open"))
+          (should (= 1 (length (plist-get r :tasks)))))
+        ;; Same key replays: one upstream event, one marker.
+        (should (plist-get (fleet-sup-test-report store lid lt-actor "r1" :kind "progress" :text "first study verified" :request-id req :task-ids (list "first" a)) :replayed))
+        (should (= 1 (funcall reports)))
+        (should (= 1 (funcall markers a)))
+        (let ((payload (fleet-store-unjson (plist-get (fleet-store-query1 store "SELECT payload FROM events WHERE fleet_id = ? AND kind = 'lieutenant-report'" rid) :payload))))
+          (should (equal (plist-get (aref (plist-get payload :tasks) 0) :name) "first"))
+          (should (equal (plist-get payload :detail) "first study verified")))
+        ;; The root is woken with the report, which names the task.
+        (fleet-sup-test-settle)
+        (should (string-match-p "lieutenant-report · lieutenant `fleet` progress · request .* · reports `first`"
+                                (mapconcat (lambda (m) (plist-get m :text)) (fleet-sup-test-wakes store rid) "\n")))
+        (setq fleet-test-fake-turn 'finish)
+        ;; The refused teardown's key now admits it; the request stays open (no auto-settlement).
+        (should (equal (plist-get (fleet-test-wait-op store (plist-get (fleet-core-teardown-task store a :actor lt-actor :action-id "t1") :operation-id)) :state) "done"))
+        (should (equal (plist-get (fleet-store-get store "tasks" a) :lifecycle) "archived"))
+        (let ((row (fleet-store-get store "requests" req)))
+          (should (equal (plist-get row :state) "open"))
+          (should-not (plist-get row :outcome)))
+        ;; Further work on the same request: a follow-up still lands, the second task continues.
+        (should (plist-get (fleet-supervisor-delegate store :fleet-id rid :actor root-actor :lieutenant "fleet" :request-id req :text "Creds sent" :idempotency-key "d2") :message-id))
+        (fleet-core-task-status store :runtime-id (fleet-core-test-runtime store b) :phase "done" :artifacts '((:kind "report" :rel-path "report.md")))
+        (let ((art (plist-get (fleet-store-query1 store "SELECT id FROM artifacts WHERE task_id = ?" b) :id))
+              (file (expand-file-name "report.md" (fleet-core-task-dir store (fleet-store-get store "tasks" b)))))
+          (fleet-core-artifact-verify store :artifact-id art :actor lt-actor :accepted t)
+          (fleet-sup-test-report store lid lt-actor "r2" :kind "progress" :text "second verified" :request-id req :task-ids (list b))
+          ;; The result changed and was verified again: the earlier report no longer covers it.
+          (fleet-test-write file "# Report\ncorrected\n")
+          (fleet-core-artifact-verify store :artifact-id art :actor lt-actor :accepted t)
+          (fleet-test-should-fail 'report-pending (fleet-core-teardown-task store b :actor lt-actor)))
+        ;; Settled before teardown, naming the result: the request closes with the lieutenant's outcome.
+        (should (equal (plist-get (fleet-sup-test-report store lid lt-actor "r3" :kind "settled" :outcome "done" :text "both studies verified" :request-id req :task-ids (list b)) :state) "settled"))
+        (should (equal (plist-get (fleet-store-get store "requests" req) :outcome) "done"))
+        (should (equal (plist-get (fleet-test-wait-op store (plist-get (fleet-core-teardown-task store b :actor lt-actor) :operation-id)) :state) "done"))
+        ;; Nothing open upstream: a verified result owes no report.
+        (let ((c (fleet-core-test-verified-study store lid "third")))
+          (should-not (fleet-core-task-report-pending store (fleet-store-get store "tasks" c)))
+          (should (equal (plist-get (fleet-test-wait-op store (plist-get (fleet-core-teardown-task store c :actor lt-actor) :operation-id)) :state) "done")))
+        (should (= 3 (funcall reports)))))))
+
+(ert-deftest fleet-supervisor-result-report-is-durable-while-the-root-is-lost-or-parked ()
+  "A report is an event persisted before delivery, not a root acknowledgement:
+with the root commander never started, or the whole fleet parked, the report
+records its pending receipt and the teardown proceeds; delivery waits for the
+root and the request stays open."
+  (fleet-sup-test-with
+    (let* ((rid (fleet-core-test-fleet store "root"))
+           (lid (plist-get (fleet-core-create-fleet store "fleet" :parent-id rid :charter "Fleet source") :id))
+           (lt-actor (fleet-core-actor-commander lid))
+           (req (fleet-core-test-open-request store rid lid "diagnosis"))
+           (a (fleet-core-test-verified-study store lid "first"))
+           (b (fleet-core-test-verified-study store lid "second")))
+      ;; Root commander lost (never started): the report still lands, with a pending receipt.
+      (fleet-sup-test-report store lid lt-actor "r1" :kind "progress" :text "first verified" :request-id req :task-ids (list a))
+      (fleet-sup-test-settle)
+      (should (eq 'commander-unavailable (fleet-supervisor-wake-admission store rid)))
+      (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM event_receipts WHERE fleet_id = ? AND state = 'pending'" rid)))
+      (should (= 0 (length (fleet-sup-test-wakes store rid))))
+      (should (equal (plist-get (fleet-test-wait-op store (plist-get (fleet-core-teardown-task store a :actor lt-actor) :operation-id)) :state) "done"))
+      ;; Whole fleet parked: operators stop, the done task is suspended and still owes its report.
+      (should (equal (plist-get (fleet-test-wait-op store (fleet-core-park-fleet store rid)) :state) "done"))
+      ;; The returned operation is the root's; the lieutenant's own park finishes separately.
+      (should (fleet-test-wait-for (lambda () (equal (plist-get (fleet-store-get store "fleets" lid) :lifecycle) "parked")) 10))
+      (should (equal (plist-get (fleet-store-get store "tasks" b) :lifecycle) "suspended"))
+      (fleet-test-should-fail 'report-pending (fleet-core-teardown-task store b :actor lt-actor))
+      (fleet-sup-test-report store lid lt-actor "r2" :kind "progress" :text "second verified" :request-id req :task-ids (list b))
+      (should (= 2 (fleet-store-scalar store "SELECT COUNT(*) FROM event_receipts WHERE fleet_id = ? AND state = 'pending'" rid)))
+      (should (equal (plist-get (fleet-test-wait-op store (plist-get (fleet-core-teardown-task store b :actor lt-actor) :operation-id)) :state) "done"))
+      (should (equal (plist-get (fleet-store-get store "requests" req) :state) "open")))))
+
 (ert-deftest fleet-supervisor-lieutenant-replace-is-non-cascading-and-wakes-the-root ()
   "The commander replaces one lieutenant's runtime: verified stop, claims to
 reconciliation, successor booted with the handoff; the root, siblings and

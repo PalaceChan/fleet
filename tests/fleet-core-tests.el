@@ -1312,6 +1312,46 @@ result; nothing is settled, stopped or archived by the refusal."
              (idle-task (fleet-core-test-verified-study store idle "side-work")))
         (should (equal (plist-get (fleet-test-wait-op store (plist-get (fleet-core-teardown-task store idle-task) :operation-id)) :state) "done"))))))
 
+(defun fleet-core-test-admit-while-streaming (store tid)
+  "Admit teardown of TID while its final response streams; return the operation id.
+Teardown then waits for the observed turn end, which is cleared at once, so
+the next step runs on the following timer tick."
+  (let ((conn (fleet-eca-conn (fleet-core-test-runtime store tid))))
+    (setf (fleet-eca-conn-turn conn) '(:message-id "final" :state running))
+    (prog1 (plist-get (fleet-core-teardown-task store tid) :operation-id)
+      (should (equal (plist-get (fleet-store-get store "tasks" tid) :lifecycle) "closing"))
+      (setf (fleet-eca-conn-turn conn) nil))))
+
+(ert-deftest fleet-core-teardown-rechecks-verification-and-report-after-the-runtime-stops ()
+  "Admission and archive are separated by the wait for the final turn and the
+runtime stop.  A request opened, or a deliverable changed, in between refuses
+at the evidence step and leaves the task active.  Both early refusals used to
+signal `no-catch' from the timer after refusing: the step was a plain `defun'
+using `cl-return-from'."
+  (fleet-test-with-fakes
+    (let* ((rid (fleet-core-test-fleet store "root"))
+           (lid (plist-get (fleet-core-create-fleet store "fleet" :parent-id rid :charter "Fleet source") :id))
+           (escaped nil)
+           (catcher (lambda (f &rest args) (condition-case e (apply f args) (no-catch (push e escaped))))))
+      (advice-add 'fleet-core--teardown-evidence :around catcher)
+      (unwind-protect
+          (let* ((a (fleet-core-test-verified-study store lid "first"))
+                 (op (fleet-core-test-admit-while-streaming store a)))
+            (fleet-core-test-open-request store rid lid "arrived meanwhile")
+            (let ((row (fleet-test-wait-op store op 15)))
+              (should (equal (plist-get row :state) "failed"))
+              (should (equal (plist-get row :error) "verified result not reported upstream")))
+            (should (equal (plist-get (fleet-store-get store "tasks" a) :lifecycle) "active"))
+            (let* ((b (fleet-core-test-verified-study store rid "changed"))
+                   (op (fleet-core-test-admit-while-streaming store b)))
+              (fleet-test-write (expand-file-name "report.md" (fleet-core-task-dir store (fleet-store-get store "tasks" b))) "# edited after verification\n")
+              (let ((row (fleet-test-wait-op store op 15)))
+                (should (equal (plist-get row :state) "failed"))
+                (should (equal (plist-get row :error) "deliverables changed after verification")))
+              (should (equal (plist-get (fleet-store-get store "tasks" b) :lifecycle) "active"))))
+        (advice-remove 'fleet-core--teardown-evidence catcher))
+      (should-not escaped))))
+
 (ert-deftest fleet-core-teardown-change-task-refuses-dirty-then-retains-and-removes ()
   (fleet-test-with-fakes
     (let* ((repo (fleet-git-test-repo "proj2"))
