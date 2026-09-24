@@ -324,16 +324,18 @@ reprioritizes it. An easy label is not a reason to implement unsolicited UI or p
     gaps; this one is the registered-but-unwritable job. Keep all three open.
 
 - [ ] **D13 — Per-request provenance for a lieutenant's tasks** · **medium**
-  - **Payoff:** the report-before-teardown guard (`report-pending`, [lieutenants §4](docs/lieutenants.md#4-delegation-protocol))
-    could say *which* request a verified result is owed to, show owed reports to the root and on the
-    dashboard, and stop asking out-of-band tasks for a report while an unrelated request is open.
-  - **Residual after the 2026-09-23 reporting gap:** the guard is fleet-granular by design — without a
-    task→request link it applies while *any* request to the lieutenant is open and is satisfied by any
-    report that names the task as verified; its obligation is visible in the lieutenant's snapshot
-    (`report-owed`) and as the teardown refusal, and a done task that is never torn down is not chased.
+  - **Payoff:** the report obligation (`report-owed`/`report-pending`, [lieutenants §4](docs/lieutenants.md#4-delegation-protocol))
+    could say *which* request a result is owed to, show owed reports in the root's own view, stop asking
+    out-of-band tasks for a report while an unrelated request is open, and stop a settle that names
+    nothing from clearing it.
+  - **Residual after the 2026-09-23 reporting gap:** the obligation is fleet-granular by design — without
+    a task→request link it applies while *any* request to the lieutenant is open, is cleared by any report
+    that names the task's verified result (or by settling the last open request), and is visible in the
+    lieutenant's snapshot (`report-owed`), on the dashboard and as the teardown refusal, but no reminder
+    chases it and the root's snapshot does not list it.
   - **Done if selected:** an owner decision on the contract first (optional `request_id` at
     `fleet_task_create`? mandatory while requests are open? what a legacy task maps to), then a migration
-    with an upgrade test on a populated v3 store, snapshot/dashboard projection, and the guard narrowed
+    with an upgrade test on a populated v3 store, a per-request projection for the root, and the guard narrowed
     to the linked request. Never settle a request from task state.
 
 ## Not TODOs — preserve these decisions

@@ -282,7 +282,7 @@ when neither is given, so callers decide whether that is allowed."
                (setq snap (list :revision (plist-get snap :revision)
                                 :fleets (list (plist-put (copy-sequence (car (plist-get snap :fleets))) :tasks
                                                          (cl-remove-if-not (lambda (task) (equal (plist-get task :id) tid)) (plist-get (car (plist-get snap :fleets)) :tasks)))))))
-             (fleet-core--compact-snapshot snap store))))
+             (fleet-core--compact-snapshot snap))))
         ("fleet_task_create"
          (mutation params
                    (lambda ()

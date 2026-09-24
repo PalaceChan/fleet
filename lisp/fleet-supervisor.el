@@ -706,11 +706,8 @@ Returns the message id or the blocker symbol."
                                              (if (plist-get payload :outcome) (format " (%s)" (plist-get payload :outcome)) "")
                                              (if (plist-get payload :request-id) (format " · request `%s`" (plist-get payload :request-id)) "")
                                              (if (plist-get payload :tasks)
-                                                 (format " · reports %s"
-                                                         (mapconcat (lambda (tk) (format "`%s` (%s)" (plist-get tk :name)
-                                                                                         (if (eq (plist-get tk :verified) t) "verified"
-                                                                                           (format "%s, unverified" (plist-get tk :phase)))))
-                                                                    (plist-get payload :tasks) ", "))
+                                                 (format " · verified %s"
+                                                         (mapconcat (lambda (tk) (format "`%s`" (plist-get tk :name))) (plist-get payload :tasks) ", "))
                                                ""))
                                    "")
                                  (if (plist-get payload :detail) (format " · %s" (fleet-eca--clip (plist-get payload :detail) 120)) "")
@@ -835,15 +832,15 @@ no transaction spans the dispatch.  Returns (:request-id :message-id :state)."
 Appends an actionable `lieutenant-report' event to the parent fleet, whose
 receipt wakes the root commander through the usual admission; `settled'
 also closes the request with OUTCOME.  TASK-IDS (ids or names of this
-fleet's tasks) say which results or blockers the report is about.  Fleet
-labels each from its own facts — phase and whether
-`fleet-core-task-verified-p' holds now — so a done-but-unverified result
-goes up labelled unverified rather than on the lieutenant's word; each
-gets a `task-reported' event binding that exact result.  Only a marker
-labelled verified lets a teardown through while a request is open
-(`fleet-core-task-report-pending').  The report carries the lieutenant's
-TEXT only; Fleet adds task names and labels, never result content, and
-never settles anything a `progress' report names.  Pure store mutation:
+fleet's tasks) name the verified results the report carries: each must
+pass `fleet-core-task-verified-p' now, so naming a task is Fleet's
+evidence that its result was verified, never the lieutenant's word.  An
+unverified result, a blocker or a decision goes up earlier as TEXT with
+no TASK-IDS.  Each named task gets a `task-reported' event binding the
+digest of that exact result, which clears its obligation
+(`fleet-store-task-report-owed').  The report carries the lieutenant's
+TEXT only; Fleet adds task names, never result content, and never
+settles anything a `progress' report names.  Pure store mutation:
 callers wrap it in the keyed action.
 Returns (:event-id :request-id :state :tasks)."
   (let* ((fleet (fleet-store-get store "fleets" fleet-id))
@@ -851,13 +848,18 @@ Returns (:event-id :request-id :state :tasks)."
          (req (and request-id (fleet-store-get store "requests" request-id)))
          (tasks nil))
     (unless parent-id (fleet-fail 'not-a-lieutenant "Only a lieutenant reports upstream" :fleet (plist-get fleet :name)))
+    (when (and task-ids (equal kind "question"))
+      (fleet-fail 'invalid-request "A question carries no verified result; describe blocked or unverified work in text and name task_ids on a progress or settled report once verified"))
     (dolist (ref (delete-dups (copy-sequence task-ids)))
       (let ((task (fleet-core-task store ref fleet-id)))
         (unless (equal (plist-get task :fleet-id) fleet-id)
           (fleet-fail 'forbidden "Task is not in your fleet" :task-id ref))
+        (unless (fleet-core-task-verified-p store task)
+          (fleet-fail 'deliverable-unverified "task_ids names verified results only; report an unverified result or a blocker in text, labelled unverified, without task_ids"
+                      :task-id (plist-get task :id) :task (plist-get task :name) :phase (plist-get task :phase)))
         ;; An id and a name may denote the same task.
         (unless (cl-find (plist-get task :id) tasks :key (lambda (x) (plist-get x :id)) :test #'equal)
-          (push (append task (list :verified-now (and (fleet-core-task-verified-p store task) t))) tasks))))
+          (push task tasks))))
     (setq tasks (nreverse tasks))
     (when request-id
       (unless (and req (equal (plist-get req :child-fleet-id) fleet-id))
@@ -870,9 +872,7 @@ Returns (:event-id :request-id :state :tasks)."
     (fleet-store-transaction store
       (when (equal kind "settled")
         (fleet-store-update store "requests" request-id (fleet-store-touch (list :state "settled" :outcome outcome :summary text))))
-      (let* ((named (mapcar (lambda (task) (list :id (plist-get task :id) :name (plist-get task :name) :phase (plist-get task :phase)
-                                                 :verified (if (plist-get task :verified-now) t :false)))
-                            tasks))
+      (let* ((named (mapcar (lambda (task) (list :id (plist-get task :id) :name (plist-get task :name))) tasks))
              (eid (fleet-store-append-event store :fleet-id parent-id :kind "lieutenant-report" :actor actor :source "rpc" :actionable t
                                             :payload (list :lieutenant (plist-get fleet :name) :lieutenant-fleet-id fleet-id
                                                            :request-id request-id :subject (plist-get req :subject)
@@ -881,9 +881,9 @@ Returns (:event-id :request-id :state :tasks)."
         (dolist (task tasks)
           (fleet-store-append-event store :fleet-id fleet-id :task-id (plist-get task :id) :kind "task-reported" :actor actor :source "rpc"
                                     :payload (list :report-event-id eid :request-id request-id :kind kind
-                                                   :phase (plist-get task :phase) :verified (if (plist-get task :verified-now) t :false)
                                                    :brief-revision (plist-get task :brief-revision)
-                                                   :result-digest (fleet-core-task-result-digest store task))))
+                                                   :result-digest (fleet-store-task-result-digest
+                                                                   task (fleet-store-query store "SELECT id, verified, verified_hash FROM artifacts WHERE task_id = ?" (plist-get task :id))))))
         (list :event-id eid :request-id request-id :state (cond ((equal kind "settled") "settled") (req "open") (t nil))
               :tasks (and named (vconcat named)))))))
 

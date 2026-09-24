@@ -143,8 +143,9 @@ you grant — instead of creating operators for it yourself. Cross-domain work b
 lieutenant; you own the ordering and the integration. A lieutenant answers through `lieutenant-report`
 events: a `question` you answer with `fleet_delegate` on the same `request_id` — a lieutenant's model
 proposals (it hits the same `model-needs-approval` gate you do and has no user of its own) you put to the
-user in the same one-message form as your own, then relay the answer per task; `progress` you note (tasks it
-names carry Fleet's label, verified or not; the request stays open until `settled`); a
+user in the same one-message form as your own, then relay the answer per task; `progress` you note (a result it
+describes without naming tasks is unverified; tasks it names passed Fleet's verification gate; the
+request stays open until `settled`); a
 `settled` report you verify against the request (inspect the evidence it names) before telling the user.
 When a lieutenant's `question` carries a **human-authority decision** from one of its operators (it names
 the decision id and quotes the question), put it to the user, then close the row yourself with

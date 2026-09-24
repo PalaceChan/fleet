@@ -1281,6 +1281,20 @@ a root with lieutenants or open requests cannot be retired."
                                                  :subject (or subject "outcome") :state "open" :created-at now :updated-at now)))
     id))
 
+(defun fleet-core-test-mark-reported (store task request-id)
+  "Record the `task-reported' event `fleet_report' writes for TASK's current result."
+  (fleet-store-transaction store
+    (fleet-store-append-event store :fleet-id (plist-get task :fleet-id) :task-id (plist-get task :id) :kind "task-reported"
+                              :payload (list :request-id request-id :kind "progress" :brief-revision (plist-get task :brief-revision)
+                                             :result-digest (fleet-store-task-result-digest
+                                                             task (fleet-store-query store "SELECT id, verified, verified_hash FROM artifacts WHERE task_id = ?" (plist-get task :id)))))))
+
+(defun fleet-core-test-owed-in-snapshot (store fleet-id task-id)
+  "`:report-owed' of TASK-ID in FLEET-ID's store snapshot, the projection the dashboard renders."
+  (plist-get (cl-find task-id (plist-get (car (plist-get (fleet-store-snapshot store fleet-id) :fleets)) :tasks)
+                      :key (lambda (tk) (plist-get tk :id)) :test #'equal)
+             :report-owed))
+
 (ert-deftest fleet-core-teardown-refuses-an-unreported-verified-result-on-an-open-request ()
   "Fleet lieutenant 2026-09-23: a corrective study was verified at 10:00:04 and
 archived at 10:00:06 while its parent request stayed open with no upstream
@@ -1293,6 +1307,10 @@ result; nothing is settled, stopped or archived by the refusal."
            (req (fleet-core-test-open-request store rid lid "diagnosis"))
            (tid (fleet-core-test-verified-study store lid "corrective")))
       (should (fleet-core-task-verified-p store (fleet-store-get store "tasks" tid)))
+      ;; Visible before anyone attempts a teardown: the obligation is a projection of
+      ;; persisted facts, not a side effect of a refusal.
+      (should (equal (fleet-core-test-owed-in-snapshot store lid tid) (list req)))
+      (should (= 0 (fleet-store-scalar store "SELECT COUNT(*) FROM operations WHERE task_id = ? AND kind = 'task-teardown'" tid)))
       ;; A report upstream that does not name the task (legacy shape) is not coverage.
       (fleet-store-transaction store
         (fleet-store-append-event store :fleet-id rid :kind "lieutenant-report" :actionable t
@@ -1304,6 +1322,12 @@ result; nothing is settled, stopped or archived by the refusal."
         (should (equal (plist-get task :lifecycle) "active"))
         (should (equal (plist-get task :phase) "done")))
       (should (= 0 (fleet-store-scalar store "SELECT COUNT(*) FROM operations WHERE task_id = ? AND kind = 'task-teardown'" tid)))
+      (should (equal (plist-get (fleet-store-get store "requests" req) :state) "open"))
+      (should (equal (fleet-core-test-owed-in-snapshot store lid tid) (list req)))
+      ;; Once the report is persisted the debt clears and teardown proceeds; the request stays open.
+      (fleet-core-test-mark-reported store (fleet-store-get store "tasks" tid) req)
+      (should-not (fleet-core-test-owed-in-snapshot store lid tid))
+      (should (equal (plist-get (fleet-test-wait-op store (plist-get (fleet-core-teardown-task store tid) :operation-id)) :state) "done"))
       (should (equal (plist-get (fleet-store-get store "requests" req) :state) "open"))
       ;; A root fleet's tasks and a lieutenant without open requests are not gated.
       (let ((root-task (fleet-core-test-verified-study store rid "root-study")))
@@ -1342,6 +1366,29 @@ using `cl-return-from'."
               (should (equal (plist-get row :state) "failed"))
               (should (equal (plist-get row :error) "verified result not reported upstream")))
             (should (equal (plist-get (fleet-store-get store "tasks" a) :lifecycle) "active"))
+            ;; The failed teardown leaves the obligation visible, and a report then lets a new one through.
+            (let ((req (fleet-store-task-report-owed store (fleet-store-get store "tasks" a))))
+              (should (= 1 (length req)))
+              (should (equal (fleet-core-test-owed-in-snapshot store lid a) req))
+              (fleet-core-test-mark-reported store (fleet-store-get store "tasks" a) (car req))
+              (should-not (fleet-core-test-owed-in-snapshot store lid a))
+              (should (equal (plist-get (fleet-test-wait-op store (plist-get (fleet-core-teardown-task store a) :operation-id)) :state) "done"))
+              ;; A reported result whose file changes during the stop: the teardown fails on
+              ;; verification, and only the re-verified (new) result owes a new report.
+              (let* ((c (fleet-core-test-verified-study store lid "reported-then-changed"))
+                     (file (expand-file-name "report.md" (fleet-core-task-dir store (fleet-store-get store "tasks" c)))))
+                (fleet-core-test-mark-reported store (fleet-store-get store "tasks" c) (car req))
+                (let ((op (fleet-core-test-admit-while-streaming store c)))
+                  (fleet-test-write file "# edited after verification\n")
+                  (let ((row (fleet-test-wait-op store op 15)))
+                    (should (equal (plist-get row :state) "failed"))
+                    (should (equal (plist-get row :error) "deliverables changed after verification"))))
+                (should (equal (plist-get (fleet-store-get store "tasks" c) :lifecycle) "active"))
+                (should-not (fleet-core-test-owed-in-snapshot store lid c))
+                (fleet-core-artifact-verify store :artifact-id (plist-get (fleet-store-query1 store "SELECT id FROM artifacts WHERE task_id = ?" c) :id)
+                                            :actor "c" :accepted t)
+                (should (equal (fleet-core-test-owed-in-snapshot store lid c) req))
+                (fleet-test-should-fail 'report-pending (fleet-core-teardown-task store c))))
             (let* ((b (fleet-core-test-verified-study store rid "changed"))
                    (op (fleet-core-test-admit-while-streaming store b)))
               (fleet-test-write (expand-file-name "report.md" (fleet-core-task-dir store (fleet-store-get store "tasks" b))) "# edited after verification\n")
@@ -1745,6 +1792,35 @@ anything is stopped; \"default\" returns to the configured default."
     (should (string-match-p "Never write or delegate writes to the owner's Org checkpoint" text)))
   ;; the lieutenant overlay speaks of the same file and stays coherent
   (should (string-match-p "rewritten, not appended" (fleet-core--prompt "lieutenant"))))
+
+;; Doctrine regression for the 2026-09-23 reporting gap.  Source enforces what it
+;; can see — `task_ids' names verified results only, teardown checks the durable
+;; report — but it cannot judge a report's text, so the prompt must carry the rest:
+;; early results and blockers go up at once, factual and labelled unverified,
+;; without `task_ids', and no progress report settles anything.
+(ert-deftest fleet-core-lieutenant-prompt-reports-unverified-results-early-without-task-ids ()
+  (let ((text (fleet-core--prompt "lieutenant"))
+        (case-fold-search t))
+    ;; results, blockers and holds are milestones reported as they happen
+    (should (string-match-p "result\\** as soon[ \n]+as the operator reports done, before you have verified it" text))
+    (should (string-match-p "blocker\\**, failure or decision" text))
+    ;; early progress: factual, labelled unverified, no task_ids, no success claims
+    (should (string-match-p "Early progress is factual and unverified" text))
+    (should (string-match-p "with \\*\\*no `task_ids`\\*\\*" text))
+    (should (string-match-p "not yet verified" text))
+    (should (string-match-p "Never[ \n]+claim success you have not verified" text))
+    ;; no auto-settlement of multi-task or partial requests
+    (should (string-match-p "never settle a request on one task's result" text))
+    ;; task_ids is the verified gate, then teardown without waiting on the root
+    (should (string-match-p "`task_ids` names verified results only" text))
+    (should (string-match-p "does not wait[ \n]+for the commander to read, acknowledge, verify or answer" text))
+    (should (string-match-p "report-owed" text)))
+  ;; the tool schema says the same to every runtime
+  (let* ((tools (append (plist-get (fleet-store-unjson (fleet-paths-read-file (fleet-paths-schema-file "tools-v1.json"))) :tools) nil))
+         (report (plist-get (cl-find "fleet_report" tools :key (lambda (tl) (plist-get tl :name)) :test #'equal) :description)))
+    (should (string-match-p "before verification: text only, labelled unverified, no task_ids" report))
+    (should (string-match-p "task_ids names verified results only" report))
+    (should (string-match-p "progress never settles the request" report))))
 
 (provide 'fleet-core-tests)
 ;;; fleet-core-tests.el ends here

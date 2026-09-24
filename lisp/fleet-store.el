@@ -431,12 +431,52 @@ Roots and lieutenants alike; see `fleet-store-root-fleets' and
   "Non-archived task NAME in FLEET-ID."
   (fleet-store-query1 store "SELECT * FROM tasks WHERE fleet_id = ? AND name = ? AND lifecycle <> 'archived'" fleet-id name))
 
+;;;; Upstream report obligation of a lieutenant's result (docs/lieutenants.md §4)
+;;
+;; Fleet lieutenant 2026-09-23: a corrective study was verified and archived
+;; within two seconds while its parent request stayed open, and nothing
+;; upstream heard of the result for 72 minutes.  The obligation is derived,
+;; never stored: a lieutenant's done task owes a report while the lieutenant
+;; is the child of any open request and no `task-reported' event (written
+;; only by `fleet-supervisor-report', for verified tasks) binds its current
+;; result.  One derivation serves the snapshot, the dashboard and the
+;; teardown gate, so what the user sees is what teardown enforces.  There
+;; is no task→request link (TODO D13), so it is fleet-granular.
+
+(defun fleet-store-task-result-digest (task artifacts)
+  "Digest of TASK's current result from its ARTIFACTS rows.
+Covers the brief revision and each artifact's id, verification flag and
+verified hash, so a retask or a re-verified deliverable is a new result."
+  (fleet-paths-sha256-string
+   (format "%s|%s" (plist-get task :brief-revision)
+           (mapconcat (lambda (a) (format "%s=%s:%s" (plist-get a :id) (or (plist-get a :verified) 0) (or (plist-get a :verified-hash) "")))
+                      (sort (copy-sequence artifacts) (lambda (x y) (string< (plist-get x :id) (plist-get y :id))))
+                      ","))))
+
+(defun fleet-store-task-report-owed (store task &optional artifacts)
+  "Ids of the open requests owed a report of TASK's result, or nil.
+Only a done task owes one, only while its fleet is the child of an open
+request, and only until a `task-reported' event carries the digest of its
+current result.  ARTIFACTS are TASK's rows when the caller has them."
+  (when (equal (plist-get task :phase) "done")
+    (when-let* ((open (mapcar (lambda (r) (plist-get r :id))
+                              (fleet-store-query store "SELECT id FROM requests WHERE child_fleet_id = ? AND state = 'open' ORDER BY created_at"
+                                                 (plist-get task :fleet-id)))))
+      (let ((digest (fleet-store-task-result-digest
+                     task (or artifacts (fleet-store-query store "SELECT id, verified, verified_hash FROM artifacts WHERE task_id = ?" (plist-get task :id))))))
+        (unless (cl-some (lambda (e) (equal (plist-get (fleet-store-unjson (plist-get e :payload)) :result-digest) digest))
+                         ;; fleet_id first: `events_fleet_seq' is the index events have.
+                         (fleet-store-query store "SELECT payload FROM events WHERE fleet_id = ? AND task_id = ? AND kind = 'task-reported'"
+                                            (plist-get task :fleet-id) (plist-get task :id)))
+          open)))))
+
 (defun fleet-store-snapshot (store &optional fleet-id)
   "Coherent read of everything the dashboard and tools need.
 Returns (:revision N :fleets (FLEET...)) where each FLEET plist carries
 :tasks, :commander (runtime plist or nil), :pending-events, :open-decisions,
 :running-operations, :queued-wakes, and each task carries :runtime,
-:artifacts, :decisions, :operations, :external-jobs, :messages-recent."
+:artifacts, :report-owed, :decisions, :operations, :external-jobs,
+:messages-recent."
   (let* ((fleets (if fleet-id
                      (let ((f (fleet-store-get store "fleets" fleet-id))) (and f (list f)))
                    (fleet-store-fleets store))))
@@ -460,11 +500,13 @@ Returns (:revision N :fleets (FLEET...)) where each FLEET plist carries
 
 (defun fleet-store--task-projection (store task)
   "TASK plist enriched with its runtime and related facts."
-  (let ((tid (plist-get task :id)))
+  (let* ((tid (plist-get task :id))
+         (artifacts (fleet-store-query store "SELECT * FROM artifacts WHERE task_id = ? ORDER BY created_at" tid)))
     (append task
             (list :runtime (and (plist-get task :current-runtime-id)
                                 (fleet-store-get store "runtimes" (plist-get task :current-runtime-id)))
-                  :artifacts (fleet-store-query store "SELECT * FROM artifacts WHERE task_id = ? ORDER BY created_at" tid)
+                  :artifacts artifacts
+                  :report-owed (fleet-store-task-report-owed store task artifacts)
                   :decisions (fleet-store-query store "SELECT * FROM decisions WHERE task_id = ? AND state = 'open' ORDER BY created_at" tid)
                   :operations (fleet-store-query store "SELECT * FROM operations WHERE task_id = ? AND state IN ('running','blocked','failed') ORDER BY created_at" tid)
                   :external-jobs (fleet-store-query store "SELECT * FROM external_jobs WHERE task_id = ? AND state IN ('running','unknown') ORDER BY created_at" tid)

@@ -74,6 +74,8 @@ eca/status/runtime/nil."
          (badge (cond ((member rt-life '("stop-unknown")) " · stop unknown")
                       (failed-ops (format " · op %s failed" (plist-get (car failed-ops) :kind)))
                       ((equal turn "unknown") " · delivery unknown")
+                      ;; A lieutenant's result nobody upstream has heard of (docs/lieutenants.md §4).
+                      ((plist-get task :report-owed) " · report owed upstream")
                       (t ""))))
     (cl-flet ((out (state source d attention) (list state source (concat d badge) (or attention (not (string-empty-p badge))))))
       (cond
