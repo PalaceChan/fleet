@@ -898,6 +898,25 @@ path that became unreadable or empty since verification counts as changed."
                                             (fleet-error nil))))))
                         arts)))))
 
+;;;; Upstream report gate of a lieutenant's verified result (docs/lieutenants.md §4)
+;;
+;; The owner's contract after the 2026-09-23 reporting gap: a result goes
+;; upstream as soon as it exists (unverified as text-only `progress', the
+;; verified result named in `task_ids'), and before teardown starts there is
+;; a durable report or a visible obligation.  The obligation is derived by
+;; `fleet-store-task-report-owed' from persisted facts and shown in the
+;; snapshot and on the dashboard; teardown enforces the same derivation and
+;; otherwise runs on its own preconditions: it waits for no root receipt,
+;; root verification, delivery or human answer.  It is about reporting, not
+;; settling: one task rarely proves a multi-task request done.
+
+(defun fleet-core--assert-reported (store task)
+  "Signal `report-pending' when TASK's verified result is owed upstream."
+  (when-let* ((open (fleet-store-task-report-owed store task)))
+    (fleet-fail 'report-pending
+                "Report this verified result to your commander before teardown: fleet_report kind progress (or settled, if it finishes the request) with task_ids naming this task"
+                :task-id (plist-get task :id) :task (plist-get task :name) :open-requests open)))
+
 (cl-defun fleet-core-decision-resolve (store &key decision-id answer actor authority expected-revision evidence)
   "Resolve DECISION-ID with ANSWER by ACTOR holding AUTHORITY (commander/human).
 Human AUTHORITY asserted by a runtime actor is a *relay* of an answer the
@@ -1363,7 +1382,9 @@ commander needs it to turn casual model names into exact ids."
                         (fleet-config-file)))))))
 
 (defun fleet-core--compact-snapshot (snap)
-  "Reduce SNAP to the fields a model needs."
+  "Reduce SNAP to the fields a model needs.
+A lieutenant's done task still owed a report upstream carries
+`:report-owed', the open request ids (`fleet-store-task-report-owed')."
   (list :revision (plist-get snap :revision)
         :fleets (mapcar (lambda (f)
                           (list :name (plist-get f :name) :lifecycle (plist-get f :lifecycle) :supervision (plist-get f :supervision)
@@ -1380,7 +1401,8 @@ commander needs it to turn casual model names into exact ids."
                                                        :delivery (plist-get task :delivery-mode)
                                                        :runtime (and (plist-get task :runtime) (plist-get (plist-get task :runtime) :lifecycle))
                                                        :open-decisions (mapcar (lambda (d) (list :id (plist-get d :id) :question (plist-get d :question))) (plist-get task :decisions))
-                                                       :artifacts (mapcar (lambda (a) (list :id (plist-get a :id) :kind (plist-get a :kind) :path (plist-get a :rel-path) :verified (plist-get a :verified))) (plist-get task :artifacts))))
+                                                       :artifacts (mapcar (lambda (a) (list :id (plist-get a :id) :kind (plist-get a :kind) :path (plist-get a :rel-path) :verified (plist-get a :verified))) (plist-get task :artifacts))
+                                                       :report-owed (plist-get task :report-owed)))
                                                (plist-get f :tasks))))
                         (plist-get snap :fleets))))
 
@@ -1824,6 +1846,7 @@ No force/discard parameter exists."
       (unless (fleet-core-task-verified-p store task)
         (fleet-fail 'deliverable-unverified "Teardown requires done + verified deliverables at the current brief revision"
                     :phase (plist-get task :phase)))
+      (fleet-core--assert-reported store task)
       (let ((op (fleet-core-operation-begin store "task-teardown" :fleet-id (plist-get task :fleet-id) :task-id task-id
                                             :expected-revision (plist-get task :entity-revision))))
         (fleet-store-transaction store
@@ -1859,12 +1882,17 @@ Waits for an observed turn end first."
     (fleet-core-operation-finish store op :state "failed" :error reason :evidence evidence))
   (when callback (funcall callback (fleet-store-get store "operations" op))))
 
-(defun fleet-core--teardown-evidence (store op task callback)
+(cl-defun fleet-core--teardown-evidence (store op task callback)
   "Teardown step: collect Git evidence (change tasks) and decide removals.
-Non-change tasks archive directly."
+Non-change tasks archive directly.  A `cl-defun' for its early refusals:
+a plain `defun' has no block, and `cl-return-from' signalled `no-catch'."
   (fleet-core-operation-step store op "runtime-stopped")
   (unless (fleet-core-task-verified-p store task)
     (fleet-core--teardown-refuse store op task "deliverables changed after verification" nil callback)
+    (cl-return-from fleet-core--teardown-evidence nil))
+  ;; A request opened or a result re-verified while the runtime stopped.
+  (when-let* ((open (fleet-store-task-report-owed store task)))
+    (fleet-core--teardown-refuse store op task "verified result not reported upstream" (list :open-requests open) callback)
     (cl-return-from fleet-core--teardown-evidence nil))
   (if (not (and (equal (plist-get task :kind) "change") (plist-get task :workspace-path)))
       (fleet-core--teardown-archive store op task nil callback)

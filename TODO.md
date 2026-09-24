@@ -323,6 +323,21 @@ reprioritizes it. An easy label is not a reason to implement unsolicited UI or p
   - **Coordinate:** F15 (registered `job_id` for waits) and D11 (undeclared idle waits) are different
     gaps; this one is the registered-but-unwritable job. Keep all three open.
 
+- [ ] **D13 — Per-request provenance for a lieutenant's tasks** · **medium**
+  - **Payoff:** the report obligation (`report-owed`/`report-pending`, [lieutenants §4](docs/lieutenants.md#4-delegation-protocol))
+    could say *which* request a result is owed to, show owed reports in the root's own view, stop asking
+    out-of-band tasks for a report while an unrelated request is open, and stop a settle that names
+    nothing from clearing it.
+  - **Residual after the 2026-09-23 reporting gap:** the obligation is fleet-granular by design — without
+    a task→request link it applies while *any* request to the lieutenant is open, is cleared by any report
+    that names the task's verified result (or by settling the last open request), and is visible in the
+    lieutenant's snapshot (`report-owed`), on the dashboard and as the teardown refusal, but no reminder
+    chases it and the root's snapshot does not list it.
+  - **Done if selected:** an owner decision on the contract first (optional `request_id` at
+    `fleet_task_create`? mandatory while requests are open? what a legacy task maps to), then a migration
+    with an upgrade test on a populated v3 store, a per-request projection for the root, and the guard narrowed
+    to the linked request. Never settle a request from task state.
+
 ## Not TODOs — preserve these decisions
 
 - Automatic task-close inside `fleet-destroy` was rejected. Keep explicit human close separate from

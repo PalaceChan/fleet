@@ -167,7 +167,9 @@ targets/states as routine recovery. Escalate unresolved intent with its evidence
 
 Keep the printed paths, OIDs and refusal evidence. Causes include dirty/untracked/ignored content,
 unverified deliverables, an unmet delivery contract, HEAD/branch mismatch or a tip without a surviving
-ref. Fix the specific cause (preserve/commit, push, verify, or explicitly retask), then rerun dashboard
+ref, and — for a lieutenant's task while a request to it is open — `report-pending`: the verified result
+has not been named in a `fleet_report` (`task_ids`; [lieutenants §4](lieutenants.md#4-delegation-protocol)).
+Fix the specific cause (preserve/commit, push, verify, report, or explicitly retask), then rerun dashboard
 `t`. See [fleet-core-teardown-task](../lisp/fleet-core.el) and the evidence/authorization code in
 [fleet-git.el](../lisp/fleet-git.el). Never discard by inference; deliberate disposal is a separate human
 decision outside normal teardown, not a recommended refusal workaround. Native dirty-refusal acceptance

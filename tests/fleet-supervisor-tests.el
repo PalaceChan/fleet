@@ -152,6 +152,190 @@ commander; settling closes the request once; scope refusals hold."
             (should (member "fleet_task_create" (funcall names "lieutenant")))
             (should-not (member "fleet_report" (funcall names "operator")))))))))
 
+(defun fleet-sup-test-report (store fleet-id actor key &rest args)
+  "`fleet_report' ARGS from ACTOR of FLEET-ID keyed by KEY, as the RPC handler runs it."
+  (fleet-store-with-action store actor key args
+    (apply #'fleet-supervisor-report store :fleet-id fleet-id :actor actor args)))
+
+(defun fleet-sup-test-report-owed (store fleet-id task-id)
+  "The `:report-owed' field of TASK-ID in FLEET-ID's model-facing snapshot."
+  (plist-get (cl-find task-id (plist-get (car (plist-get (fleet-core--compact-snapshot (fleet-store-snapshot store fleet-id)) :fleets)) :tasks)
+                      :key (lambda (tk) (plist-get tk :id)) :test #'equal)
+             :report-owed))
+
+(ert-deftest fleet-supervisor-results-go-up-as-they-happen-and-teardown-never-waits-for-the-root ()
+  "Owner contract after the 2026-09-23 reporting gap.  A done result owes a
+report upstream, visible in the snapshot (`:report-owed') from the moment
+the operator reports done, before any teardown is attempted.  Unverified
+results and blockers go up at once as text; `task_ids' names verified
+results only, and naming one is what clears the obligation.  A failed
+report records nothing and leaves the obligation; a retry under the same
+key succeeds once and then replays.  Once reported, teardown runs on its
+own preconditions while every root wake is unacknowledged.  A progress
+report and a teardown never settle the request, which stays open for the
+rest of a multi-task request; a re-verified result owes a new report; once
+nothing is open upstream, nothing is owed."
+  (fleet-sup-test-with
+    (let* ((rid (fleet-core-test-fleet store "root"))
+           (lid (plist-get (fleet-core-create-fleet store "fleet" :parent-id rid :charter "Fleet source") :id))
+           (root-actor (fleet-core-actor-commander rid))
+           (lt-actor (fleet-core-actor-commander lid))
+           (reports (lambda () (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE fleet_id = ? AND kind = 'lieutenant-report'" rid)))
+           (acked (lambda () (fleet-store-scalar store "SELECT COUNT(*) FROM event_receipts r JOIN events e ON e.id = r.event_id WHERE r.fleet_id = ? AND e.kind = 'lieutenant-report' AND r.state = 'acknowledged'" rid)))
+           (markers (lambda (tid) (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE task_id = ? AND kind = 'task-reported'" tid)))
+           (teardowns (lambda (tid) (fleet-store-scalar store "SELECT COUNT(*) FROM operations WHERE task_id = ? AND kind = 'task-teardown'" tid))))
+      (fleet-sup-test-commander store rid)
+      (fleet-sup-test-commander store lid)
+      (fleet-sup-test-settle)
+      (let* ((req (plist-get (fleet-supervisor-delegate store :fleet-id rid :actor root-actor :lieutenant "fleet" :subject "Two studies" :text "Goal: two studies" :idempotency-key "d1") :request-id))
+             (a (plist-get (fleet-core-test-study store lid "first") :id))
+             (b (plist-get (fleet-core-test-study store lid "second") :id))
+             (foreign (plist-get (fleet-core-test-study store rid "root-own") :id)))
+        (fleet-core-test-start store a)
+        (fleet-core-test-start store b)
+        (fleet-sup-test-settle)
+        ;; Done but not yet verified: the obligation is visible at once.
+        (fleet-core-task-status store :runtime-id (fleet-core-test-runtime store a) :phase "done" :artifacts '((:kind "report" :rel-path "report.md")))
+        (should (equal (fleet-sup-test-report-owed store lid a) (list req)))
+        (should-not (fleet-sup-test-report-owed store lid b))
+        ;; The root stays busy from here on: every wake to it remains unacknowledged.
+        (setq fleet-test-fake-turn 'busy)
+        ;; task_ids is the verification gate: unverified, foreign, unknown, a question, or a
+        ;; request not addressed to the lieutenant are refused, and a refusal records nothing.
+        ;; The unverified refusal teaches the labelled text that still goes up at once.
+        (let* ((err (fleet-test-should-fail 'deliverable-unverified
+                      (fleet-sup-test-report store lid lt-actor "r1" :kind "progress" :text "x" :request-id req :task-ids (list a))))
+               (msg (fleet-error-message err))
+               (line (aref (plist-get (fleet-error-evidence err) :report-as) 0)))
+          (should (equal (plist-get (fleet-error-evidence err) :task) "first"))
+          (should (string-match-p (regexp-quote (format "`first` (task %s, phase done) is not verified" a)) msg))
+          (should (string-match-p "Report now without task_ids" msg))
+          (should (equal line (format "\"Task `first` (%s): operator reports done — UNVERIFIED, verifying now\"" a)))
+          (should (string-match-p (regexp-quote line) msg))
+          (fleet-test-should-fail 'forbidden
+            (fleet-sup-test-report store lid lt-actor "r1" :kind "progress" :text "x" :request-id req :task-ids (list foreign)))
+          (fleet-test-should-fail 'no-such-task
+            (fleet-sup-test-report store lid lt-actor "r1" :kind "progress" :text "x" :request-id req :task-ids (list "nope")))
+          ;; (Named tasks are checked first, so the foreign request is tried without them.)
+          (fleet-test-should-fail 'forbidden
+            (fleet-sup-test-report store lid lt-actor "r1" :kind "progress" :text "x" :request-id "not-mine"))
+          (should (= 0 (funcall reports)))
+          (should (= 0 (funcall markers a)))
+          (should (= 0 (fleet-store-scalar store "SELECT COUNT(*) FROM actions WHERE actor = ? AND action_id = 'r1'" lt-actor)))
+          ;; Positive: the taught form goes up promptly, clears nothing and settles nothing.
+          (should (equal (plist-get (fleet-sup-test-report store lid lt-actor "r0" :kind "progress" :text (read line) :request-id req) :state) "open"))
+          (should (= 1 (funcall reports)))
+          (should (equal (fleet-sup-test-report-owed store lid a) (list req))))
+        ;; An operator working, then blocked: a question naming it is refused with the BLOCKED
+        ;; form, and that form goes up at once as a question and as progress.
+        (fleet-core-task-status store :runtime-id (fleet-core-test-runtime store b) :phase "working" :detail "collecting data")
+        (should (equal (plist-get (fleet-store-get store "tasks" b) :phase) "working"))
+        (fleet-core-task-status store :runtime-id (fleet-core-test-runtime store b) :phase "blocked" :detail "needs creds")
+        (let* ((err (fleet-test-should-fail 'invalid-request
+                      (fleet-sup-test-report store lid lt-actor "r2" :kind "question" :text "x" :request-id req :task-ids (list b))))
+               (line (aref (plist-get (fleet-error-evidence err) :report-as) 0)))
+          (should (equal line (format "\"Task `second` (%s): BLOCKED — <what blocks it>\"" b)))
+          (should (string-match-p "Ask again without task_ids" (fleet-error-message err)))
+          (should (string-match-p (regexp-quote line) (fleet-error-message err)))
+          (should (= 1 (funcall reports)))
+          (fleet-sup-test-report store lid lt-actor "r2" :kind "question" :request-id req
+                                 :text (format "Task `second` (%s): BLOCKED — needs creds; may I use the staging ones?" b))
+          (fleet-sup-test-report store lid lt-actor "r2b" :kind "progress" :request-id req
+                                 :text (format "Task `second` (%s): BLOCKED — needs creds; first still UNVERIFIED" b)))
+        (should (= 3 (funcall reports)))
+        ;; None of it settles the multi-task request or clears the owed result.
+        (let ((row (fleet-store-get store "requests" req)))
+          (should (equal (plist-get row :state) "open"))
+          (should-not (plist-get row :outcome)))
+        (should (equal (fleet-sup-test-report-owed store lid a) (list req)))
+        ;; Verified, no teardown attempted yet: the debt is still visible, not only on a refusal.
+        (fleet-core-artifact-verify store :artifact-id (plist-get (fleet-store-query1 store "SELECT id FROM artifacts WHERE task_id = ?" a) :id) :actor lt-actor :accepted t)
+        (should (fleet-core-task-verified-p store (fleet-store-get store "tasks" a)))
+        (should (= 0 (funcall teardowns a)))
+        (should (equal (fleet-sup-test-report-owed store lid a) (list req)))
+        ;; Retry under the refused key: the verified result goes up once (id and name are one task), then replays.
+        (let ((r (fleet-sup-test-report store lid lt-actor "r1" :kind "progress" :text "first study verified" :request-id req :task-ids (list "first" a))))
+          (should (equal (plist-get r :state) "open"))
+          (should (equal (append (plist-get r :tasks) nil) (list (list :id a :name "first")))))
+        (should (plist-get (fleet-sup-test-report store lid lt-actor "r1" :kind "progress" :text "first study verified" :request-id req :task-ids (list "first" a)) :replayed))
+        (should (= 4 (funcall reports)))
+        (should (= 1 (funcall markers a)))
+        (should-not (fleet-sup-test-report-owed store lid a))
+        (fleet-sup-test-settle)
+        ;; Whether a report rode the first wake or waits behind the busy root, the root's line names
+        ;; the verified task; the early report says what is unverified.
+        (let ((lines (concat (mapconcat (lambda (m) (plist-get m :text)) (fleet-sup-test-wakes store rid) "\n") "\n"
+                             (fleet-supervisor--wake-text store (fleet-store-pending-receipts store rid '("pending") 50)))))
+          (should (string-match-p "lieutenant-report · lieutenant `fleet` progress · request .* · verified `first` · first study verified" lines))
+          (should (string-match-p "lieutenant `fleet` progress · request [^·]*· Task `first` ([^)]*): operator reports done — UNVERIFIED" lines))
+          (should (string-match-p "lieutenant `fleet` question · request [^·]*· Task `second` ([^)]*): BLOCKED — needs creds" lines)))
+        ;; Teardown starts at once and finishes while the root has acknowledged nothing.
+        (should (equal (plist-get (fleet-test-wait-op store (plist-get (fleet-core-teardown-task store a :actor lt-actor :action-id "t1") :operation-id)) :state) "done"))
+        (should (equal (plist-get (fleet-store-get store "tasks" a) :lifecycle) "archived"))
+        (should (= 0 (funcall acked)))
+        ;; No auto-settlement; further work on the same request continues.
+        (let ((row (fleet-store-get store "requests" req)))
+          (should (equal (plist-get row :state) "open"))
+          (should-not (plist-get row :outcome)))
+        (should (plist-get (fleet-supervisor-delegate store :fleet-id rid :actor root-actor :lieutenant "fleet" :request-id req :text "Use the staging creds" :idempotency-key "d2") :message-id))
+        (fleet-core-task-status store :runtime-id (fleet-core-test-runtime store b) :phase "done" :artifacts '((:kind "report" :rel-path "report.md")))
+        (let ((art (plist-get (fleet-store-query1 store "SELECT id FROM artifacts WHERE task_id = ?" b) :id))
+              (file (expand-file-name "report.md" (fleet-core-task-dir store (fleet-store-get store "tasks" b)))))
+          (fleet-core-artifact-verify store :artifact-id art :actor lt-actor :accepted t)
+          (fleet-sup-test-report store lid lt-actor "r4" :kind "progress" :text "second verified" :request-id req :task-ids (list b))
+          (should-not (fleet-sup-test-report-owed store lid b))
+          ;; The result changed and was verified again: the earlier report no longer covers it.
+          (fleet-test-write file "# Report\ncorrected\n")
+          (fleet-core-artifact-verify store :artifact-id art :actor lt-actor :accepted t)
+          (should (equal (fleet-sup-test-report-owed store lid b) (list req)))
+          (fleet-test-should-fail 'report-pending (fleet-core-teardown-task store b :actor lt-actor)))
+        ;; Settled only when the whole request is done, naming the result; then teardown.
+        (should (equal (plist-get (fleet-sup-test-report store lid lt-actor "r5" :kind "settled" :outcome "done" :text "both studies verified" :request-id req :task-ids (list b)) :state) "settled"))
+        (should (equal (plist-get (fleet-store-get store "requests" req) :outcome) "done"))
+        (should (equal (plist-get (fleet-test-wait-op store (plist-get (fleet-core-teardown-task store b :actor lt-actor) :operation-id)) :state) "done"))
+        (should (= 0 (funcall acked)))
+        ;; Nothing open upstream: a verified result owes no report.
+        (setq fleet-test-fake-turn 'finish)
+        (let ((c (fleet-core-test-verified-study store lid "third")))
+          (should-not (fleet-sup-test-report-owed store lid c))
+          (should (equal (plist-get (fleet-test-wait-op store (plist-get (fleet-core-teardown-task store c :actor lt-actor) :operation-id)) :state) "done")))
+        (should (= 6 (funcall reports)))))))
+
+(ert-deftest fleet-supervisor-result-report-is-durable-while-the-root-is-lost-or-parked ()
+  "A report is an event persisted before delivery, not a root acknowledgement:
+with the root commander never started, or the whole fleet parked, the report
+records its pending receipt and the teardown proceeds; delivery waits for the
+root and the request stays open."
+  (fleet-sup-test-with
+    (let* ((rid (fleet-core-test-fleet store "root"))
+           (lid (plist-get (fleet-core-create-fleet store "fleet" :parent-id rid :charter "Fleet source") :id))
+           (lt-actor (fleet-core-actor-commander lid))
+           (req (fleet-core-test-open-request store rid lid "diagnosis"))
+           (a (fleet-core-test-verified-study store lid "first"))
+           (b (fleet-core-test-verified-study store lid "second")))
+      ;; Root commander lost (never started): the report still lands, with a pending receipt.
+      (fleet-sup-test-report store lid lt-actor "r1" :kind "progress" :text "first verified" :request-id req :task-ids (list a))
+      (fleet-sup-test-settle)
+      (should (eq 'commander-unavailable (fleet-supervisor-wake-admission store rid)))
+      (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM event_receipts WHERE fleet_id = ? AND state = 'pending'" rid)))
+      (should (= 0 (length (fleet-sup-test-wakes store rid))))
+      (should (equal (plist-get (fleet-test-wait-op store (plist-get (fleet-core-teardown-task store a :actor lt-actor) :operation-id)) :state) "done"))
+      ;; Teardown finished while the report is still only queued for a root that has not woken.
+      (should (equal (plist-get (fleet-store-get store "tasks" a) :lifecycle) "archived"))
+      (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM event_receipts WHERE fleet_id = ? AND state = 'pending'" rid)))
+      (should (= 0 (length (fleet-sup-test-wakes store rid))))
+      ;; Whole fleet parked: operators stop, the done task is suspended and still owes its report.
+      (should (equal (plist-get (fleet-test-wait-op store (fleet-core-park-fleet store rid)) :state) "done"))
+      ;; The returned operation is the root's; the lieutenant's own park finishes separately.
+      (should (fleet-test-wait-for (lambda () (equal (plist-get (fleet-store-get store "fleets" lid) :lifecycle) "parked")) 10))
+      (should (equal (plist-get (fleet-store-get store "tasks" b) :lifecycle) "suspended"))
+      (fleet-test-should-fail 'report-pending (fleet-core-teardown-task store b :actor lt-actor))
+      (should (equal (fleet-sup-test-report-owed store lid b) (list req)))
+      (fleet-sup-test-report store lid lt-actor "r2" :kind "progress" :text "second verified" :request-id req :task-ids (list b))
+      (should (= 2 (fleet-store-scalar store "SELECT COUNT(*) FROM event_receipts WHERE fleet_id = ? AND state = 'pending'" rid)))
+      (should (equal (plist-get (fleet-test-wait-op store (plist-get (fleet-core-teardown-task store b :actor lt-actor) :operation-id)) :state) "done"))
+      (should (equal (plist-get (fleet-store-get store "requests" req) :state) "open")))))
+
 (ert-deftest fleet-supervisor-lieutenant-replace-is-non-cascading-and-wakes-the-root ()
   "The commander replaces one lieutenant's runtime: verified stop, claims to
 reconciliation, successor booted with the handoff; the root, siblings and

@@ -91,7 +91,44 @@
       (should (eq 'unknown (p '(:lifecycle "active" :phase "working"))))
       ;; a failed operation adds an attention badge even on done
       (let ((w (fleet-dashboard-task-projection '(:lifecycle "active" :phase "done" :operations ((:kind "task-teardown" :state "failed"))) fleet)))
-        (should (eq 'done (car w))) (should (fleet-dashboard-attention-p w)) (should (string-match-p "op task-teardown failed" (nth 2 w)))))))
+        (should (eq 'done (car w))) (should (fleet-dashboard-attention-p w)) (should (string-match-p "op task-teardown failed" (nth 2 w))))
+      ;; so does a lieutenant's result still owed upstream, on done and suspended rows alike
+      (dolist (life '("active" "suspended"))
+        (let ((w (fleet-dashboard-task-projection (list :lifecycle life :phase "done" :detail "d" :report-owed '("r")) fleet)))
+          (should (fleet-dashboard-attention-p w)) (should (string-match-p "d · report owed upstream" (nth 2 w)))))
+      (should-not (fleet-dashboard-attention-p (fleet-dashboard-task-projection '(:lifecycle "active" :phase "done" :detail "d") fleet))))))
+
+(ert-deftest fleet-dashboard-shows-a-lieutenant-result-owed-upstream-before-any-teardown ()
+  "Owner contract after the 2026-09-23 reporting gap: a verified lieutenant
+result on an open request is visible as owed on the dashboard (row badge
+and attention) before anyone attempts a teardown, and clears
+as soon as a report naming it is persisted, with the root commander never
+having read it."
+  (fleet-dash-test-with
+    (let* ((rid (fleet-core-test-fleet store "workshop"))
+           (lid (plist-get (fleet-core-create-fleet store "frontend" :parent-id rid :charter "UI") :id))
+           (lt-actor (fleet-core-actor-commander lid))
+           (req (fleet-core-test-open-request store rid lid "nav"))
+           (tid (fleet-core-test-verified-study store lid "nav"))
+           (idle (plist-get (fleet-core-create-fleet store "idle" :parent-id rid :charter "Nothing delegated") :id))
+           (other (fleet-core-test-verified-study store idle "side-work")))
+      (fleet-dashboard-render)
+      (should (= 0 (fleet-store-scalar store "SELECT COUNT(*) FROM operations WHERE kind = 'task-teardown'")))
+      (should (string-match-p "report owed upstream" (fleet-dash-test-row-line (cons lid tid))))
+      (fleet-dashboard--goto-row (cons lid tid))
+      (should (get-text-property (point) 'fleet-attention))
+      ;; a lieutenant with no open request owes nothing
+      (should-not (string-match-p "report owed" (fleet-dash-test-row-line (cons idle other))))
+      (fleet-dashboard--goto-row (cons idle other))
+      (should-not (get-text-property (point) 'fleet-attention))
+      ;; the report is persisted (its root receipt still pending): the debt clears at once
+      (fleet-store-with-action store lt-actor "r1" (list :kind "progress")
+        (fleet-supervisor-report store :fleet-id lid :actor lt-actor :kind "progress" :text "nav verified" :request-id req :task-ids (list tid)))
+      (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM event_receipts r JOIN events e ON e.id = r.event_id WHERE r.fleet_id = ? AND e.kind = 'lieutenant-report' AND r.state = 'pending'" rid)))
+      (fleet-dashboard-render)
+      (should-not (string-match-p "report owed" (fleet-dash-test-row-line (cons lid tid))))
+      (fleet-dashboard--goto-row (cons lid tid))
+      (should-not (get-text-property (point) 'fleet-attention)))))
 
 (ert-deftest fleet-dashboard-rows-columns-unicode-and-refresh-identity ()
   (fleet-dash-test-with
