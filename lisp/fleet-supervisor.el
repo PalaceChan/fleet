@@ -827,6 +827,19 @@ no transaction spans the dispatch.  Returns (:request-id :message-id :state)."
           (fleet-store-update store "requests" request-id (fleet-store-touch (list :message-id (plist-get m :message-id))))))
       (list :request-id request-id :message-id (plist-get m :message-id) :state (plist-get m :state)))))
 
+(defun fleet-supervisor--report-as (task &optional verified)
+  "Labelled text line stating TASK's state in a report's text.
+VERIFIED says its result passed verification.  Used in refusals of
+`task_ids', so the caller learns the form that still goes up at once."
+  (format "\"Task `%s` (%s): %s\"" (plist-get task :name) (plist-get task :id)
+          (pcase (plist-get task :phase)
+            ((guard verified) "verified — <the result>")
+            ("done" "operator reports done — UNVERIFIED, verifying now")
+            ("blocked" "BLOCKED — <what blocks it>")
+            ("needs-decision" "NEEDS DECISION — <the question>")
+            ("failed" "FAILED — <what failed>")
+            (phase (format "%s — UNVERIFIED" (or phase "not started"))))))
+
 (cl-defun fleet-supervisor-report (store &key fleet-id actor kind text request-id outcome task-ids)
   "Record a report of KIND from lieutenant fleet FLEET-ID (actor ACTOR) upstream.
 Appends an actionable `lieutenant-report' event to the parent fleet, whose
@@ -848,19 +861,30 @@ Returns (:event-id :request-id :state :tasks)."
          (req (and request-id (fleet-store-get store "requests" request-id)))
          (tasks nil))
     (unless parent-id (fleet-fail 'not-a-lieutenant "Only a lieutenant reports upstream" :fleet (plist-get fleet :name)))
-    (when (and task-ids (equal kind "question"))
-      (fleet-fail 'invalid-request "A question carries no verified result; describe blocked or unverified work in text and name task_ids on a progress or settled report once verified"))
     (dolist (ref (delete-dups (copy-sequence task-ids)))
       (let ((task (fleet-core-task store ref fleet-id)))
         (unless (equal (plist-get task :fleet-id) fleet-id)
           (fleet-fail 'forbidden "Task is not in your fleet" :task-id ref))
-        (unless (fleet-core-task-verified-p store task)
-          (fleet-fail 'deliverable-unverified "task_ids names verified results only; report an unverified result or a blocker in text, labelled unverified, without task_ids"
-                      :task-id (plist-get task :id) :task (plist-get task :name) :phase (plist-get task :phase)))
         ;; An id and a name may denote the same task.
         (unless (cl-find (plist-get task :id) tasks :key (lambda (x) (plist-get x :id)) :test #'equal)
           (push task tasks))))
     (setq tasks (nreverse tasks))
+    ;; Refusals teach the labelled-text form, so the same facts still go up at once.
+    (when (and tasks (equal kind "question"))
+      (fleet-fail 'invalid-request
+                  (format "A question names no task_ids: they carry verified results only. Ask again without task_ids and state each task in the text, e.g. %s. Name a task in task_ids on a progress or settled report once it is verified."
+                          (mapconcat (lambda (task) (fleet-supervisor--report-as task (fleet-core-task-verified-p store task))) tasks "; "))
+                  :tasks (vconcat (mapcar (lambda (task) (plist-get task :id)) tasks))
+                  :report-as (vconcat (mapcar (lambda (task) (fleet-supervisor--report-as task (fleet-core-task-verified-p store task))) tasks))))
+    (when-let* ((unverified (cl-remove-if (lambda (task) (fleet-core-task-verified-p store task)) tasks)))
+      (fleet-fail 'deliverable-unverified
+                  (format "task_ids names verified results only, and %s %s not verified. Report now without task_ids, stating it in the text: kind progress (question if you need a decision), e.g. %s. Name it in task_ids after you verify it."
+                          (mapconcat (lambda (task) (format "`%s` (task %s, phase %s)" (plist-get task :name) (plist-get task :id) (plist-get task :phase))) unverified ", ")
+                          (if (cdr unverified) "are" "is")
+                          (mapconcat #'fleet-supervisor--report-as unverified "; "))
+                  :task-id (plist-get (car unverified) :id) :task (plist-get (car unverified) :name) :phase (plist-get (car unverified) :phase)
+                  :tasks (vconcat (mapcar (lambda (task) (plist-get task :id)) unverified))
+                  :report-as (vconcat (mapcar #'fleet-supervisor--report-as unverified))))
     (when request-id
       (unless (and req (equal (plist-get req :child-fleet-id) fleet-id))
         (fleet-fail 'forbidden "Not a request addressed to you" :request-id request-id))

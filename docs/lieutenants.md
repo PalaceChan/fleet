@@ -139,8 +139,11 @@ human answer.
 
 - **`task_ids` is the verification gate.** Each named task must be in the lieutenant's fleet (`forbidden`;
   unknown: `no-such-task`) and pass `fleet-core-task-verified-p` now (`deliverable-unverified`); a
-  `question` naming tasks is refused (`invalid-request`). Any refusal records nothing and leaves the action
-  key free for a retry. So a named task is Fleet's evidence that its result was verified; early unverified
+  `question` naming tasks is refused (`invalid-request`). Both refusals teach the form that still goes up at
+  once: the message and evidence `report-as` give, per task, a labelled line such as
+  ``"Task `nav` (<id>): operator reports done — UNVERIFIED, verifying now"`` or ``"… BLOCKED — <what blocks
+  it>"`` to send as text without `task_ids`. Any refusal records nothing and leaves the action key free for
+  a retry. So a named task is Fleet's evidence that its result was verified; early unverified
   results and blockers go up as text without `task_ids` (doctrine: `prompts/lieutenant.md`, asserted by
   `fleet-core-lieutenant-prompt-reports-unverified-results-early-without-task-ids`; Fleet cannot judge
   the text's truth). In the report's transaction each named task gets a non-actionable `task-reported`
