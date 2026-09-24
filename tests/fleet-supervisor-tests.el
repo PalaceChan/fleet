@@ -216,8 +216,9 @@ nothing is open upstream, nothing is owed."
             (fleet-sup-test-report store lid lt-actor "r1" :kind "progress" :text "x" :request-id req :task-ids (list foreign)))
           (fleet-test-should-fail 'no-such-task
             (fleet-sup-test-report store lid lt-actor "r1" :kind "progress" :text "x" :request-id req :task-ids (list "nope")))
+          ;; (Named tasks are checked first, so the foreign request is tried without them.)
           (fleet-test-should-fail 'forbidden
-            (fleet-sup-test-report store lid lt-actor "r1" :kind "progress" :text "x" :request-id "not-mine" :task-ids (list a)))
+            (fleet-sup-test-report store lid lt-actor "r1" :kind "progress" :text "x" :request-id "not-mine"))
           (should (= 0 (funcall reports)))
           (should (= 0 (funcall markers a)))
           (should (= 0 (fleet-store-scalar store "SELECT COUNT(*) FROM actions WHERE actor = ? AND action_id = 'r1'" lt-actor)))
