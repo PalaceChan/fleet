@@ -600,9 +600,9 @@ exactly the silent reply this check exists for (stall study cbb881f0,
 section 7.1).")
 
 (defun fleet-supervisor--check-turn-reported (store rt m)
-  "Record `turn-unreported' when operator RT's turn on commander message M
-published no reply status.  A commander message is answered with an
-actionable `fleet_status'; chat text reaches nobody.  When no event of
+  "Record `turn-unreported' when RT's turn on commander message M had no reply.
+RT is an operator.  A commander message is answered with an actionable
+`fleet_status'; chat text reaches nobody.  When no event of
 `fleet-supervisor--reply-status-kinds' from RT's task and runtime has
 `created_at' at or after M's, the commander is waiting on an answer that
 never came and nothing would wake it (openclaw 2026-09-23, 7 h; fleet
