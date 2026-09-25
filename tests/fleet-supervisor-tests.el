@@ -747,8 +747,9 @@ a turn that did work before failing is never resent."
 answered a commander message in chat, ended its turn without an actionable
 status, and nothing woke the commander.  Such a turn now records exactly one
 actionable `turn-unreported' that wakes the commander; a bare `working' is not
-a reply; a turn that publishes `done' records none; a status published before
-the message does not answer it; the wake message itself behaves as before."
+a reply; a turn that publishes `paused' or `done' records none; a status
+published before the message does not answer it; the wake message itself
+behaves as before."
   (fleet-sup-test-with
     (let* ((fid (fleet-core-test-fleet store)) (cid (fleet-sup-test-commander store fid))
            (cconn (fleet-eca-conn cid))
@@ -791,6 +792,13 @@ the message does not answer it; the wake message itself behaves as before."
         (should (equal "finished" (plist-get (fleet-store-query1 store "SELECT state FROM wake_batches WHERE fleet_id = ?" fid) :state)))
         ;; keep the commander lane out of the rest: only the operator's events matter below
         (fleet-core-set-supervision store fid nil)
+        ;; a declared wait is a published status (its deadline wakes the commander): nothing recorded
+        (fleet-supervisor-send store :fleet-id fid :task-id tid :runtime-id rid :text "is CI green?" :sender commander)
+        (fleet-sup-test-settle)
+        (fleet-core-task-status store :runtime-id rid :phase "paused" :detail "CI still running"
+                                :wait (list :reason "CI run 8" :deadline (fleet-core-test-iso 600)))
+        (fleet-test-fake-finish oconn) (fleet-sup-test-settle)
+        (should (= 1 (length (funcall unreported))))
         ;; a reply that publishes `done' records nothing
         (fleet-supervisor-send store :fleet-id fid :task-id tid :runtime-id rid :text "then finish it" :sender commander)
         (fleet-sup-test-settle)
