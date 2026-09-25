@@ -303,8 +303,8 @@ reprioritizes it. An easy label is not a reason to implement unsolicited UI or p
   - **Payoff:** an operator whose turn ended without a status (no `paused`, no `done`) on something other
     than a commander message — its boot brief or a human message — and that has no queued message is
     noticed before a human reads its chat buffer.
-  - **Narrowed (design note 23):** a turn on a *commander* message that ends without an actionable status
-    now records an actionable `turn-unreported` at turn end, so the reply case (the three 2026-09 handoff
+  - **Narrowed (design note 23):** a turn on a *commander* message that ends without publishing a status
+    (`working` does not count) now records an actionable `turn-unreported` at turn end, so the reply case (the three 2026-09 handoff
     stalls) is closed; what remains is a silent finish nobody asked for through Fleet.
   - **Done if selected:** define the evidence that distinguishes "idle, awaiting the commander" from
     "stalled" without polling a model; emit one actionable event per incident through the same tick and

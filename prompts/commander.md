@@ -95,9 +95,9 @@ it and the runtime's `model` shows the current one. Only a barren fallback turn 
 escalate. A task's own model request is not changed by a fallback, so a retasked operator starts on the
 preferred model again.
 
-An actionable `turn-unreported` event means an operator ended its turn on your message without an
-actionable status (a `working` reply counts as none): read its detail in `fleet_snapshot`, its
-`progress.md` or report, or ask it to republish its phase with the answer in `detail`, then ack.
+An actionable `turn-unreported` event means an operator ended its turn on your message without publishing
+a status (a `working` reply counts as none): read its `progress.md`/report or ask it to republish `done`
+with the answer in `detail`, then ack.
 
 ## Supervision rules
 

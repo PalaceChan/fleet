@@ -1028,7 +1028,7 @@ applicable status arrives.
 
 Actionable events include task done, decision requested, blocked, failed, unexpected runtime death,
 delivery-unknown, wait deadline expiry, operation failure, permission/question requiring intervention,
-an operator turn on a commander message that ended without an actionable status (`turn-unreported`, note
+an operator turn on a commander message that ended without publishing a status (`turn-unreported`, note
 23), and task-start/cleanup results that need commander continuation.
 
 Ordinary working updates, streaming output, and token/tool progress update views but do not wake a model. Do
@@ -2284,28 +2284,31 @@ Each was driven by evidence from the installed pair (see `docs/eca-compatibility
     [known gaps](known-gaps.md#authority-and-interface) and `TODO.md` (D12), not closed here.
 
 23. **A turn that answers the commander without a status wakes the commander (`turn-unreported`, stall
-    study `cbb881f0`, 2026-09-24).** Three handoff stalls (13 minutes, 7 h 05 min, 13.6 h) had one shape:
-    a commander messaged an operator, the operator did the work and answered in chat, and its turn ended
-    with no actionable status, so nothing woke the commander until the human asked. In one of them Fleet's
-    own `runtime-busy` refusal had promised "you are woken by its status event". Across eight days 47 of
+    study `cbb881f0`, 2026-09-24).** Three handoff stalls (13 minutes; 7 h 05 min; 13 h 34 min on task
+    `aa0d115b`, `upstream-report-guardrail`, in the fleet lieutenant) had one shape: a commander messaged an
+    operator, the operator did the work and answered in chat, and its turn ended with no actionable
+    status, so nothing woke the commander until the human asked. In two of them the commander had a
+    corrective retask ready and Fleet's own `runtime-busy` refusal promised "you are woken by its status
+    event". Across eight days 47 of
     124 commander-driven operator turns were silent. Doctrine alone had not held (a lieutenant's written
     rule, three models, all in follow-up turns after the brief had faded), and the facts that identify the
     stall exist in the store the second the turn ends. So `fleet-supervisor--on-message-finished`, which
     already inspected the end of a `wake`/`reminder` turn for a missing acknowledgment, gained the
     symmetric check for a `commander`-origin message to an operator: when the turn was not barren (barren
     turns already record an actionable `turn-empty`/`turn-failed`) and no `task-done`, `task-failed`,
-    `task-blocked` or `decision-requested` event from that task and runtime has `created_at` at or after
-    the message's, it appends one actionable `turn-unreported` event carrying `:message-id`, which travels
-    the ordinary `fleet-store-actionable-event-hook` wake path. Those four are exactly the kinds
-    `fleet-core-task-status` appends as actionable; `task-working` and `task-paused` do not count, because
-    neither wakes anyone and a bare `working` answer followed by silence is the stall itself (the commander
-    then reads the answer from the task's detail). At most one event per message by construction, since a
-    message finishes once. It is the smallest form: one query beside an existing turn-end check, one event
+    `task-blocked`, `decision-requested` or `task-paused` event from that task and runtime has `created_at`
+    at or after the message's, it appends one actionable `turn-unreported` event carrying `:message-id`,
+    which travels the ordinary `fleet-store-actionable-event-hook` wake path. The first four are the kinds
+    `fleet-core-task-status` appends as actionable; `task-paused` is not actionable but is a declared
+    durable wait whose deadline wakes the commander, so it counts as a published status. `task-working`
+    does not count: it wakes nobody, and a bare `working` answer followed by silence is the stall itself.
+    At most one event per message by construction, since a message finishes once. It is the smallest form: one query beside an existing turn-end check, one event
     kind, no timer, table, column or knob, and zero delay. An idle-state watchdog on the tick was
     considered and not adopted: it needs a threshold above live-conversation noise (~15 minutes), at which
     it misses the shortest of the three stalls, and it adds a knob and per-interval idempotency for no
-    extra handoff catch. Doctrine now matches: operators answer a commander message with `fleet_status`
-    (chat text reaches nobody), commanders read or ask on `turn-unreported`, and approved work that must
+    extra handoff catch. Doctrine now matches: operators answer a commander's request with an actionable
+    status (`done`, or `blocked`/`needs-decision`, with the answer in `detail`; `working` and chat text
+    reach nobody), commanders read the report or ask for `done` to be republished on `turn-unreported`, and approved work that must
     wait becomes a `ready` task depending on its gate instead of a sentence in a message (the study's
     9-hour "prose queue", which no store query could see). Deliberately not done: a turn that ends
     silently on the operator's boot message or on a human message is not reported (no commander message
