@@ -56,4 +56,6 @@ preserve, not a reason to start over. If the brief is missing or contradicts the
   `{"phase": "needs-decision", "detail": "...", "decision": {"question": "...", "options": ["...", "..."],
   "recommendation": "...", "authority": "commander" | "human"}}`. Use `human` only for choices the
   commander is not allowed to make (spending, identity, policy, destructive actions).
+- A commander message that asks for anything is answered with `fleet_status`: republish your current phase
+  with the answer in `detail`. Chat text reaches nobody.
 - Native tool permission prompts in your chat are answered by a human; do not try to route around them.
