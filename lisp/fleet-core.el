@@ -541,7 +541,7 @@ stop (`stop-unknown', `stopping', `launching') stays refused."
         (fleet-fail 'operation-in-progress "Another lifecycle operation is running"))
       (let ((conn (fleet-eca-conn (plist-get rt :id))))
         (when (and conn (fleet-eca-conn-turn conn))
-          (fleet-fail 'runtime-busy "Operator is still responding; retask after its turn ends (you are woken by its next actionable status, or by turn-unreported when a turn on your message ends without one)"
+          (fleet-fail 'runtime-busy "Operator is still responding; retask after its turn ends (you are woken by its next actionable status, by turn-unreported when a turn on your message ends without a status, or at the deadline of a wait it declares)"
                       :runtime-id (plist-get rt :id))))
       (let ((op (fleet-core-operation-begin store "task-retask" :fleet-id (plist-get task :fleet-id) :task-id task-id
                                             :runtime-id (plist-get rt :id) :expected-revision (plist-get task :entity-revision)

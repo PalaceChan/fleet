@@ -589,19 +589,20 @@ Only when the lane is free and admission holds."
                               (list :detail (fleet-eca--clip (format "%s · sent since:%s" (or (plist-get task :detail) "") (fleet-eca--clip (or (plist-get m :text) "") 40)) 300))))))))
 
 (defconst fleet-supervisor--reply-status-kinds
-  '("task-done" "task-failed" "task-blocked" "decision-requested")
+  '("task-done" "task-failed" "task-blocked" "decision-requested" "task-paused")
   "Event kinds that count as an operator's reply to a commander message.
-Exactly the kinds `fleet-core-task-status' appends as actionable (phases
-done, failed, blocked, needs-decision), i.e. the ones that wake the
-commander by themselves.  `task-working' and `task-paused' are
-deliberately absent: neither wakes anyone, and an operator that answers a
-follow-up with a bare `working' and goes quiet is exactly the silent
-reply this check exists for (stall study cbb881f0, section 7.1).")
+The kinds `fleet-core-task-status' appends for phases done, failed,
+blocked and needs-decision (actionable: they wake the commander by
+themselves) and paused (not actionable, but a declared durable wait whose
+deadline will wake it).  `task-working' is deliberately absent: an
+operator that answers a follow-up with a bare `working' and goes quiet is
+exactly the silent reply this check exists for (stall study cbb881f0,
+section 7.1).")
 
 (defun fleet-supervisor--check-turn-reported (store rt m)
   "Record `turn-unreported' when operator RT's turn on commander message M
-published no reply status.  A commander message is answered with
-`fleet_status'; chat text reaches nobody.  When no event of
+published no reply status.  A commander message is answered with an
+actionable `fleet_status'; chat text reaches nobody.  When no event of
 `fleet-supervisor--reply-status-kinds' from RT's task and runtime has
 `created_at' at or after M's, the commander is waiting on an answer that
 never came and nothing would wake it (openclaw 2026-09-23, 7 h; fleet
