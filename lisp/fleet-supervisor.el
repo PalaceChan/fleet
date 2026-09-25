@@ -316,7 +316,7 @@ RPC layer records every call it receives; this records the ones it cannot."
                                                    (list :source (plist-get ev :source) :error-text (plist-get ev :error-text)
                                                          :usage (plist-get ev :usage) :empty empty :barren barren)))
            (when barren (fleet-supervisor--give-up-barren-turn store rt m (plist-get ev :error-text)))
-           (when mid (fleet-supervisor--on-message-finished store rt mid)))))
+           (when mid (fleet-supervisor--on-message-finished store rt mid barren)))))
        ;; Dispatch the next queued message only after the current input chunk
        ;; is fully observed: ECA emits `statusChanged idle' and `progress
        ;; finished' together, and a prompt submitted from inside the first
@@ -588,10 +588,49 @@ Only when the lane is free and admission holds."
           (fleet-store-update store "tasks" (plist-get task :id)
                               (list :detail (fleet-eca--clip (format "%s · sent since:%s" (or (plist-get task :detail) "") (fleet-eca--clip (or (plist-get m :text) "") 40)) 300))))))))
 
-(defun fleet-supervisor--on-message-finished (store rt mid)
-  "Turn of message MID ended on RT.
-For wake messages check acknowledgment (one reminder, then hold)."
+(defconst fleet-supervisor--reply-status-kinds
+  '("task-done" "task-failed" "task-blocked" "decision-requested" "task-paused")
+  "Event kinds that count as an operator's reply to a commander message.
+The kinds `fleet-core-task-status' appends for phases done, failed,
+blocked and needs-decision (actionable: they wake the commander by
+themselves) and paused (not actionable, but a declared durable wait whose
+deadline will wake it).  `task-working' is deliberately absent: an
+operator that answers a follow-up with a bare `working' and goes quiet is
+exactly the silent reply this check exists for (stall study cbb881f0,
+section 7.1).")
+
+(defun fleet-supervisor--check-turn-reported (store rt m)
+  "Record `turn-unreported' when RT's turn on commander message M had no reply.
+RT is an operator.  A commander message is answered with an actionable
+`fleet_status'; chat text reaches nobody.  When no event of
+`fleet-supervisor--reply-status-kinds' from RT's task and runtime has
+`created_at' at or after M's, the commander is waiting on an answer that
+never came and nothing would wake it (openclaw 2026-09-23, 7 h; fleet
+lieutenant 13.6 h): append one actionable event carrying M's id, which
+travels the ordinary `fleet-store-actionable-event-hook' wake path.  One
+per message by construction, since a message finishes once; barren turns
+never get here, they already record `turn-empty'/`turn-failed'.  No
+timer, no threshold: the fact exists the moment the turn ends."
+  (let ((tid (plist-get rt :task-id)) (rid (plist-get rt :id)))
+    (when (and tid
+               (zerop (apply #'fleet-store-scalar store
+                             (format "SELECT COUNT(*) FROM events WHERE task_id = ? AND runtime_id = ? AND created_at >= ? AND kind IN (%s)"
+                                     (mapconcat (lambda (_) "?") fleet-supervisor--reply-status-kinds ","))
+                             tid rid (plist-get m :created-at) fleet-supervisor--reply-status-kinds)))
+      (fleet-store-transaction store
+        (fleet-store-append-event store :fleet-id (plist-get rt :fleet-id) :task-id tid :runtime-id rid
+                                  :kind "turn-unreported" :source "eca" :actionable t
+                                  :payload (list :message-id (plist-get m :id) :sent-at (plist-get m :created-at)
+                                                 :detail (format "turn on your message ended without a status: %s"
+                                                                 (fleet-eca--clip (or (plist-get m :text) "") 60))))))))
+
+(defun fleet-supervisor--on-message-finished (store rt mid &optional barren)
+  "Turn of message MID ended on RT; BARREN when it did nothing at all.
+For wake messages check acknowledgment (one reminder, then hold); for a
+commander message to an operator check that the turn reported."
   (let ((m (fleet-store-get store "messages" mid)))
+    (when (and m (not barren) (equal (plist-get m :origin) "commander") (equal (plist-get rt :role) "operator"))
+      (fleet-supervisor--check-turn-reported store rt m))
     (when (and m (member (plist-get m :origin) '("wake" "reminder")))
       (when-let* ((batch (fleet-store-query1 store "SELECT * FROM wake_batches WHERE message_id = ?" mid)))
         (let ((unacked (fleet-store-query store "SELECT id, event_id FROM event_receipts WHERE batch_id = ? AND state = 'claimed'" (plist-get batch :id))))

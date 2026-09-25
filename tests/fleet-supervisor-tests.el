@@ -742,6 +742,82 @@ a turn that did work before failing is never resent."
       (should (= 2 (funcall events "turn-failed")))
       (should (equal "fake/other" (plist-get (fleet-store-get store "runtimes" cid) :model))))))
 
+(ert-deftest fleet-supervisor-silent-reply-to-a-commander-message-is-turn-unreported ()
+  "openclaw 2026-09-23 (7 h) and the fleet lieutenant (13.6 h): an operator
+answered a commander message in chat, ended its turn without an actionable
+status, and nothing woke the commander.  Such a turn now records exactly one
+actionable `turn-unreported' that wakes the commander; a bare `working' is not
+a reply; a turn that publishes `paused' or `done' records none; a status
+published before the message does not answer it; the wake message itself
+behaves as before."
+  (fleet-sup-test-with
+    (let* ((fid (fleet-core-test-fleet store)) (cid (fleet-sup-test-commander store fid))
+           (cconn (fleet-eca-conn cid))
+           (tid (plist-get (fleet-core-test-study store fid) :id))
+           (commander (fleet-core-actor-commander fid))
+           (unreported (lambda () (fleet-store-query store "SELECT * FROM events WHERE kind = 'turn-unreported' ORDER BY created_at")))
+           (message-id (lambda (ev) (plist-get (fleet-store-unjson (plist-get ev :payload)) :message-id))))
+      (fleet-sup-test-settle)
+      (fleet-core-test-start store tid)
+      (fleet-sup-test-settle)
+      (let* ((rid (fleet-core-test-runtime store tid)) (oconn (fleet-eca-conn rid)))
+        ;; the operator's boot turn is not a commander message
+        (should (null (funcall unreported)))
+        (setq fleet-test-fake-turn 'busy)
+        ;; silent reply: the turn works (not barren) and publishes only `working'
+        (let ((m1 (plist-get (fleet-supervisor-send store :fleet-id fid :task-id tid :runtime-id rid
+                                                    :text "why is the digest missing?" :sender commander)
+                             :message-id)))
+          (fleet-sup-test-settle)
+          (fleet-core-task-status store :runtime-id rid :phase "working" :detail "looking into it")
+          (fleet-test-fake-finish oconn) (fleet-sup-test-settle)
+          (let ((evs (funcall unreported)))
+            (should (= 1 (length evs)))
+            (should (eql 1 (plist-get (car evs) :actionable)))
+            (should (equal tid (plist-get (car evs) :task-id)))
+            (should (equal rid (plist-get (car evs) :runtime-id)))
+            (should (equal m1 (funcall message-id (car evs))))
+            ;; the ordinary actionable wake path: one wake naming the event
+            (let ((wakes (fleet-sup-test-wakes store fid)))
+              (should (= 1 (length wakes)))
+              (should (equal cid (plist-get (car wakes) :target-runtime-id)))
+              (should (string-match-p (regexp-quote (format "event %s: turn-unreported" (plist-get (car evs) :id)))
+                                      (plist-get (car wakes) :text))))))
+        ;; no regression for the wake message: finished unacknowledged => one reminder, no new event
+        (fleet-test-fake-finish cconn) (fleet-sup-test-settle)
+        (should (equal '("wake" "reminder") (mapcar (lambda (m) (plist-get m :origin)) (fleet-sup-test-wakes store fid t))))
+        (should (= 1 (length (funcall unreported))))
+        (fleet-supervisor-ack store :fleet-id fid :receipt-ids (list (plist-get (car (funcall unreported)) :id)) :outcome "handled" :actor commander)
+        (fleet-test-fake-finish cconn) (fleet-sup-test-settle)
+        (should (equal "finished" (plist-get (fleet-store-query1 store "SELECT state FROM wake_batches WHERE fleet_id = ?" fid) :state)))
+        ;; keep the commander lane out of the rest: only the operator's events matter below
+        (fleet-core-set-supervision store fid nil)
+        ;; a declared wait is a published status (its deadline wakes the commander): nothing recorded
+        (fleet-supervisor-send store :fleet-id fid :task-id tid :runtime-id rid :text "is CI green?" :sender commander)
+        (fleet-sup-test-settle)
+        (fleet-core-task-status store :runtime-id rid :phase "paused" :detail "CI still running"
+                                :wait (list :reason "CI run 8" :deadline (fleet-core-test-iso 600)))
+        (fleet-test-fake-finish oconn) (fleet-sup-test-settle)
+        (should (= 1 (length (funcall unreported))))
+        ;; a reply that publishes `done' records nothing
+        (fleet-supervisor-send store :fleet-id fid :task-id tid :runtime-id rid :text "then finish it" :sender commander)
+        (fleet-sup-test-settle)
+        (fleet-core-task-status store :runtime-id rid :phase "done" :detail "digest in report.md"
+                                :artifacts '((:kind "report" :rel-path "report.md")))
+        (fleet-test-fake-finish oconn) (fleet-sup-test-settle)
+        (should (= 1 (length (funcall unreported))))
+        ;; a follow-up after `done' is not answered by that earlier `done'
+        (let ((m3 (plist-get (fleet-supervisor-send store :fleet-id fid :task-id tid :runtime-id rid
+                                                    :text "one more question" :sender commander)
+                             :message-id)))
+          (fleet-sup-test-settle)
+          (fleet-test-fake-finish oconn) (fleet-sup-test-settle)
+          (let ((evs (funcall unreported)))
+            (should (= 2 (length evs)))
+            (should (equal m3 (funcall message-id (cadr evs))))
+            (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM event_receipts WHERE event_id = ? AND state = 'pending'"
+                                             (plist-get (cadr evs) :id))))))))))
+
 (ert-deftest fleet-supervisor-ack-lifecycle-and-reminder-once ()
   (fleet-sup-test-with
     (let* ((fid (fleet-core-test-fleet store)) (cid (fleet-sup-test-commander store fid))

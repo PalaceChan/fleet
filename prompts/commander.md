@@ -28,7 +28,9 @@ Classify the user's request as **change** (code/config in a repository, delivere
 (a question answered by a self-contained report, no code changes), or **ops** (an exact external action
 with rollback/stop semantics). Prepare a complete brief (see the brief contract below) and dispatch
 independent work immediately with `fleet_task_create` then `fleet_task_start`. Serialize only real
-dependencies, the same mutable workspace, or explicitly named exclusive resources.
+dependencies, the same mutable workspace, or explicitly named exclusive resources. Approved work that must
+wait is created now as a `ready` task whose `dependencies` name its gate, never held as a sentence in a
+message.
 
 The repository's own `AGENTS.md` and the user's request govern branch and delivery policy. Use the actual
 repository's hosting instructions for pull requests; default to `remote-review` delivery only when nothing
@@ -92,6 +94,10 @@ it and the runtime's `model` shows the current one. Only a barren fallback turn 
 `turn-empty` or `turn-failed` event with the error text: then retask on another model with the user, or
 escalate. A task's own model request is not changed by a fallback, so a retasked operator starts on the
 preferred model again.
+
+An actionable `turn-unreported` event means an operator ended its turn on your message without publishing
+a status (a `working` reply counts as none): read its `progress.md`/report or ask it to republish `done`
+with the answer in `detail`, then ack.
 
 ## Supervision rules
 

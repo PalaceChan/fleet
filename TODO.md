@@ -299,9 +299,13 @@ reprioritizes it. An easy label is not a reason to implement unsolicited UI or p
     verdict/observation path records a distinct closed state; stop verdicts and fail-closed tests unchanged.
   - **Evidence:** [zero-lieutenant run](docs/known-gaps.md#native-observations-zero-lieutenant-run-2026-09-17).
 
-- [ ] **D11 — Watch idle runtimes that declared no wait** · **medium**
-  - **Payoff:** an operator whose turn ended without a status (no `paused`, no `done`) and that has no
-    queued message is noticed before a human reads its chat buffer.
+- [ ] **D11 — Watch idle runtimes that declared no wait (non-reply case)** · **medium**
+  - **Payoff:** an operator whose turn ended without a status (no `paused`, no `done`) on something other
+    than a commander message — its boot brief or a human message — and that has no queued message is
+    noticed before a human reads its chat buffer.
+  - **Narrowed (design note 23):** a turn on a *commander* message that ends without publishing a status
+    (`working` does not count) now records an actionable `turn-unreported` at turn end, so the reply case (the three 2026-09 handoff
+    stalls) is closed; what remains is a silent finish nobody asked for through Fleet.
   - **Done if selected:** define the evidence that distinguishes "idle, awaiting the commander" from
     "stalled" without polling a model; emit one actionable event per incident through the same tick and
     idempotency rule as the wait watchdog (design note 20; opt-in like it). Coordinate with F06 (stuck lanes) and F11.
