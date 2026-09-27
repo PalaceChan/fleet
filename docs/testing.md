@@ -88,9 +88,11 @@ round-trip to the owner (only the owner may start one). Observed 2026-09-17: an 
 its file through the daemon, the eval wedged, `kill -USR2` entered the debugger's recursive edit, and the
 recovery attempt killed the server; ERT then waited on the owner. Rules for a shared daemon:
 
-- **Never byte-compile, `checkdoc`, or `package-*` through the daemon.** Load sources with `load`, run
-  ERT, and nothing else. Byte compilation belongs in `emacs -Q --batch` on a checkout, which these
-  instructions do not run either; leave it to the owner.
+- **Never byte-compile, `checkdoc`, or install, refresh, upgrade or compile packages (`package-install`,
+  `package-refresh-contents`, …) through the daemon.** Activating the installed `eca` exactly as the
+  command above does (`package-initialize`, `package-activate`) is required, not forbidden. Load sources
+  with `load`, run ERT, and nothing else. Byte compilation belongs in `emacs -Q --batch` on a checkout,
+  which these instructions do not run either; leave it to the owner.
 - **Run targeted selectors** (`(fleet-test-run-all root "^fleet-rpc-")`, a single test name), one at a
   time, each wrapped in `timeout` on the client so a wedge is visible rather than waited on.
 - **Wedge recovery, once:** `kill -USR2 <daemon pid>` then immediately

@@ -308,8 +308,10 @@ dropped, leaving the message stuck and the lane busy forever."
     ;; nothing finished by itself
     (accept-process-output nil 0.3)
     (should-not (memq 'turn-idle-observed (fleet-eca-test-kinds)))
-    (fleet-test-should-fail 'no-such-approval (fleet-eca-approve-tool conn "other"))
-    (should (fleet-eca-approve-tool conn "call_a1"))
+    ;; the human approves in the chat (Fleet never does); pending clears and the turn finishes
+    (eca-api-notify (fleet-eca-conn-session conn)
+                    :method "chat/toolCallApprove"
+                    :params (list :chatId (fleet-eca-conn-chat-id conn) :toolCallId "call_a1"))
     (should (fleet-eca-test-wait-kind 'turn-idle-observed))
     (should (null (fleet-eca-conn-pending-approvals conn)))
     (should (memq 'tool-finished (fleet-eca-test-kinds)))))
@@ -352,7 +354,7 @@ failed call's outputs are kept, clipped; a successful call's are not."
     (should (fleet-eca-test-wait-kind 'title))
     (should (= 1 (cl-count 'turn-idle-observed (fleet-eca-test-kinds))))
     (should (>= (cl-count 'turn-idle-duplicate (fleet-eca-test-kinds)) 3))
-    ;; a replayed late idle cannot finish a NEW turn: submit SLOW then inject idle-duplicate check
+    ;; after the duplicates, a new turn is still accepted and cancels cleanly
     (let ((out (fleet-eca-test-submit conn "SLOW")))
       (should (eq (plist-get out :outcome) 'accepted))
       (should (fleet-eca-conn-turn conn))

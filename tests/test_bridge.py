@@ -248,7 +248,7 @@ class BridgeMcpTests(unittest.TestCase):
         self.assertEqual(c.read_within(3)["result"], {})
         c.close()
 
-    def test_disconnected_fleet_reports_retryable_error(self):
+    def test_disconnected_fleet_lists_no_tools_and_keeps_serving(self):
         self.server = FakeFleetSocket(self.sock, fail="disconnect")
         c = McpClient(self.env)
         c.send("initialize", {"protocolVersion": "2025-06-18"})
@@ -259,7 +259,7 @@ class BridgeMcpTests(unittest.TestCase):
         self.assertEqual(c.read()["result"], {})
         c.close()
 
-    def test_socket_unreachable_is_unavailable(self):
+    def test_unreachable_socket_lists_no_tools(self):
         c = McpClient(self.env)
         c.send("initialize", {"protocolVersion": "2025-06-18"})
         c.read()

@@ -18,7 +18,6 @@
   "How a fake submission behaves: `finish' (accepted, running, idle), `busy' (accepted, running, no
 idle until `fleet-test-fake-finish'), `reject', `unknown', or `noack'.")
 (defvar fleet-test-fake-stop-verdict 'stopped "Verdict the fake systemd stop reports.")
-(defvar fleet-test-fake-started nil "Connections started, newest first.")
 
 (defun fleet-test-fake-finish (conn &optional error-text empty)
   "Complete the in-flight turn of fake CONN like a server idle would.
@@ -42,7 +41,6 @@ ERROR-TEXT it is barren but not empty (see `fleet-eca--turn-barren-p' and
                                      :model (or (plist-get args :model) "fake/model") :variant (plist-get args :variant)
                                      :state 'ready)))
     (puthash (plist-get args :runtime-id) conn fleet-eca--conns)
-    (push conn fleet-test-fake-started)
     (fleet-eca--emit conn 'catalog-updated :models '("fake/model" "fake/other") :default-model "fake/model" :variants '("low" "high"))
     (fleet-eca--emit conn 'connection-ready)
     (run-with-timer 0 nil (plist-get args :callback) (list :ok t :conn conn))
@@ -94,7 +92,7 @@ ERROR-TEXT it is barren but not empty (see `fleet-eca--turn-barren-p' and
   "Run BODY with fake ECA/systemd seams, a live fake owner, and a fresh store bound to `store'."
   (declare (indent 0) (debug t))
   `(fleet-test-with-roots
-     (let* ((fleet-test-fake-submissions nil) (fleet-test-fake-started nil)
+     (let* ((fleet-test-fake-submissions nil)
             (fleet-test-fake-turn 'finish) (fleet-test-fake-stop-verdict 'stopped)
             (fleet-core-owner (list :epoch "test-epoch" :live-p (lambda () t)))
             (fleet-core-event-sink nil)

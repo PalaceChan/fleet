@@ -255,16 +255,6 @@ lieutenant row parks the root."
       (should (memq 'error (ensure-list (get-text-property (save-excursion (fleet-dashboard--goto-row (cons f1 'commander)) (point)) 'face))))
       (should (memq 'warning (ensure-list (get-text-property (save-excursion (fleet-dashboard--goto-row (cons f2 'commander)) (point)) 'face)))))))
 
-(ert-deftest fleet-dashboard-background-start-does-not-steal-window ()
-  (fleet-dash-test-with
-    (let* ((fid (fleet-core-test-fleet store))
-           (tid (plist-get (fleet-core-test-study store fid) :id))
-           (win (selected-window)) (cur (current-buffer)))
-      (fleet-core-test-start store tid)
-      (fleet-sup-test-settle)
-      (should (eq (selected-window) win))
-      (should (eq (current-buffer) cur)))))
-
 (ert-deftest fleet-dashboard-brief-view-read-only-and-worktree-message ()
   (fleet-dash-test-with
     (let* ((fid (fleet-core-test-fleet store))

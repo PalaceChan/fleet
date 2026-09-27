@@ -912,16 +912,6 @@ Refuses when REQUEST-ID does not match the exact pending item."
     (fleet-eca--emit conn 'question-answered :request-id request-id :answer answer :by "fleet")
     t))
 
-(defun fleet-eca-approve-tool (conn tool-id &optional reject)
-  "Approve (or REJECT) exactly pending TOOL-ID on CONN."
-  (unless (member tool-id (fleet-eca-conn-pending-approvals conn))
-    (fleet-fail 'no-such-approval "Tool call is not pending approval" :tool-id tool-id))
-  (eca-api-notify (fleet-eca-conn-session conn)
-                  :method (if reject "chat/toolCallReject" "chat/toolCallApprove")
-                  :params (list :chatId (fleet-eca-conn-chat-id conn) :toolCallId tool-id))
-  (fleet-eca--emit conn (if reject 'tool-rejected-by-fleet 'tool-approved-by-fleet) :tool-id tool-id)
-  t)
-
 (defun fleet-eca-snapshot (conn)
   "Observed connection/chat/tool state of CONN (no task-state derivation)."
   (let ((turn (fleet-eca-conn-turn conn)))

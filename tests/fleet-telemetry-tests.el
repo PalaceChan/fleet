@@ -17,10 +17,8 @@
         (let ((otok (fleet-rpc-test-token (fleet-core-test-runtime store tid))))
           (fleet-rpc-test-req "fleet_status" otok '(:phase "blocked" :detail "help")))
         (fleet-supervisor-kick fid 'event) (fleet-sup-test-settle)
-        (let* ((ev (car (plist-get (fleet-rpc-test-req "fleet_events_pending" ctok) :result)))
-               (pending (append (plist-get (plist-get (fleet-rpc-test-req "fleet_events_pending" ctok) :result) :events) nil))
+        (let* ((pending (append (plist-get (plist-get (fleet-rpc-test-req "fleet_events_pending" ctok) :result) :events) nil))
                (blocked (cl-find-if (lambda (e) (equal (plist-get e :kind) "task-blocked")) pending)))
-          (ignore ev)
           (fleet-rpc-test-req "fleet_events_ack" ctok (list :event_ids (vector (plist-get blocked :event-id)) :disposition "handled") "a1"))
         (let ((s (fleet-telemetry-summary store fid)))
           ;; tool calls counted by operation, refusal recorded with code
