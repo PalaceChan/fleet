@@ -280,8 +280,6 @@ latency in the telemetry read as 0ms; the fraction is added back here."
 (defun fleet-paths-fleet-archive-dir (fleet-id)
   "Archive location for FLEET-ID's artifact tree after retirement."
   (fleet-paths-join-managed (fleet-paths-fleets-root) (concat ".archive/" fleet-id)))
-(defun fleet-paths-task-dir (fleet-id task-id) "Task directory." (fleet-paths-join-managed (fleet-paths-fleet-dir fleet-id) (concat "tasks/" task-id)))
-(defun fleet-paths-commander-dir (fleet-id) "Commander directory." (fleet-paths-join-managed (fleet-paths-fleet-dir fleet-id) "commander"))
 (defun fleet-paths-run-dir (owner-dir runtime-id) "Run directory for RUNTIME-ID under OWNER-DIR." (fleet-paths-join-managed owner-dir (concat "runs/" runtime-id)))
 
 (defun fleet-paths-eca-cache-dir (runtime-id) "Per-runtime ECA cache root." (fleet-paths-join-managed (fleet-paths-cache-root) (concat "eca/" runtime-id)))
@@ -413,12 +411,6 @@ missing; refuses special files with `artifact-unreadable'."
           (error (fleet-fail 'artifact-unreadable "Cannot read artifact" :path path :reason (error-message-string err))))
         (fleet-fail 'artifact-unreadable "Artifact is not readable" :path path)))
    (t (fleet-fail 'artifact-unreadable "Artifact is not a regular file or directory" :path path))))
-
-(defun fleet-paths-relative (root file)
-  "Return FILE relative to ROOT, signalling if FILE is outside ROOT."
-  (unless (fleet-paths-contains-p root file)
-    (fleet-fail 'invalid-path "File not under root" :root root :file file))
-  (file-relative-name (fleet-paths-canonical file) (fleet-paths-canonical root)))
 
 (provide 'fleet-paths)
 ;;; fleet-paths.el ends here
