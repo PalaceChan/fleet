@@ -25,9 +25,7 @@
     (when (boundp 'fleet-rpc--tools) (setq fleet-rpc--tools nil))
     (dolist (f (directory-files tests t "-tests\\.el\\'"))
       (load f nil t))
-    (let* ((stats (ert-run-tests-batch (or selector t)))
-           (out (with-current-buffer (get-buffer-create "*fleet-test-output*")
-                  (buffer-string))))
+    (let ((stats (ert-run-tests-batch (or selector t))))
       (format "%s\nPASSED %d  FAILED %d  SKIPPED %d  TOTAL %d"
               (fleet-test--failures stats)
               (ert-stats-completed-expected stats)
