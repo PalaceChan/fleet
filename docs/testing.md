@@ -163,8 +163,8 @@ deterministic ERT/Python suites and the native cases `fleet-runtime-native-detac
 Fleet tool advertisement and a stopped verdict; whether the model actually calls a Fleet tool is reported,
 not required. These observations do not establish today's installed versions or test totals.
 
-The prior owner checkpoint also recorded successful unattended study/change rehearsals and post-restart
-reconciliation (September 9–10, 2026). Those are historical observations, not a reproducible full acceptance
+Successful unattended study/change rehearsals and post-restart reconciliation were also recorded
+(September 9–10, 2026). Those are historical observations, not a reproducible full acceptance
 suite; they do not certify the source-review findings in [known gaps](known-gaps.md).
 
 ### Pending native acceptance

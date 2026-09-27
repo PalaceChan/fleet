@@ -1787,9 +1787,7 @@ anything is stopped; \"default\" returns to the configured default."
     (should (string-match-p "commander/archive/" text))
     (should (string-match-p "path plus why and when to read it" text))
     ;; one compact pointer example
-    (should (string-match-p "^`- commander/context/[^`]+ — [^`]+`$" text))
-    ;; the standing prohibition is preserved
-    (should (string-match-p "Never write or delegate writes to the owner's Org checkpoint" text)))
+    (should (string-match-p "^`- commander/context/[^`]+ — [^`]+`$" text)))
   ;; the lieutenant overlay speaks of the same file and stays coherent
   (should (string-match-p "rewritten, not appended" (fleet-core--prompt "lieutenant"))))
 

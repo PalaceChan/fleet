@@ -23,7 +23,7 @@ instructions. Fleet is single-host, ECA-native orchestration in Emacs with local
   trust or change ordinary non-Fleet ECA sessions. Never use real user fleets as test fixtures.
 - Keep credentials, private reports, transcripts, database copies, and session checkpoints out of Git.
   Engineering knowledge belongs here; history belongs in Git; private owner follow-ups stay with the owner.
-  Runtime handoff belongs in `commander/context.md`, never the owner's Org checkpoint.
+  Runtime handoff belongs in `commander/context.md`.
 
 ## Non-negotiable design constraints
 

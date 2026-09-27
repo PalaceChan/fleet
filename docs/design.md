@@ -11,7 +11,7 @@ execution; GitHub for normal pull-request workflows.
 Implementation/tests establish current behavior; [known gaps](known-gaps.md) records unresolved divergences
 and verification work. [Quickstart](../quickstart.md), [recovery](recovery.md), and [testing](testing.md)
 own current procedures. The embedded contributor/doctrine/quickstart sections below are design requirements;
-the shipped root instructions and `prompts/` are canonical. No external Org checkpoint is needed.
+the shipped root instructions and `prompts/` are canonical.
 
 **Navigate by concern:** §3 paths; §5 ECA; §6 service/owner lifetime; §7 state/transactions; §8 tools;
 §9 delivery; §10 lifecycle; §11 Git cleanup; §12 dashboard; §13 doctrine; §15 acceptance; §17 maintenance.

@@ -14,7 +14,7 @@ state, scheduling and the dashboard. Zero-token supervision — no model is ever
 - ECA wire evidence and private integration: [`docs/eca-compatibility.md`](docs/eca-compatibility.md)
 - Recovery: [`docs/recovery.md`](docs/recovery.md) · Verification: [`docs/testing.md`](docs/testing.md)
 
-The repository owns engineering guidance; Git owns history. No external session checkpoint is required.
+The repository owns engineering guidance; Git owns history.
 Owner preferences and private runtime follow-ups stay outside source; determine live status by inspection,
 not by a remembered commit, process ID, or model selection.
 
