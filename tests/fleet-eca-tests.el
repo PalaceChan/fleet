@@ -307,7 +307,14 @@ dropped, leaving the message stuck and the lane busy forever."
     (should (equal (fleet-eca-conn-pending-approvals conn) '("call_a1")))
     ;; nothing finished by itself
     (accept-process-output nil 0.3)
-    (should-not (memq 'turn-idle-observed (fleet-eca-test-kinds)))))
+    (should-not (memq 'turn-idle-observed (fleet-eca-test-kinds)))
+    ;; the human approves in the chat (Fleet never does); pending clears and the turn finishes
+    (eca-api-notify (fleet-eca-conn-session conn)
+                    :method "chat/toolCallApprove"
+                    :params (list :chatId (fleet-eca-conn-chat-id conn) :toolCallId "call_a1"))
+    (should (fleet-eca-test-wait-kind 'turn-idle-observed))
+    (should (null (fleet-eca-conn-pending-approvals conn)))
+    (should (memq 'tool-finished (fleet-eca-test-kinds)))))
 
 (ert-deftest fleet-eca-failed-tool-call-keeps-its-output ()
   "Live run 2026-09-17: twelve refused fleet_task_create calls left only
