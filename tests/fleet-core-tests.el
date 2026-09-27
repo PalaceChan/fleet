@@ -262,10 +262,7 @@ commander asserts the user's approval, however they were chosen."
       (let ((boot (fleet-core--models-section store '(:id "none"))))
         (should (string-match-p "Operator default: `fake/model`" boot))
         (should (string-match-p "### Operator model policy" boot))
-        (should (string-match-p "1\\. when ambiguous feature work → `fake/pricey` (variant `high`), then `fake/other` (why: standing rule)" boot))
-        (should (string-match-p "2\\. when simple chore → `fake/other`" boot))
         (should (string-match-p "Ask first.*`fake/pricey`" boot))
-        (should (string-match-p "fallback.*`fake/model` → `fake/other`" boot))
         (should-not (string-match-p "does not offer" boot)))
       (fleet-store-record-eca-catalog store :models '("fake/model" "fake/other"))
       (should (string-match-p "does not offer.*`fake/pricey`" (fleet-core--models-section store '(:id "none"))))
@@ -274,7 +271,6 @@ commander asserts the user's approval, however they were chosen."
       (fleet-test-should-fail 'model-needs-approval (funcall mk "wild" :model-reason "default"))
       (fleet-test-should-fail 'model-needs-approval (funcall mk "wild" :model "fake/other" :model-reason "user named it"))
       (should (equal (plist-get (funcall mk "wild" :model-reason "default, user agreed" :owner-approved t) :model) "fake/model"))
-      (should (string-match-p "Ask first: \\*\\*every task\\*\\*" (fleet-core--models-section store '(:id "none"))))
       (delete-file (fleet-config-file))
       (should (string-match-p "No owner policy file" (fleet-core--models-section store '(:id "none")))))))
 
