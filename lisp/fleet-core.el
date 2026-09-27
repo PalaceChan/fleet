@@ -1062,8 +1062,6 @@ neither is ever reported here.  Return the count of emitted events."
     (cl-loop for (k v) on new by #'cddr do (setq out (plist-put out k v)))
     out))
 
-(defun fleet-core-operation (store op-id) "Operation row OP-ID or nil." (fleet-store-get store "operations" op-id))
-
 (defun fleet-core-task-operation-running-p (store task-id)
   "Non-nil when TASK-ID has a running lifecycle operation."
   (> (fleet-store-scalar store "SELECT COUNT(*) FROM operations WHERE task_id = ? AND state = 'running' AND kind <> 'brief-publish'" task-id) 0))
