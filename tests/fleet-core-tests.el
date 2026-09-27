@@ -525,7 +525,7 @@ them at commander start without any of its content being read or rewritten."
       (fleet-core-ensure-context-dirs root)
       (should (equal "detail\n" (fleet-paths-read-file existing))))))
 
-(ert-deftest fleet-core-dependencies-reject-cycles-and-cross-fleet ()
+(ert-deftest fleet-core-dependencies-reject-cross-fleet-and-unknown-and-gate-start ()
   (fleet-test-with-fakes
     (let* ((f1 (fleet-core-test-fleet store "a")) (f2 (fleet-core-test-fleet store "b"))
            (t1 (fleet-core-test-study store f1 "one"))
