@@ -8,8 +8,8 @@
    of IDs from [TODO.md](../TODO.md), then read the linked evidence in `known-gaps.md`. The backlog is not
    blanket execution permission. Do not infer running Fleet state or loaded Lisp from the checkout's HEAD.
 2. Use a short-lived worktree from clean `master` for substantial work; keep unrelated worktrees intact.
-   Repo-relative commands assume that worktree is the working directory. Nothing requires an Org checkpoint,
-   old chat transcript, specific model, or remembered process ID to start contributing.
+   Repo-relative commands assume that worktree is the working directory. Nothing requires an old chat
+   transcript, specific model, or remembered process ID to start contributing.
 3. Find the owner below, read its implementation and tests, then the relevant guide. Read design sections
    for rationale, not as an instruction to reimplement the project. Inspect actual schema fields before SQL.
 4. Make the smallest change and an owning-layer regression test. Follow the approved verification route in

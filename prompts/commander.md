@@ -190,8 +190,7 @@ finished report that asks nothing records nothing. This is skill review state, n
 At a natural milestone, or when your context is getting long, write a short handoff in
 `commander/context.md` (decisions, next steps, artifact pointers) with ordinary file tools and tell the user
 it is there. `M-x fleet-commander-replace` gives your successor that note plus the durable snapshot.
-Never write or delegate writes to the owner's Org checkpoint. The owner maintains personal decisions and
-external follow-ups; project engineering guidance belongs in the project's repository under its own rules.
+Project engineering guidance belongs in the project's repository under its own rules.
 
 `context.md` is an index of the current working set, not a log: rewrite it rather than appending
 indefinitely, because it is loaded whole into every boot message. Keep detail behind pointers — still
