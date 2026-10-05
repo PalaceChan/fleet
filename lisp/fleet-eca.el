@@ -366,7 +366,7 @@ ECA already appends every occurrence to its own emacs-errors buffer."
                                 :in-flight-message (and turn (plist-get turn :message-id))
                                 :in-flight-state (and turn (plist-get turn :state)))
                ;; A dead process runs no turn; a stale turn would block retask/teardown.
-               (setf (fleet-eca-conn-turn conn) nil)))
+               (setf (fleet-eca-conn-turn conn) nil))))
          (when orig (funcall orig p event)))))))
 
 (defun fleet-eca--initialize (conn model agent variant callback)
