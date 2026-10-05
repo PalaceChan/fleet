@@ -364,7 +364,9 @@ ECA already appends every occurrence to its own emacs-errors buffer."
                (fleet-eca--emit conn 'connection-lost :exit-status (process-exit-status p)
                                 :event (string-trim event)
                                 :in-flight-message (and turn (plist-get turn :message-id))
-                                :in-flight-state (and turn (plist-get turn :state))))))
+                                :in-flight-state (and turn (plist-get turn :state)))
+               ;; A dead process runs no turn; a stale turn would block retask/teardown.
+               (setf (fleet-eca-conn-turn conn) nil))))
          (when orig (funcall orig p event)))))))
 
 (defun fleet-eca--initialize (conn model agent variant callback)
@@ -718,13 +720,14 @@ Assistant text and tool activity count; reasoning alone does not."
 
 (defun fleet-eca--turn-barren-p (turn)
   "Non-nil when TURN was an accepted prompt that did no observable work.
-No assistant text and no tool call, not stopped by a human: whether the
-provider answered with nothing or with an error, the turn had no side
-effects, so its message can be resent, on this model or the owner's
-fallback, without repeating anything."
+No assistant text and no tool call, not stopped by a human or an urgent
+message: whether the provider answered with nothing or with an error, the
+turn had no side effects, so its message can be resent, on this model or
+the owner's fallback, without repeating anything.  A stop requested before
+ECA's `stopping' arrives (`cancel-requested') counts as stopped."
   (and (plist-get turn :accepted)
        (not (plist-get turn :unattributed))
-       (not (eq (plist-get turn :state) 'stopping))
+       (not (memq (plist-get turn :state) '(stopping cancel-requested)))
        (not (plist-get turn :output))))
 
 (defun fleet-eca--turn-empty-p (turn)
@@ -892,6 +895,11 @@ not be charged to the new turn."
       (when turn (plist-put turn :state 'cancel-requested))
       (fleet-eca--emit conn 'cancel-requested :message-id (and turn (plist-get turn :message-id)))
       'cancel-requested)))
+
+(defun fleet-eca-active-tool (conn &optional tool-id)
+  "Name of CONN's active tool call TOOL-ID, else of its latest one; nil if unknown."
+  (let ((entry (if tool-id (assoc tool-id (fleet-eca-conn-active-tools conn)) (car (fleet-eca-conn-active-tools conn)))))
+    (and entry (plist-get (cdr entry) :name))))
 
 (defun fleet-eca-answer-question (conn request-id answer)
   "Answer CONN's pending question REQUEST-ID with ANSWER (string or nil to cancel).

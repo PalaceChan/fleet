@@ -613,6 +613,9 @@ never get here, they already record `turn-empty'/`turn-failed'.  No
 timer, no threshold: the fact exists the moment the turn ends."
   (let ((tid (plist-get rt :task-id)) (rid (plist-get rt :id)))
     (when (and tid
+               ;; An urgent message ended this turn on purpose; its sender already knows.
+               (zerop (fleet-store-scalar store "SELECT COUNT(*) FROM events WHERE kind = 'turn-interrupt-requested' AND runtime_id = ? AND payload LIKE ?"
+                                          rid (format "%%\"in-flight-message-id\":\"%s\"%%" (plist-get m :id))))
                (zerop (apply #'fleet-store-scalar store
                              (format "SELECT COUNT(*) FROM events WHERE task_id = ? AND runtime_id = ? AND created_at >= ? AND kind IN (%s)"
                                      (mapconcat (lambda (_) "?") fleet-supervisor--reply-status-kinds ","))
@@ -801,16 +804,42 @@ Return non-nil on durable admission."
       ;; (:message-id ID :state STATE): the chat reports the real outcome.
       r)))
 
-(cl-defun fleet-supervisor-send (store &key fleet-id task-id runtime-id text sender idempotency-key)
+(cl-defun fleet-supervisor-send (store &key fleet-id task-id runtime-id text sender idempotency-key urgent)
   "Queue TEXT for RUNTIME-ID from SENDER.
-Dashboard `s' and fleet_message_send share this."
+Dashboard `s' and fleet_message_send share this.  URGENT (fleet_message_send
+only) also stops the target's current turn, as dashboard `i' does; the
+message keeps its FIFO place and the lane pump sends it after the turn ends.
+Refused with no effect while a native tool approval is pending (the operator
+already waits on the human); a replayed key never interrupts again."
   (let ((rt (or (fleet-store-get store "runtimes" runtime-id) (fleet-fail 'no-such-runtime "Unknown runtime" :runtime-id runtime-id))))
     (unless (equal (plist-get rt :lifecycle) "ready")
       (fleet-fail 'runtime-not-ready "Target runtime is not ready; it will not be restarted implicitly" :lifecycle (plist-get rt :lifecycle)))
-    (let ((task (and task-id (fleet-store-get store "tasks" task-id))))
-      (fleet-supervisor-enqueue store :fleet-id fleet-id :task-id task-id :target-runtime-id runtime-id
-                                :origin (if (equal sender fleet-core-actor-human) "human" "commander") :sender sender
-                                :idempotency-key idempotency-key :text text :brief-revision (and task (plist-get task :brief-revision))))))
+    (let* ((task (and task-id (fleet-store-get store "tasks" task-id)))
+           (conn (and urgent (not (fleet-store-query1 store "SELECT id FROM messages WHERE sender = ? AND idempotency_key = ?" sender idempotency-key))
+                      (fleet-eca-conn runtime-id)))
+           (turn (and conn (fleet-eca-conn-turn conn))))
+      (when-let* ((pending (and conn (fleet-eca-conn-pending-approvals conn))))
+        (fleet-fail 'approval-pending "A native tool approval is pending on the operator; nothing was queued or stopped. Tell the user, or resend without urgent"
+                    :tool-ids pending :tools (mapcar (lambda (id) (fleet-eca-active-tool conn id)) pending)))
+      (let ((r (fleet-supervisor-enqueue store :fleet-id fleet-id :task-id task-id :target-runtime-id runtime-id
+                                         :origin (if (equal sender fleet-core-actor-human) "human" "commander") :sender sender
+                                         :idempotency-key idempotency-key :text text :brief-revision (and task (plist-get task :brief-revision)))))
+        (when (and turn (not (plist-get r :replayed)))
+          (fleet-supervisor--interrupt-turn store rt conn turn sender (plist-get r :message-id)))
+        r))))
+
+(defun fleet-supervisor--interrupt-turn (store rt conn turn sender message-id)
+  "Stop RT's in-flight TURN on CONN for urgent MESSAGE-ID from SENDER.
+Records `turn-interrupt-requested', not actionable: only the commander of
+RT's fleet may send urgently, and waking it for its own act would loop.
+A running tool call may still finish; nothing is undone."
+  (let ((tool (fleet-eca-active-tool conn)))
+    (when (fleet-eca-request-cancel conn)
+      (fleet-store-transaction store
+        (fleet-store-append-event store :fleet-id (plist-get rt :fleet-id) :task-id (plist-get rt :task-id) :runtime-id (plist-get rt :id)
+                                  :kind "turn-interrupt-requested" :source "rpc" :actor sender
+                                  :payload (list :message-id message-id :in-flight-message-id (plist-get turn :message-id)
+                                                 :active-tool tool))))))
 
 ;;;; Delegation between a root commander and its lieutenants (docs/lieutenants.md §4)
 

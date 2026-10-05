@@ -930,7 +930,8 @@ Expose compact tools with precise enums rather than a large family of aliases:
 
 - **Tool:** `fleet_message_send`
   - **Inputs/result summary:** Target operator, text, idempotency key; records a
-    queued/accepted/rejected/unknown message, never a terminal key.
+    queued/accepted/rejected/unknown message, never a terminal key. Optional `urgent` also stops a mid-turn
+    operator (`chat/promptStop`, recorded as `turn-interrupt-requested`; refused while an approval is pending).
 
 - **Tool:** `fleet_status`
   - **Inputs/result summary:** Current runtime's phase/detail, optional structured decision/wait/artifact

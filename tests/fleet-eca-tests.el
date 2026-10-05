@@ -417,6 +417,20 @@ flight was the message itself.  The report must come from the enqueue state."
     (should (string-match-p "sent to the commander" (fleet-eca--admission-summary conn t)))
     (should-not (string-match-p "busy" (fleet-eca--admission-summary conn t)))))
 
+(ert-deftest fleet-eca-cancel-requested-turn-is-not-barren ()
+  "An urgent fleet_message_send stops a turn through `fleet-eca-request-cancel',
+which marks it `cancel-requested' before ECA reports `stopping'.  A turn that
+ends there before any output was stopped, not dropped: never resent."
+  (should (fleet-eca--turn-barren-p '(:accepted t :state running)))
+  (should-not (fleet-eca--turn-barren-p '(:accepted t :state stopping)))
+  (should-not (fleet-eca--turn-barren-p '(:accepted t :state cancel-requested)))
+  (should-not (fleet-eca--turn-empty-p '(:accepted t :state cancel-requested)))
+  ;; the interrupt names the active tool: by id, else the latest (newest first)
+  (let ((conn (fleet-eca-conn--make :active-tools '(("c2" :name "shell_command") ("c1" :name "read_file")))))
+    (should (equal "shell_command" (fleet-eca-active-tool conn)))
+    (should (equal "read_file" (fleet-eca-active-tool conn "c1")))
+    (should-not (fleet-eca-active-tool (fleet-eca-conn--make)))))
+
 (ert-deftest fleet-eca-noack-watchdog-observed-unacknowledged ()
   (fleet-eca-test-with-conn conn
     (let ((fleet-eca-ack-timeout-sec 1))
@@ -447,6 +461,7 @@ flight was the message itself.  The report must come from the enqueue state."
       (let ((ev (cl-find-if (lambda (e) (eq (plist-get e :kind) 'connection-lost)) fleet-eca-test--events)))
         (should (equal (plist-get ev :in-flight-message) (plist-get out :message-id))))
       (should (eq (fleet-eca-conn-state conn) 'lost))
+      (should-not (fleet-eca-conn-turn conn))
       (should (eq (plist-get (fleet-eca-test-submit conn "again") :code) 'connection-not-ready)))))
 
 (ert-deftest fleet-eca-human-send-goes-through-admission-and-preserves-draft-on-refusal ()

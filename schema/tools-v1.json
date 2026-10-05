@@ -59,8 +59,8 @@
     {
       "name": "fleet_message_send",
       "roles": ["commander", "lieutenant"],
-      "description": "Queue a message to an operator's chat. Records queued/accepted/rejected/delivery-unknown truthfully; never a terminal fact about the task.",
-      "inputSchema": {"type": "object", "required": ["idempotency_key", "task_id", "text"], "properties": {"idempotency_key": {"type": "string"}, "task_id": {"type": "string"}, "text": {"type": "string"}}, "additionalProperties": false}
+      "description": "Queue a message to an operator's chat. Records queued/accepted/rejected/delivery-unknown truthfully; never a terminal fact about the task. urgent: true also stops the operator's current turn (as the user's stop button does) and records turn-interrupt-requested; the message then follows in its normal queue order. A tool call already running may still finish and nothing is undone. Refused with approval-pending, with no effect, while a native tool approval waits on the user. Use urgent only when letting the turn continue is harmful or wasteful; an idle operator just receives the message.",
+      "inputSchema": {"type": "object", "required": ["idempotency_key", "task_id", "text"], "properties": {"idempotency_key": {"type": "string"}, "task_id": {"type": "string"}, "text": {"type": "string"}, "urgent": {"type": "boolean", "description": "Stop the operator's current turn so this message is not stuck behind it. Replaying the same idempotency_key never interrupts again."}}, "additionalProperties": false}
     },
     {
       "name": "fleet_status",

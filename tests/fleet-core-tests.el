@@ -28,6 +28,17 @@ exist)."
   "Current runtime id of task TID."
   (plist-get (fleet-store-get store "tasks" tid) :current-runtime-id))
 
+(defun fleet-core-test-simulate-process-death (conn)
+  "Deliver a dead-process sentinel to CONN without launching a subprocess."
+  (let ((proc 'fleet-core-test-dead-process) sentinel)
+    (setf (fleet-eca-conn-process conn) proc)
+    (cl-letf (((symbol-function 'process-live-p) (lambda (_process) nil))
+              ((symbol-function 'process-sentinel) (lambda (_process) nil))
+              ((symbol-function 'set-process-sentinel) (lambda (_process function) (setq sentinel function)))
+              ((symbol-function 'process-exit-status) (lambda (_process) 255)))
+      (fleet-eca--wrap-sentinel conn)
+      (funcall sentinel proc "exited abnormally\n"))))
+
 (ert-deftest fleet-core-create-fleet-and-task ()
   (fleet-test-with-fakes
     (let* ((fid (fleet-core-test-fleet store "compiler"))
@@ -1269,6 +1280,33 @@ a root with lieutenants or open requests cannot be retired."
                                 :actor "c" :accepted t)
     tid))
 
+(ert-deftest fleet-core-teardown-lost-runtime-skips-dead-turn-wait ()
+  (fleet-test-with-fakes
+    (let* ((fid (fleet-core-test-fleet store))
+           (tid (fleet-core-test-verified-study store fid "lost-done"))
+           (rt (fleet-core-test-runtime store tid))
+           (conn (fleet-eca-conn rt)))
+      (setf (fleet-eca-conn-turn conn) '(:message-id "dead-final-turn" :state running))
+      (fleet-store-transaction store
+        (fleet-store-update store "runtimes" rt (fleet-store-touch (list :lifecycle "lost"))))
+      (fleet-core-test-simulate-process-death conn)
+      (let ((original-run-with-timer (symbol-function 'run-with-timer))
+            idle-wait-scheduled result op)
+        ;; If broken, swallow the 2-second polling timer so the failing regression leaves no timer behind.
+        (cl-letf (((symbol-function 'run-with-timer)
+                   (lambda (seconds repeat function &rest args)
+                     (if (= seconds 2)
+                         (setq idle-wait-scheduled t)
+                       (apply original-run-with-timer seconds repeat function args)))))
+          (setq result (fleet-core-teardown-task store tid))
+          (setq op (fleet-store-get store "operations" (plist-get result :operation-id)))
+          (should (equal (plist-get op :step) "stopping-runtime"))
+          (should-not idle-wait-scheduled)
+          (setq op (fleet-test-wait-op store (plist-get result :operation-id)))
+          (should (equal (plist-get op :state) "done"))
+          (should (equal (plist-get (fleet-store-get store "tasks" tid) :lifecycle) "archived"))
+          (should (equal (plist-get (fleet-store-get store "runtimes" rt) :lifecycle) "stopped")))))))
+
 (defun fleet-core-test-open-request (store root-id lieutenant-id &optional subject)
   "Insert an open request from ROOT-ID to LIEUTENANT-ID (what fleet_delegate records); return its id."
   (let ((id (fleet-paths-uuid)) (now (fleet-paths-now)))
@@ -1639,6 +1677,30 @@ fleet unretirable.  A human close archives them; it never stops or deletes."
         (should (= 2 (plist-get task :brief-revision)))
         (should (equal (plist-get task :lifecycle) "ready"))
         (should (null (plist-get task :phase)))))))
+
+(ert-deftest fleet-core-retask-lost-runtime-clears-dead-turn-and-stops ()
+  (fleet-test-with-fakes
+    (let* ((fid (fleet-core-test-fleet store))
+           (tid (plist-get (fleet-core-test-study store fid) :id)))
+      (setq fleet-test-fake-turn 'busy)
+      (fleet-core-test-start store tid)
+      (let* ((rt (fleet-core-test-runtime store tid))
+             (conn (fleet-eca-conn rt)))
+        (should (fleet-eca-conn-turn conn))
+        (fleet-core-task-status store :runtime-id rt :phase "failed" :detail "operator turn was interrupted")
+        ;; Model the supervisor's durable loss fact, then deliver the process death.
+        (fleet-store-transaction store
+          (fleet-store-update store "runtimes" rt (fleet-store-touch (list :lifecycle "lost"))))
+        (fleet-core-test-simulate-process-death conn)
+        (should (eq (fleet-eca-conn-state conn) 'lost))
+        (let ((result (fleet-core-retask store tid "Retry after the operator process died." :note "retry lost runtime")))
+          (should-not (fleet-eca-conn-turn conn))
+          (let ((op (fleet-test-wait-op store (plist-get result :operation-id))))
+            (should (plist-get result :operation-id))
+            (should (equal (plist-get op :kind) "task-retask"))
+            (should (equal (plist-get op :state) "done"))))
+        (should (equal (plist-get (fleet-store-get store "runtimes" rt) :lifecycle) "stopped"))
+        (should (equal (plist-get (fleet-store-get store "tasks" tid) :lifecycle) "ready"))))))
 
 (ert-deftest fleet-core-retask-failed-task-stops-idle-runtime-and-keeps-claims ()
   "openclaw incident (2026-09-10): a failed ops task with a live idle runtime
