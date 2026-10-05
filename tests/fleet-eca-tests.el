@@ -447,6 +447,7 @@ flight was the message itself.  The report must come from the enqueue state."
       (let ((ev (cl-find-if (lambda (e) (eq (plist-get e :kind) 'connection-lost)) fleet-eca-test--events)))
         (should (equal (plist-get ev :in-flight-message) (plist-get out :message-id))))
       (should (eq (fleet-eca-conn-state conn) 'lost))
+      (should-not (fleet-eca-conn-turn conn))
       (should (eq (plist-get (fleet-eca-test-submit conn "again") :code) 'connection-not-ready)))))
 
 (ert-deftest fleet-eca-human-send-goes-through-admission-and-preserves-draft-on-refusal ()
