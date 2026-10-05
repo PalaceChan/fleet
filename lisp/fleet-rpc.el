@@ -342,7 +342,9 @@ when neither is given, so callers decide whether that is allowed."
            (unless key (fleet-fail 'invalid-request "idempotency_key required"))
            (unless (plist-get task :current-runtime-id) (fleet-fail 'runtime-not-ready "Task has no runtime"))
            (fleet-supervisor-send store :fleet-id fid :task-id (plist-get task :id) :runtime-id (plist-get task :current-runtime-id)
-                                  :text (plist-get params :text) :sender logical :idempotency-key key)))
+                                  :text (plist-get params :text) :sender logical :idempotency-key key
+                                  ;; JSON false parses as :false, which is non-nil.
+                                  :urgent (eq (plist-get params :urgent) t))))
         ("fleet_status"
          (fleet-core-task-status store :runtime-id (plist-get actor :runtime-id) :phase (plist-get params :phase) :detail (plist-get params :detail)
                                  :decision (fleet-rpc--decision (plist-get params :decision))
