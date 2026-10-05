@@ -818,6 +818,63 @@ behaves as before."
             (should (= 1 (fleet-store-scalar store "SELECT COUNT(*) FROM event_receipts WHERE event_id = ? AND state = 'pending'"
                                              (plist-get (cadr evs) :id))))))))))
 
+(ert-deftest fleet-supervisor-urgent-send-stops-the-turn-and-keeps-fifo ()
+  "2026-10-05: an urgent commander message waited behind long operator turns
+until the owner pressed `i'.  urgent requests that same stop, records one
+non-actionable `turn-interrupt-requested', and the message keeps its FIFO
+place.  An idle operator gets a plain send, a replayed key does not interrupt
+again, and the interrupted turn records no `turn-unreported', while a turn
+that just ends, or one the owner stops, still does."
+  (fleet-sup-test-with
+    (let* ((fid (fleet-core-test-fleet store))
+           (tid (plist-get (fleet-core-test-study store fid) :id))
+           (commander (fleet-core-actor-commander fid))
+           (send (lambda (text key &optional urgent)
+                   (prog1 (fleet-supervisor-send store :fleet-id fid :task-id tid :runtime-id (fleet-core-test-runtime store tid)
+                                                 :text text :sender commander :idempotency-key key :urgent urgent)
+                     (fleet-test-wait-for (lambda () nil) 0.01)))) ; distinct created_at for FIFO
+           (interrupts (lambda () (fleet-store-query store "SELECT * FROM events WHERE kind = 'turn-interrupt-requested'")))
+           (event-for (lambda (kind mid) (fleet-store-query1 store "SELECT * FROM events WHERE kind = ? AND payload LIKE ?" kind (format "%%%s%%" mid))))
+           (state (lambda (mid) (plist-get (fleet-store-get store "messages" mid) :state))))
+      (fleet-core-test-start store tid)
+      (fleet-sup-test-settle)
+      (let* ((rid (fleet-core-test-runtime store tid)) (conn (fleet-eca-conn rid))
+             (in-flight (lambda () (plist-get (fleet-eca-conn-turn conn) :message-id))))
+        (setq fleet-test-fake-turn 'busy)
+        ;; idle operator: a plain send, no stop, no event
+        (let ((m1 (plist-get (funcall send "first" "k1" t) :message-id)))
+          (fleet-sup-test-settle)
+          (should (equal m1 (funcall in-flight)))
+          (should-not (funcall interrupts))
+          ;; mid-turn: the turn stops, and an older queued message still goes first
+          (let* ((m2 (plist-get (funcall send "older" "k2") :message-id))
+                 (m3 (plist-get (funcall send "stop and read this" "k3" t) :message-id))
+                 (ev (car (funcall interrupts)))
+                 (payload (fleet-store-unjson (plist-get ev :payload))))
+            (should (= 1 (length (funcall interrupts))))
+            (should (eql 0 (plist-get ev :actionable)))
+            (should (equal (list commander tid rid) (list (plist-get ev :actor) (plist-get ev :task-id) (plist-get ev :runtime-id))))
+            (should (equal (list m3 m1) (list (plist-get payload :message-id) (plist-get payload :in-flight-message-id))))
+            (fleet-sup-test-settle)
+            (should (eq t (plist-get (fleet-store-unjson (plist-get (funcall event-for "turn-finished" m1) :payload)) :stopped)))
+            (should (equal m2 (funcall in-flight)))
+            (should (equal "queued" (funcall state m3)))
+            ;; replay: the same message, no second interrupt
+            (let ((again (funcall send "stop and read this" "k3" t)))
+              (should (plist-get again :replayed))
+              (should (equal m3 (plist-get again :message-id))))
+            (fleet-sup-test-settle)
+            (should (= 1 (length (funcall interrupts))))
+            (should (equal m2 (funcall in-flight)))
+            ;; turn-unreported: none for the interrupted turn, one for a turn that just ends
+            (should-not (funcall event-for "turn-unreported" m1))
+            (fleet-test-fake-finish conn) (fleet-sup-test-settle)
+            (should (funcall event-for "turn-unreported" m2))
+            (should (equal m3 (funcall in-flight)))
+            ;; and one for the owner's own stop (dashboard `i')
+            (fleet-eca-request-cancel conn) (fleet-sup-test-settle)
+            (should (funcall event-for "turn-unreported" m3))))))))
+
 (ert-deftest fleet-supervisor-ack-lifecycle-and-reminder-once ()
   (fleet-sup-test-with
     (let* ((fid (fleet-core-test-fleet store)) (cid (fleet-sup-test-commander store fid))

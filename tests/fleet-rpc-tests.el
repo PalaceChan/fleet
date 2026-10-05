@@ -461,5 +461,43 @@ returns an operation id (runtime stop first) and later a task-retasked wake."
             (should (equal "fake/other" (plist-get rt2 :model)))
             (should (equal "low" (plist-get rt2 :variant)))))))))
 
+(ert-deftest fleet-rpc-urgent-message-send-refuses-pending-approval-and-operators ()
+  "urgent on the wire: an operator is still refused the tool.  A pending native
+approval refuses the whole call with `approval-pending' naming the tool, and
+leaves no message row and no stop; once the human has answered, the same call
+stops the turn, records the active tool, and its message follows."
+  (fleet-rpc-test-with
+    (let* ((fid (fleet-core-test-fleet store)) (cid (fleet-sup-test-commander store fid))
+           (tid (plist-get (fleet-core-test-study store fid) :id)))
+      (fleet-sup-test-settle)
+      (fleet-core-test-start store tid)
+      (fleet-sup-test-settle)
+      (setq fleet-test-fake-turn 'busy)
+      (let* ((ctok (fleet-rpc-test-token cid))
+             (rid (fleet-core-test-runtime store tid)) (conn (fleet-eca-conn rid))
+             (otok (fleet-rpc-test-token rid))
+             (messages (lambda () (fleet-store-scalar store "SELECT COUNT(*) FROM messages WHERE target_runtime_id = ?" rid)))
+             (interrupts (lambda () (fleet-store-query store "SELECT * FROM events WHERE kind = 'turn-interrupt-requested'")))
+             (busy (plist-get (plist-get (fleet-rpc-test-req "fleet_message_send" ctok (list :task_id tid :text "long job") "m1") :result) :message-id)))
+        (should (equal busy (plist-get (fleet-eca-conn-turn conn) :message-id)))
+        (should (equal "forbidden" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_message_send" otok (list :task_id tid :text "x" :urgent t) "o1"))))
+        (setf (fleet-eca-conn-pending-approvals conn) '("call_1")
+              (fleet-eca-conn-active-tools conn) (list (list "call_1" :name "shell_command" :phase 'approval)))
+        (let ((n (funcall messages))
+              (err (plist-get (fleet-rpc-test-req "fleet_message_send" ctok (list :task_id tid :text "stop" :urgent t) "m2") :error)))
+          (should (equal "approval-pending" (plist-get err :code)))
+          (should (equal ["shell_command"] (plist-get (plist-get err :evidence) :tools)))
+          (should (= n (funcall messages))))
+        (fleet-sup-test-settle)
+        (should (equal busy (plist-get (fleet-eca-conn-turn conn) :message-id)))
+        (should-not (funcall interrupts))
+        ;; the human answered the approval: the same call now interrupts
+        (setf (fleet-eca-conn-pending-approvals conn) nil)
+        (let ((m (plist-get (plist-get (fleet-rpc-test-req "fleet_message_send" ctok (list :task_id tid :text "stop" :urgent t) "m2") :result) :message-id)))
+          (should m)
+          (should (= 1 (length (funcall interrupts))))
+          (should (equal "shell_command" (plist-get (fleet-store-unjson (plist-get (car (funcall interrupts)) :payload)) :active-tool)))
+          (should (fleet-test-wait-for (lambda () (equal m (plist-get (fleet-eca-conn-turn conn) :message-id))) 5)))))))
+
 (provide 'fleet-rpc-tests)
 ;;; fleet-rpc-tests.el ends here
