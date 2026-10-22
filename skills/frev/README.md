@@ -145,8 +145,11 @@ binary). The spawned-server test starts a real `frev.py serve` under temp roots 
 verified-owner path. Screenshots land in the temp dir; for a keepable set run
 `node test/ui_cdp.mjs URL DIR` against a session you published.
 
-ERT (the Emacs bridge) runs in a **disposable** Emacs server only — never the editing server, never with
-owner fleets (see `docs/testing.md`; convention `emacs -Q --daemon=fleet-test`, started by the owner):
+ERT (the Emacs bridge) uses only a `fleet-test` daemon that passes the check in `docs/testing.md`:
+server name `fleet-test`, with `(emacs-pid)` different from `emacsPid` in
+`~/.local/share/fleet/owner.json`. If either check fails or cannot be made, do not use or kill it; report.
+`:fleet-loaded` is not evidence either way. Do not kill a reused daemon. Native probes still require explicit
+owner opt-in:
 
 ```bash
 timeout 120 emacsclient --alternate-editor=false --socket-name=fleet-test --eval '

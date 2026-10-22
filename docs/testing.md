@@ -1,6 +1,6 @@
 # Testing
 
-[Safe commands](#existing-disposable-server-only) · [Coverage](#what-is-simulated-and-what-is-real) ·
+[Safe commands](#start-or-reuse-the-fleet-test-server) · [Coverage](#what-is-simulated-and-what-is-real) ·
 [Native acceptance](#native-acceptance-and-historical-evidence) · [Recovery](recovery.md)
 
 ## Make targets: implementation, not owner-approved instructions
@@ -16,9 +16,10 @@ The [Makefile](../Makefile) currently does the following:
 | `make compile` / `make lint` | Starts `emacs -Q --batch` for byte compilation / Checkdoc. |
 | `make clean` | Removes Lisp bytecode and bridge/test Python caches. |
 
-**Current owner policy: use `emacsclient` ONLY against existing servers. Never run tests in the editing
-server.** Thus `test`, `test-el`, `test-native`, `server-start`, `compile`, and `lint` are not approved
-recipes under this policy. Do not substitute the editing socket or set `EMACS=emacsclient` to work around it.
+**Agent rule: use `emacsclient` for Emacs operations; the sole launch exception is exactly
+`emacs -Q --daemon=fleet-test`, as described below.** This does not approve `test`, `test-el`, `test-native`,
+`server-start`, `compile`, or `lint`; do not substitute the editing socket or set `EMACS=emacsclient` to work
+around the Make targets.
 
 `TEST_SOCK` defaults to the fixed name `fleet-test-$UID`. `server-start` suppresses startup errors
 (`|| true`), so an existing server at that name may be reused; `server-stop` sends `kill-emacs` to that
@@ -28,16 +29,28 @@ mask an `emacsclient` failure, and the runner returns failure counts as text rat
 A successful `make` exit is therefore not sufficient evidence of passing tests. Do not use catch-all
 process kills for cleanup.
 
-## Existing disposable server only
+## Start or reuse the `fleet-test` server
 
-First obtain the owner's confirmation that a **specific already-running named server** is disposable,
-is not the editing server, and has no owner fleets or unrelated work. The owner's convention is the
-socket name **`fleet-test`**, started by the owner with `emacs -Q --daemon=fleet-test` (the shell prints
-"Done" immediately because the launcher forks the daemon and exits; that is normal). Check with
-`ls "$XDG_RUNTIME_DIR/emacs/"` and the identity query below. If none exists, stop and ask the owner to
-start one; these instructions neither launch nor shut down a server, with one exception: after a full run
-you may `emacsclient --socket-name=fleet-test --eval '(kill-emacs)'` on that exact socket and ask the owner
-for a fresh one.
+Use only the `fleet-test` socket for ERT; never touch the editing socket `server` or any other socket. The
+only permitted daemon launch is exactly `emacs -Q --daemon=fleet-test`: no other socket name, init file,
+Emacs launch, or Make `server-start`/test target is approved. Before launching, check
+`ls "$XDG_RUNTIME_DIR/emacs/"` and query `fleet-test` with `--alternate-editor=false` using the identity
+query below. If it answers, do not start another daemon; use it only if the owner-isolation check below
+passes. If that check fails or cannot be made, do not use or kill the daemon; report to whoever coordinates
+the work. If the socket file exists but nothing answers, treat it as stale: remove only
+`"$XDG_RUNTIME_DIR/emacs/fleet-test"`, then launch. If no server answers and no stale socket needs removal,
+launch exactly the command above. The launcher forks and prints "Done" immediately; that is normal.
+
+Immediately after launching, run the identity query below, record its full output (`:server`, `:pid`, and
+`:fleet-loaded`), and keep the PID. Apply the same owner-isolation check to launched and reused daemons
+before using them. If a launched daemon fails or cannot pass that check, do not use or kill it; report.
+`:fleet-loaded` is recorded but is not evidence either way; prior test runs load Fleet.
+
+Always clean up a daemon you started that passed the check when your runs are done, including after a failed
+or wedged run: `timeout 10 emacsclient --socket-name=fleet-test --eval '(kill-emacs)'`. If that does not
+answer, first confirm that the recorded PID is still the daemon you launched, then `kill <recorded-pid>`;
+never use a process-name pattern (`pkill`/`killall`). Confirm afterwards that
+`"$XDG_RUNTIME_DIR/emacs/fleet-test"` is gone. If you reused someone else's daemon, leave it running.
 
 **Reuse caveat (observed 2026-09-13):** the runner reloads every source and test file, and a second
 full-suite run in the same daemon inherited timers and lease-helper processes from the first: a
@@ -46,22 +59,35 @@ pre-existing supervisor test failed and the following lease test hung until inte
 Observed again 2026-09-15: after two or three targeted runs that start fake commanders, a fake-backed
 supervisor test that had just passed ran for minutes on the reused daemon, and a second `USR2` while
 wedged terminated the server. Also, `fleet-dash-jump`'s `recenter` errors in a frameless daemon; tests
-stub it. Use a **fresh daemon for full-suite runs**; treat targeted reuse as a convenience for one or two
-runs, and prefer `timeout` on the `emacsclient` call so a wedge is visible.
-The following Bash commands work from any directory after setting `TEST_SOCKET` to that confirmed name:
+stub it. Use a **fresh daemon for full-suite runs**. If the current daemon is yours, clean it up as above
+and launch a fresh one; if it belongs to someone else, do not kill it or start a second daemon—report to
+whoever coordinates the work. Treat targeted reuse as a convenience for one or two runs, each wrapped in
+`timeout` on the `emacsclient` call so a wedge is visible.
+The following Bash commands use only `TEST_SOCKET=fleet-test`. After listing the socket directory above,
+run this query before any launch. `--alternate-editor=false` makes it fail rather than starting a fallback:
 
 ```bash
-: "${TEST_SOCKET:?Set TEST_SOCKET to the owner-confirmed existing disposable server name}"
+: "${TEST_SOCKET:?Set TEST_SOCKET to fleet-test after checking the socket}"
+test "$TEST_SOCKET" = fleet-test || { echo "Only TEST_SOCKET=fleet-test is allowed" >&2; exit 2; }
+OWNER_PID=$(jq -er '.emacsPid' "$HOME/.local/share/fleet/owner.json") || exit
+printf 'Owner emacsPid: %s\n' "$OWNER_PID"
 emacsclient --alternate-editor=false --socket-name="$TEST_SOCKET" --eval \
   '(list :server server-name :pid (emacs-pid) :fleet-loaded (featurep (quote fleet)))'
 ```
 
-Check that identity with the owner before proceeding. This query is not itself proof of disposability.
+This is the owner-isolation check for every daemon, launched or reused: the query must show server name
+`fleet-test`, and its `:pid` from `(emacs-pid)` must differ from `emacsPid` printed from
+`~/.local/share/fleet/owner.json` above. If either condition fails or the owner PID cannot be read, do not
+use or kill the daemon; report to whoever coordinates the work. `:fleet-loaded` is recorded but is not
+evidence either way, because prior test runs load Fleet. This check protects the owner's running
+interactive Emacs.
 For the non-native suite, use the following command; update the explicit checkout path if using a
 different worktree:
 
 ```bash
-emacsclient --alternate-editor=false --socket-name="${TEST_SOCKET:?Confirm the disposable server first}" --eval '
+: "${TEST_SOCKET:?Set TEST_SOCKET to fleet-test after the owner-isolation check}"
+test "$TEST_SOCKET" = fleet-test || { echo "Only TEST_SOCKET=fleet-test is allowed" >&2; exit 2; }
+emacsclient --alternate-editor=false --socket-name="$TEST_SOCKET" --eval '
 (progn
   (setenv "FLEET_TEST_NATIVE" nil)
   (require (quote package))
@@ -83,10 +109,11 @@ emacsclient --alternate-editor=false --socket-name="${TEST_SOCKET:?Confirm the d
 
 ### Sharing the daemon with a fleet run
 
-When operators and the owner use one `fleet-test` daemon during a live fleet run, its death costs a
-round-trip to the owner (only the owner may start one). Observed 2026-09-17: an operator byte-compiled
-its file through the daemon, the eval wedged, `kill -USR2` entered the debugger's recursive edit, and the
-recovery attempt killed the server; ERT then waited on the owner. Rules for a shared daemon:
+A `fleet-test` daemon can be shared with a live fleet run or another agent; its death can interrupt that
+work. Only whoever launched a daemon may clean it up. Observed 2026-09-17: an operator
+byte-compiled its file through the daemon, the eval wedged, `kill -USR2` entered the debugger's recursive
+edit, and the recovery attempt killed the server; ERT then had no test server available. Rules for a shared
+daemon:
 
 - **Never byte-compile, `checkdoc`, or install, refresh, upgrade or compile packages (`package-install`,
   `package-refresh-contents`, …) through the daemon.** Activating the installed `eca` exactly as the
@@ -95,13 +122,18 @@ recovery attempt killed the server; ERT then waited on the owner. Rules for a sh
   which these instructions do not run either; leave it to the owner.
 - **Run targeted selectors** (`(fleet-test-run-all root "^fleet-rpc-")`, a single test name), one at a
   time, each wrapped in `timeout` on the client so a wedge is visible rather than waited on.
-- **Wedge recovery, once:** `kill -USR2 <daemon pid>` then immediately
-  `emacsclient --socket-name=fleet-test --eval '(top-level)'` with a short `timeout`. If a trivial eval
-  still times out, stop: report the daemon dead and ask the owner for a fresh one. A second `USR2` has
-  terminated the server before.
+- **Wedge recovery, once:** For a daemon you started that passed the owner-isolation check, confirm its
+  recorded PID, send one `kill -USR2 <recorded-pid>` attempt, then immediately run
+  `timeout 10 emacsclient --alternate-editor=false --socket-name=fleet-test --eval '(top-level)'`.
+  If that trivial eval still times out, clean up your daemon as above and launch a fresh one. Do not send
+  recovery signals to or kill a daemon you reused; report its wedge to whoever coordinates the work. If a
+  daemon you started dies or wedges a second time in the same task, stop and report instead of looping. A
+  second `USR2` has terminated the server before.
 - Reloads are cheap but not free of state: the runner reloads every source, resets the cached tool
   schema, and re-registers tests; fake commanders and lease helpers from earlier runs still linger.
-  After two or three targeted runs, prefer asking for a fresh daemon over debugging a hang.
+  After two or three targeted runs, get a fresh daemon rather than debugging a hang: clean up the daemon
+  you started as above and launch a new one. If you reused someone else's daemon, do not kill it or start a
+  second daemon; report to whoever coordinates the work.
 
 Keep the `emacsclient` exit status: do not pipe it through an unchecked formatter. An unexpected ERT
 result, empty selection, or malformed summary signals an error to the client. Successful output still

@@ -75,8 +75,10 @@ does not see a newly installed skill until its skills are reloaded (a new comman
 
 ## Tests
 
-Run in a **disposable** Emacs server only — never the editing server, never with owner fleets (see
-`docs/testing.md`). Convention: the owner starts `emacs -Q --daemon=fleet-test`. Then:
+Run ERT only through a `fleet-test` daemon that passes the check in `docs/testing.md`: server name
+`fleet-test`, with `(emacs-pid)` different from `emacsPid` in `~/.local/share/fleet/owner.json`. If either
+check fails or cannot be made, do not use or kill it; report. `:fleet-loaded` is not evidence either way.
+Do not kill a reused daemon. Native probes still require explicit owner opt-in. Then:
 
 ```bash
 timeout 120 emacsclient --alternate-editor=false --socket-name=fleet-test --eval '
