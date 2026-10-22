@@ -358,7 +358,16 @@ forms is accepted."
           (should (plist-get s1 :operation-id))
           (should (equal (plist-get s1 :operation-id) (plist-get s2 :operation-id)))
           (fleet-test-wait-op store (plist-get s1 :operation-id))
-          (should (equal "done" (plist-get (plist-get (fleet-rpc-test-req "fleet_operation" ctok (list :operation_id (plist-get s1 :operation-id))) :result) :state))))
+          (should (equal "done" (plist-get (plist-get (fleet-rpc-test-req "fleet_operation" ctok (list :operation_id (plist-get s1 :operation-id))) :result) :state)))
+          ;; finished actions (the create's recorded result, the done start) leave the default
+          ;; started-actions; include_finished brings them back; it must be a boolean
+          (let ((ids (lambda (params)
+                       (mapcar (lambda (r) (plist-get r :action-id))
+                               (append (plist-get (plist-get (fleet-rpc-test-req "fleet_events_pending" ctok params) :result) :started-actions) nil)))))
+            (should-not (cl-intersection '("c1" "s1") (funcall ids nil) :test #'equal))
+            (should (equal '("c1" "s1") (sort (cl-intersection '("c1" "s1") (funcall ids '(:include_finished t)) :test #'equal) #'string<)))
+            (should-not (cl-intersection '("c1" "s1") (funcall ids '(:include_finished :false)) :test #'equal))
+            (should (equal "invalid-request" (fleet-rpc-test-err (fleet-rpc-test-req "fleet_events_pending" ctok '(:include_finished "yes")))))))
         ;; operator raises a decision; commander sees it pending, resolves, sends, acks
         (setq fleet-test-fake-turn 'busy)
         (let* ((otok (fleet-rpc-test-token (fleet-core-test-runtime store tid)))
