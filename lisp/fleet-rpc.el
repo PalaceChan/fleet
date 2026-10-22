@@ -425,7 +425,8 @@ when neither is given, so callers decide whether that is allowed."
                                                      :job-ref (plist-get params :job_ref) :state (plist-get params :state) :completion-source (plist-get params :completion_source)
                                                      :deadline (plist-get params :deadline) :cancel-policy (plist-get params :cancel_policy) :disposition (plist-get params :disposition)))))
         ("fleet_events_pending"
-         (fleet-supervisor-pending-for-commander store fid (min (or (plist-get params :limit) 100) fleet-rpc-max-page)))
+         (fleet-supervisor-pending-for-commander store fid (min (or (plist-get params :limit) 100) fleet-rpc-max-page)
+                                                 (eq (plist-get params :include_finished) t)))
         ("fleet_events_ack"
          (mutation params (lambda ()
                             (fleet-supervisor-ack store :fleet-id fid :receipt-ids (fleet-rpc--lst (plist-get params :event_ids))

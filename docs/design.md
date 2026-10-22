@@ -964,7 +964,8 @@ Expose compact tools with precise enums rather than a large family of aliases:
     completion source and deadline; never arbitrary executable monitor text.
 
 - **Tool:** `fleet_events_pending`
-  - **Inputs/result summary:** Non-destructive paginated events plus current snapshot revision.
+  - **Inputs/result summary:** Non-destructive paginated events plus current snapshot revision, and the
+    caller's started actions that still need attention (§9.1); `include_finished` adds finished ones.
 
 - **Tool:** `fleet_events_ack`
   - **Inputs/result summary:** Explicit event IDs and disposition/evidence; only after handling or durably
@@ -1019,7 +1020,14 @@ asynchronous operation intent, action mapping, and handling linkage together bef
 authorizing the current actor, resolve an existing action key/payload before fresh-operation
 revision/admission checks, so the original mutation's revision advance does not reject its own retry.
 `fleet_events_pending` includes already-started actions so a replacement inspects/resumes them instead of
-inventing new IDs. Reject the same action key with changed payload. This prevents replay of the same recorded
+inventing new IDs. By default it lists only those still needing attention, from durable facts: an
+operation `running`/`blocked` (*in-flight*); a `failed` operation while an event about it awaits
+acknowledgment in the caller's fleet, or, when no such event reached that fleet, until a later `done`
+operation of the same kind supersedes it or its task/fleet is archived (*failed-unhandled*); and an action
+with neither a linked operation nor a recorded result, or whose operation row is missing
+(*outcome-unknown*). A `done` operation or a recorded synchronous result is finished and omitted;
+`include_finished: true` returns the 50 most recent actions regardless. Reject the same action key with
+changed payload. This prevents replay of the same recorded
 action, not arbitrary semantically duplicate plans invented under different keys.
 
 A message accepted by an operator after its last status adds `sent since:<summary>` to detail until a new

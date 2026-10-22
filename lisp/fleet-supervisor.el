@@ -772,14 +772,78 @@ RECEIPT-IDS are event ids or receipt ids.  Returns counts."
     (fleet-supervisor--changed fleet-id)
     (list :acknowledged acked :unknown (nreverse unknown))))
 
-(defun fleet-supervisor-pending-for-commander (store fleet-id &optional limit)
-  "Non-destructive view of unhandled receipts and started actions for FLEET-ID."
+(defconst fleet-supervisor-started-actions-cap 50
+  "Most `started-actions' rows one `fleet_events_pending' reply carries.")
+
+;; Root commander 2026-10-22: every pending read carried the actor's 50
+;; latest actions (~7-8 KB), almost all long finished, ~300 KB over one
+;; runtime.  The list exists so a replacement resumes what its predecessor
+;; started (design §9.1), so by default it keeps only what still needs
+;; attention, judged from durable facts alone:
+;; - outcome-unknown: no linked operation and no recorded result, or a
+;;   linked operation row that does not exist.  `fleet-store-with-action'
+;;   records the row and its result in the effect's transaction, so today
+;;   only a nil result lands here; any future path that records an action
+;;   before its outcome surfaces here until the outcome is written;
+;; - in-flight: the operation is `running' or `blocked' (not terminal);
+;;   an operation interrupted by a restart stays `running' or is failed by
+;;   `fleet-core-resume-operations' with an actionable event;
+;; - failed-unhandled: the operation failed and, in this fleet, an event
+;;   about it (`events.operation_id') still awaits acknowledgment; or no
+;;   such event ever reached this fleet (a crash between the failure and
+;;   the parent's event) and the failure is not yet superseded by a later
+;;   `done' operation of the same kind on the same task/fleet or archived
+;;   (the `fleet-core-open-failed-operations' rule).  Acknowledging the
+;;   failure event is the handling; no new acknowledgment concept.
+;; A `done' operation, or a recorded result without an operation, is
+;; finished and omitted.  INCLUDE-FINISHED returns the old full view.
+(defconst fleet-supervisor--started-actions-sql
+  "SELECT action_id, operation_id, kind, state, step, error, attention FROM (
+     SELECT a.action_id, a.operation_id, o.kind, o.state, o.step, o.error, a.created_at,
+            CASE
+              WHEN a.operation_id IS NULL THEN (CASE WHEN a.result IS NULL THEN 'outcome-unknown' END)
+              WHEN o.id IS NULL THEN 'outcome-unknown'
+              WHEN o.state IN ('running','blocked') THEN 'in-flight'
+              WHEN o.state = 'failed'
+                   AND (EXISTS (SELECT 1 FROM events e JOIN event_receipts r ON r.event_id = e.id
+                                 WHERE e.fleet_id = ? AND e.operation_id = o.id AND r.fleet_id = e.fleet_id
+                                   AND r.state <> 'acknowledged')
+                        OR (NOT EXISTS (SELECT 1 FROM events e JOIN event_receipts r ON r.event_id = e.id
+                                         WHERE e.fleet_id = ? AND e.operation_id = o.id AND r.fleet_id = e.fleet_id)
+                            AND NOT EXISTS (SELECT 1 FROM operations o2
+                                             WHERE o2.kind = o.kind AND o2.state = 'done' AND o2.created_at > o.created_at
+                                               AND COALESCE(o2.task_id, '') = COALESCE(o.task_id, '')
+                                               AND COALESCE(o2.fleet_id, '') = COALESCE(o.fleet_id, ''))
+                            AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = o.task_id AND t.lifecycle = 'archived')
+                            AND NOT EXISTS (SELECT 1 FROM fleets f WHERE f.id = o.fleet_id AND f.lifecycle = 'archived')))
+                THEN 'failed-unhandled'
+            END AS attention
+       FROM actions a LEFT JOIN operations o ON o.id = a.operation_id
+      WHERE a.actor = ?)
+   WHERE ? OR attention IS NOT NULL
+   ORDER BY created_at DESC LIMIT ?"
+  "Started actions of one actor; see the comment above for `attention'.
+Parameters: fleet id, fleet id, actor, include-finished (0/1), cap.")
+
+(defun fleet-supervisor-started-actions (store fleet-id &optional include-finished)
+  "Actions of FLEET-ID's commander actor still needing attention, newest first.
+Each row carries `attention' (outcome-unknown, in-flight, failed-unhandled).
+With INCLUDE-FINISHED, finished actions too (their `attention' is nil).
+At most `fleet-supervisor-started-actions-cap' rows either way.  The same
+actor serves a root commander and a lieutenant; operators have no view."
+  (fleet-store-query store fleet-supervisor--started-actions-sql
+                     fleet-id fleet-id (fleet-core-actor-commander fleet-id)
+                     (if include-finished 1 0) fleet-supervisor-started-actions-cap))
+
+(defun fleet-supervisor-pending-for-commander (store fleet-id &optional limit include-finished)
+  "Non-destructive view of unhandled receipts and started actions for FLEET-ID.
+Started actions are those still needing attention unless INCLUDE-FINISHED
+\(see `fleet-supervisor-started-actions')."
   (list :revision (fleet-store-snapshot-revision store)
         :events (mapcar (lambda (r) (list :event-id (plist-get r :event-id) :kind (plist-get r :kind) :task-id (plist-get r :task-id)
                                           :state (plist-get r :state) :payload (fleet-store-unjson (plist-get r :payload)) :created-at (plist-get r :created-at)))
                         (fleet-store-pending-receipts store fleet-id '("pending" "claimed" "held-unknown" "needs-reconciliation") (or limit 100)))
-        :started-actions (fleet-store-query store "SELECT a.action_id, a.operation_id, o.kind, o.state, o.step, o.error FROM actions a LEFT JOIN operations o ON o.id = a.operation_id WHERE a.actor = ? ORDER BY a.created_at DESC LIMIT 50"
-                                            (fleet-core-actor-commander fleet-id))))
+        :started-actions (fleet-supervisor-started-actions store fleet-id include-finished)))
 
 (defun fleet-supervisor-on-commander-replaced (store fleet-id old-runtime-id)
   "Claims of OLD-RUNTIME-ID become needs-reconciliation.

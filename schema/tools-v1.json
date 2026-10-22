@@ -106,8 +106,8 @@
     {
       "name": "fleet_events_pending",
       "roles": ["commander", "lieutenant"],
-      "description": "Non-destructive list of unhandled events (and your already-started actions) with the current snapshot revision. Reading does not acknowledge.",
-      "inputSchema": {"type": "object", "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 200}}, "additionalProperties": false}
+      "description": "Non-destructive list of unhandled events with the current snapshot revision, plus started-actions: your keyed actions that still need attention (attention: in-flight operation, failed-unhandled until you acknowledge its failure event, or outcome-unknown). Finished actions are omitted, so the list is usually empty; include_finished: true returns your 50 most recent actions for debugging. Reading does not acknowledge.",
+      "inputSchema": {"type": "object", "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 200}, "include_finished": {"type": "boolean", "description": "Also list finished actions (debugging); default false."}}, "additionalProperties": false}
     },
     {
       "name": "fleet_events_ack",

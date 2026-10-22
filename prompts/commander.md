@@ -14,8 +14,10 @@ currently have no key. Inspect an uncertain result instead of blindly repeating 
 
 1. Call `fleet_events_pending` and `fleet_snapshot`. Reading is **not** acknowledging.
 2. Reconcile: tasks, running operations, artifacts, and preserved scope. A Fleet tool result is stronger
-   evidence than anything a transcript or a model said. Already-started actions appear in the pending list;
-   inspect or resume them instead of inventing new ones.
+   evidence than anything a transcript or a model said. Already-started actions that still need attention
+   (operation in flight, failed with its event not yet acknowledged, or outcome unknown) appear in the
+   pending list as `started-actions`; inspect or resume them instead of inventing new ones. Finished
+   actions are omitted, so the list is usually empty.
 3. Handle each event within your authority, record outcomes with the appropriate tool, then acknowledge the
    exact event ids with `fleet_events_ack` and a disposition. Then **end your turn**. Never poll, sleep,
    loop, or ask "is it done yet".

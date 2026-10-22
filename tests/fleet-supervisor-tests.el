@@ -1052,5 +1052,102 @@ that just ends, or one the owner stops, still does."
       (should (plist-get r :owner))
       (delete-process fleet-supervisor--lease))))
 
+(ert-deftest fleet-supervisor-started-actions-list-only-what-needs-attention ()
+  "Root commander 2026-10-22: each pending read carried 50 mostly finished
+actions (~7-8 KB, ~300 KB per runtime).  By default only actions needing
+attention are listed: an operation in flight, a failure whose event is not
+yet acknowledged (or, with no event in this fleet, not yet superseded), and
+an action whose outcome is unknown.  Finished ones return only on request."
+  (fleet-test-with-fakes
+    (let* ((fid (fleet-core-test-fleet store "root"))
+           (lid (plist-get (fleet-core-create-fleet store "lt" :parent-id fid :charter "x") :id))
+           (tid (plist-get (fleet-core-test-study store fid) :id))
+           (actor (fleet-core-actor-commander fid)))
+      (cl-labels ((keyed (key &optional kind fleet-id)
+                    ;; A keyed call as the RPC handler runs it: sync result, or an operation's id.
+                    (prog1 (fleet-store-with-action store actor key (list :key key)
+                             (if kind
+                                 (list :operation-id (fleet-core-operation-begin store kind :fleet-id (or fleet-id fid)
+                                                                                 :task-id (and (null fleet-id) tid)))
+                               (list :ok t)))
+                      ;; created_at has millisecond resolution; keep later rows strictly later
+                      (sleep-for 0.01)))
+                  (op-of (key) (plist-get (fleet-store-action-lookup store actor key) :operation-id))
+                  (listed (&optional all)
+                    (sort (mapcar (lambda (r) (cons (plist-get r :action-id) (plist-get r :attention)))
+                                  (fleet-supervisor-started-actions store fid all))
+                          (lambda (a b) (string< (car a) (car b))))))
+        ;; Nothing started: empty.
+        (should-not (listed))
+        ;; Synchronous keyed call: result recorded with the effect, so finished.
+        (keyed "sync-1")
+        (should-not (listed))
+        ;; Succeeded operation: omitted.
+        (keyed "start-ok" "task-start")
+        (fleet-core-operation-finish store (op-of "start-ok") :state "done")
+        (should-not (listed))
+        ;; In-flight operation: listed until it ends.
+        (keyed "start-run" "task-start")
+        (should (equal '(("start-run" . "in-flight")) (listed)))
+        ;; Failed operation: listed while its failure event awaits acknowledgment, then gone.
+        (keyed "teardown-bad" "task-teardown")
+        (fleet-core-operation-finish store (op-of "teardown-bad") :state "failed" :error "dirty worktree")
+        (should (equal '(("start-run" . "in-flight") ("teardown-bad" . "failed-unhandled")) (listed)))
+        (let ((ev (fleet-store-query1 store "SELECT id FROM events WHERE operation_id = ? AND kind = 'operation-failed'" (op-of "teardown-bad"))))
+          (should ev)
+          ;; Reading does not handle it; only the acknowledgment does.
+          (should (assoc "teardown-bad" (listed)))
+          (fleet-supervisor-ack store :fleet-id fid :receipt-ids (list (plist-get ev :id)) :outcome "seen" :actor actor))
+        (should (equal '(("start-run" . "in-flight")) (listed)))
+        (fleet-core-operation-finish store (op-of "start-run") :state "done")
+        (should-not (listed))
+        ;; Unknown outcome: an action row without result or operation (recorded
+        ;; before its outcome), and one naming an operation row that is missing.
+        (fleet-store-transaction store
+          (fleet-store-action-record store :actor actor :action-id "half" :payload '(:key "half"))
+          (fleet-store-action-record store :actor actor :action-id "dangling" :payload '(:key "dangling")
+                                     :operation-id "no-such-op" :result '(:operation-id "no-such-op")))
+        (should (equal '(("dangling" . "outcome-unknown") ("half" . "outcome-unknown")) (listed)))
+        (fleet-store-transaction store
+          (fleet-store-exec store "DELETE FROM actions WHERE actor = ? AND action_id IN ('half','dangling')" actor))
+        ;; A failure whose event reached only another fleet (here the
+        ;; lieutenant's operation-failed, as when the owner dies before the
+        ;; parent's event): listed until a later success supersedes it.
+        (keyed "lt-replace" "lieutenant-replace" lid)
+        (fleet-core-operation-finish store (op-of "lt-replace") :state "failed" :error "stop unproven")
+        (should (= 0 (fleet-store-scalar store "SELECT COUNT(*) FROM event_receipts r JOIN events e ON e.id = r.event_id WHERE e.operation_id = ? AND r.fleet_id = ?"
+                                         (op-of "lt-replace") fid)))
+        (should (equal '(("lt-replace" . "failed-unhandled")) (listed)))
+        (let ((ok (fleet-core-operation-begin store "lieutenant-replace" :fleet-id lid)))
+          (fleet-core-operation-finish store ok :state "done"))
+        (should-not (listed))
+        ;; ... while an unacknowledged failure event in this fleet is never hidden by supersession.
+        (keyed "teardown-bad-2" "task-teardown")
+        (fleet-core-operation-finish store (op-of "teardown-bad-2") :state "failed" :error "again")
+        (let ((ok (fleet-core-operation-begin store "task-teardown" :fleet-id fid :task-id tid)))
+          (fleet-core-operation-finish store ok :state "done"))
+        (should (equal '(("teardown-bad-2" . "failed-unhandled")) (listed)))
+        ;; Opt-in full history: every action, as before, finished ones with no attention.
+        (let ((all (listed t)))
+          (should (equal '("lt-replace" "start-ok" "start-run" "sync-1" "teardown-bad" "teardown-bad-2") (mapcar #'car all)))
+          (should (equal '(("teardown-bad-2" . "failed-unhandled")) (cl-remove-if-not #'cdr all))))
+        (let ((row (car (fleet-supervisor-started-actions store fid t))))
+          (should (equal '(:action-id :operation-id :kind :state :step :error :attention)
+                         (cl-loop for (k _v) on row by #'cddr collect k))))
+        ;; The pending reply carries the same trimmed list.
+        (should (equal '("teardown-bad-2")
+                       (mapcar (lambda (r) (plist-get r :action-id)) (plist-get (fleet-supervisor-pending-for-commander store fid) :started-actions))))
+        (should (= 6 (length (plist-get (fleet-supervisor-pending-for-commander store fid nil t) :started-actions))))
+        ;; Scoped by actor: the lieutenant's own actions are its view, an operator has none here.
+        (fleet-store-with-action store (fleet-core-actor-commander lid) "lt-own" '(:k 1)
+          (list :operation-id (fleet-core-operation-begin store "task-start" :fleet-id lid)))
+        (fleet-store-with-action store (fleet-core-actor-operator tid) "op-own" '(:k 1)
+          (list :operation-id (fleet-core-operation-begin store "task-start" :fleet-id fid)))
+        (should (equal '("lt-own") (mapcar (lambda (r) (plist-get r :action-id)) (fleet-supervisor-started-actions store lid))))
+        (should (equal '(("teardown-bad-2" . "failed-unhandled")) (listed)))
+        ;; The cap holds in both modes.
+        (let ((fleet-supervisor-started-actions-cap 3))
+          (should (= 3 (length (listed t)))))))))
+
 (provide 'fleet-supervisor-tests)
 ;;; fleet-supervisor-tests.el ends here
