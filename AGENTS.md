@@ -11,14 +11,16 @@ instructions. Fleet is single-host, ECA-native orchestration in Emacs with local
   branch from a dirty tree or touch another task's worktree. Remove your worktree once merged or abandoned.
 - A review is read-only unless changes are requested. Source work does not authorize live fleet operations,
   installation/reload, owner configuration changes, credential access, or external actions. Confirm scope
-  before paid/native probes. Merge, push, and activation are separate steps, never concurrent shortcuts;
-  follow the owner's authorization for each.
-- Use **`emacsclient` only** for Emacs operations. Never run tests, unload Fleet, or exit functions in the
-  owner's editing server. ERT needs an already-running disposable test server: by convention the socket
-  `fleet-test` (check for it; if absent, ask the owner to run `emacs -Q --daemon=fleet-test` — never launch
-  it yourself). Prefer a fresh daemon for a full-suite run; see [testing](docs/testing.md). Current Make
-  targets launch/exit Emacs and are not suitable under this rule. Never kill servers by a broad
-  process-name pattern.
+  before paid probes; native ECA/provider/systemd probes require explicit owner opt-in. Merge, push, and
+  activation are separate steps, never concurrent shortcuts; follow the owner's authorization for each.
+- Use **`emacsclient` only** for Emacs operations; the sole launch exception is starting exactly
+  `emacs -Q --daemon=fleet-test` for ERT. Before using any such daemon, verify its server name is
+  `fleet-test` and its PID differs from `emacsPid` in `~/.local/share/fleet/owner.json`; if either check
+  fails or cannot be made, do not use or kill it and report. `:fleet-loaded` is not evidence. Never kill a
+  reused daemon. See [testing](docs/testing.md) for the exact check, cleanup, and native opt-in. Never
+  touch the editing `server` or any other socket; never run tests, unload Fleet, or exit functions in the
+  editing server. Current Make targets remain unapproved. Never kill servers by a broad process-name
+  pattern.
 - Owner trust/model choices belong in owner configuration, not product defaults. Never globally enable
   trust or change ordinary non-Fleet ECA sessions. Never use real user fleets as test fixtures.
 - Keep credentials, private reports, transcripts, database copies, and session checkpoints out of Git.
