@@ -96,7 +96,8 @@ arms a denylist spy (`fleet-core-ensure-lieutenants`, `fleet-store-exec/insert/u
 anything outside the read allowlist. It passes with or without Fleet loaded in the test server; with Fleet
 loaded, dashboard labels such as `live/idle` replace the raw runtime lifecycle.
 
-Never byte-compile through the `fleet-test` daemon; see `docs/testing.md` for the shared-daemon restrictions.
+Do not byte-compile through the `fleet-test` daemon (see `docs/testing.md`); leave byte compilation to the
+owner.
 
 ## Caveats
 

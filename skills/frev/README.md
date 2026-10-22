@@ -164,7 +164,8 @@ timeout 120 emacsclient --alternate-editor=false --socket-name=fleet-test --eval
 The suite fakes `fleet-store-get`, `fleet-supervisor-send` (spy), `fleet-eca-conn`/`fleet-eca-draft` and
 `fleet-paths-root-hash`, arms a mutation denylist, and uses a temp frev data root. It covers the fixed
 target/key/text of the notice, every refusal, path containment, the file protocol, and that the reader is
-found beside `fsum`. Do not chain a `byte-compile-file` into the same eval as a test run on a shared daemon.
+found beside `fsum`. Do not byte-compile through the `fleet-test` daemon (see
+`docs/testing.md`); leave byte compilation to the owner.
 
 ## Manual UX checklist (for the reviewer)
 

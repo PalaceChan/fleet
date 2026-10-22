@@ -69,7 +69,8 @@ run this query before any launch. `--alternate-editor=false` makes it fail rathe
 ```bash
 : "${TEST_SOCKET:?Set TEST_SOCKET to fleet-test after checking the socket}"
 test "$TEST_SOCKET" = fleet-test || { echo "Only TEST_SOCKET=fleet-test is allowed" >&2; exit 2; }
-OWNER_PID=$(jq -er '.emacsPid' "$HOME/.local/share/fleet/owner.json") || exit
+OWNER_PID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["emacsPid"])' \
+  "$HOME/.local/share/fleet/owner.json") || exit
 printf 'Owner emacsPid: %s\n' "$OWNER_PID"
 emacsclient --alternate-editor=false --socket-name="$TEST_SOCKET" --eval \
   '(list :server server-name :pid (emacs-pid) :fleet-loaded (featurep (quote fleet)))'
